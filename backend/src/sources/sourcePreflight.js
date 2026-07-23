@@ -1,4 +1,3 @@
-import { fetchTikHubVideoSource } from "../media/tikhubVideoProvider.js";
 import { fetchYtDlpVideoSource } from "../media/ytDlpVideoProvider.js";
 import {
   detectVideoPlatform,
@@ -7,6 +6,7 @@ import {
   normalizeVideoSourceUrl
 } from "../media/videoPlatforms.js";
 import { VIDEO_DEFAULTS } from "../media/videoDefaults.js";
+import { fetchTikHubContentSource } from "./tikhubContentProvider.js";
 
 const PLATFORM_LABELS = Object.freeze({
   douyin: "抖音",
@@ -46,6 +46,16 @@ export function buildSourceCapabilities({ env = process.env } = {}) {
         maxDurationSeconds,
         platforms
       }
+    },
+    sourceEnrichment: {
+      enabled: readBooleanFlag(env.TIKHUB_CONTENT_ENABLED, false),
+      provider: "tikhub",
+      blocking: false,
+      platforms: {
+        xiaohongshu: { enabled: true, label: "小红书图文" },
+        wechat: { enabled: true, label: "公众号文章" },
+        zhihu: { enabled: true, label: "知乎内容" }
+      }
     }
   };
 }
@@ -55,7 +65,7 @@ export async function preflightSourceInput({
   sourceType = "",
   fetchMetadata = false,
   env = process.env,
-  fetchTikHub = fetchTikHubVideoSource,
+  fetchTikHub = fetchTikHubContentSource,
   fetchYtDlp = fetchYtDlpVideoSource
 } = {}) {
   const input = String(rawInput || "").trim();
@@ -119,7 +129,8 @@ export async function preflightSourceInput({
 
   const gate = evaluateVideoPlatformGate(platform, { env });
   const platformLabel = PLATFORM_LABELS[platform] || "视频";
-  if (!gate.enabled) {
+  const canResolveTikHubContent = fetchMetadata && isTikHubPreferredPlatform(platform);
+  if (!gate.enabled && !canResolveTikHubContent) {
     return blockedPreflight({
       inputKind: "url",
       sourceType: "video_link",
@@ -150,12 +161,39 @@ export async function preflightSourceInput({
   if (!fetchMetadata) return base;
 
   try {
-    const video = await fetchVideoMetadata(parsedUrl.href, platform, { fetchTikHub, fetchYtDlp });
-    const durationSeconds = finitePositiveNumber(video?.durationSeconds);
+    const content = await fetchSourceMetadata(parsedUrl.href, platform, { fetchTikHub, fetchYtDlp });
+    if (isNonVideoContent(content)) {
+      if (!readBooleanFlag(env.TIKHUB_CONTENT_ENABLED, false)) {
+        return blockedPreflight({
+          ...base,
+          sourceType: "article_link",
+          title: stringValue(content?.title),
+          durationSeconds: null,
+          reasonCode: "social_content_disabled",
+          userMessage: "社交平台图文取源暂未开放，请改用截图导入。"
+        });
+      }
+      return {
+        ...base,
+        sourceType: "article_link",
+        title: stringValue(content?.title),
+        durationSeconds: null,
+        contentKind: stringValue(content?.kind),
+        userMessage: `${platformLabel}图文内容可以生成复习内容。`
+      };
+    }
+    if (!gate.enabled) {
+      return blockedPreflight({
+        ...base,
+        reasonCode: gate.reasonCode,
+        userMessage: gate.userMessage
+      });
+    }
+    const durationSeconds = finitePositiveNumber(content?.durationSeconds);
     if (durationSeconds && durationSeconds > maxDurationSeconds) {
       return blockedPreflight({
         ...base,
-        title: stringValue(video?.title),
+        title: stringValue(content?.title),
         durationSeconds,
         reasonCode: "video_duration_too_long",
         userMessage: `视频时长超过 ${Math.round(maxDurationSeconds / 60)} 分钟，暂时无法生成复习内容。`
@@ -164,7 +202,7 @@ export async function preflightSourceInput({
 
     return {
       ...base,
-      title: stringValue(video?.title),
+      title: stringValue(content?.title),
       durationSeconds,
       userMessage: durationSeconds
         ? `${platformLabel}视频约 ${formatDuration(durationSeconds)}，可以生成复习内容。`
@@ -179,7 +217,7 @@ export async function preflightSourceInput({
   }
 }
 
-function fetchVideoMetadata(sourceUrl, platform, { fetchTikHub, fetchYtDlp }) {
+function fetchSourceMetadata(sourceUrl, platform, { fetchTikHub, fetchYtDlp }) {
   if (isTikHubPreferredPlatform(platform)) {
     return fetchTikHub({ sourceUrl });
   }
@@ -187,6 +225,11 @@ function fetchVideoMetadata(sourceUrl, platform, { fetchTikHub, fetchYtDlp }) {
     return fetchYtDlp({ sourceUrl });
   }
   return Promise.reject(new Error("unsupported video platform"));
+}
+
+function isNonVideoContent(content) {
+  const kind = stringValue(content?.kind);
+  return Boolean(kind && kind !== "video");
 }
 
 function evaluateVideoPlatformGate(platform, { env = process.env } = {}) {
@@ -287,7 +330,7 @@ function blockedPreflight({
 }
 
 function normalizeMetadataFailureCode(error) {
-  const code = String(error?.mediaErrorType || error?.code || "");
+  const code = String(error?.sourceErrorType || error?.mediaErrorType || error?.code || "");
   if ([
     "provider_config_missing",
     "provider_timeout",

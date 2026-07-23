@@ -74,6 +74,49 @@ test("metadata preflight fetches TikHub only when explicitly requested", async (
   assert.equal(tikhubCalls, 1);
 });
 
+test("metadata preflight reclassifies Xiaohongshu image notes as article links", async () => {
+  const result = await preflightSourceInput({
+    rawInput: "https://www.xiaohongshu.com/explore/image-note",
+    fetchMetadata: true,
+    env: {
+      VIDEO_LINK_ENABLED: "0",
+      TIKHUB_CONTENT_ENABLED: "1"
+    },
+    fetchTikHub: async () => ({
+      kind: "image_text",
+      title: "一条图文笔记",
+      text: "图文正文"
+    })
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.sourceType, "article_link");
+  assert.equal(result.contentKind, "image_text");
+  assert.equal(result.title, "一条图文笔记");
+  assert.match(result.userMessage, /图文内容/);
+});
+
+test("keeps Xiaohongshu image enrichment behind its rollout flag", async () => {
+  const result = await preflightSourceInput({
+    rawInput: "https://www.xiaohongshu.com/explore/image-note",
+    fetchMetadata: true,
+    env: {
+      VIDEO_LINK_ENABLED: "0",
+      TIKHUB_CONTENT_ENABLED: "0"
+    },
+    fetchTikHub: async () => ({
+      kind: "image_text",
+      title: "一条图文笔记",
+      text: "图文正文"
+    })
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.sourceType, "article_link");
+  assert.equal(result.reasonCode, "social_content_disabled");
+  assert.match(result.userMessage, /截图导入/);
+});
+
 test("preflights metadata and blocks overlong video", async () => {
   const result = await preflightSourceInput({
     rawInput: "https://www.bilibili.com/video/BV1overlong/",
@@ -198,4 +241,8 @@ test("source capabilities reflect video flags and duration limit", () => {
   assert.equal(capabilities.sourceTypes.video_link.platforms.douyin.enabled, true);
   assert.equal(capabilities.sourceTypes.video_link.platforms.bilibili.enabled, false);
   assert.equal(capabilities.sourceTypes.video_link.platforms.xiaohongshu.enabled, false);
+  assert.equal(capabilities.sourceEnrichment.enabled, false);
+  assert.equal(capabilities.sourceEnrichment.provider, "tikhub");
+  assert.equal(capabilities.sourceEnrichment.blocking, false);
+  assert.equal(capabilities.sourceEnrichment.platforms.wechat.enabled, true);
 });

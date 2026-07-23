@@ -1,6 +1,6 @@
 # Recallo 项目交接入口
 
-Recallo 是一款面向碎片知识的 AI 复习 iOS App。用户把日常看到的文字、文章链接或未来的视频链接添加进来，系统自动提取知识点、生成测试题，用户像背单词一样随时刷题复习。
+Recallo 是一款面向碎片知识的 AI 复习 iOS App。用户把日常看到的截图、文字、文章或视频链接添加进来，系统自动提取值得记住的内容、生成测试题，并安排后续复习。
 
 ## 当前状态
 
@@ -10,6 +10,7 @@ Recallo 是一款面向碎片知识的 AI 复习 iOS App。用户把日常看到
 - Node 后端原型：提供本地 API、文章链接输入层和核心出题系统。
 - Railway 云端后端：可用 PostgreSQL 按匿名设备 ID 持久化章节、通知、生成任务和复习状态。
 - 核心出题系统：完成内容清洗、知识点提取、题目生成、质量检查、单题重写和测试集入口。
+- 社交内容取源：TikHub 作为可替换的来源增强器，支持抖音/小红书视频和小红书图文、公众号、知乎正文；失败时不应阻断截图视觉理解。
 - 成本计算工作台：内部 HTML 页面按单篇章节对比模型 token 估算、provider 实际 usage 和成本误差，不进入 iOS App 主接口。
 - 质量测试集：保存真实样本、人工样本和关键 baseline 结果。
 - iOS 迁移文档：收口了 SwiftUI 第一轮开发建议和 API / 数据模型契约。
@@ -33,6 +34,7 @@ Recallo 是一款面向碎片知识的 AI 复习 iOS App。用户把日常看到
 
 ```text
 backend/           Node 后端、本地 API、核心出题系统
+tikhub/            TikHub Python 调研原型；生产代码已迁入 backend，不作为第二套服务部署
 Recallo iOS 工程/              正式 iOS App 工程；真机装包和 TestFlight 只能使用这里的 Xcode project
 demo/              HTML 真实体验 Demo
 docs/              迁移文档、API 契约、Xcode 首轮计划、fixture
@@ -109,4 +111,4 @@ HTML Demo 是行为参考，不是 iOS 架构参考。iOS 端应使用 SwiftUI �
 - Railway 云端 API 接 PostgreSQL；本地未配置 `DATABASE_URL` 时仍使用内存模式。
 - 成本工作台和模型 usage 明细只用于内部调试，不能进入 iOS App 主接口或用户可见数据。
 - 公众号抓取受平台限制，失败时应允许用户改为粘贴正文。
-- 视频链接目前只识别并友好失败，不提取视频正文。
+- TikHub 只处理用户主动提交的公开链接；生产模型生成仍由 Recallo 后端统一完成，不使用 `tikhub/` 原型中的 Claude 总结链。

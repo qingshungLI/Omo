@@ -112,7 +112,7 @@ npm run check:production-deploy-inputs -- \
 
 视频链接能力新增必配变量：
 
-- `TIKHUB_API_KEY`：抖音/小红书视频取源。只确认存在，不记录值。
+- `TIKHUB_API_KEY`：抖音/小红书视频取源，以及小红书图文、公众号和知乎来源增强。只确认存在，不记录值。
 - `QWEN_API_KEY` 或 `DASHSCOPE_API_KEY`：Qwen VL 视觉增强。只确认存在，不记录值。
 - `RUNTIME_READINESS_TOKEN`：仅用于部署检查访问 `/api/source/runtime-readiness`，不能暴露给客户端。
 
@@ -124,6 +124,7 @@ npm run check:production-deploy-inputs -- \
 - `VIDEO_ASR_PROVIDER=local_whisper`
 - `VIDEO_FRAME_PROVIDER=crv_style_ffmpeg`
 - `VIDEO_VISUAL_PROVIDER=qwen-vl`
+- `TIKHUB_CONTENT_ENABLED=1`
 
 如果必须临时关闭视频能力，优先设置 `VIDEO_LINK_ENABLED=0`，并在 deployment intent 中记录原因和恢复条件。不要通过删除 provider key 来“临时关闭”，否则 readiness 结果会变成配置缺失，难以区分策略关闭和环境损坏。
 

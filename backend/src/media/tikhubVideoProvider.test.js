@@ -131,6 +131,21 @@ test("fails unsupported platforms before calling provider", async () => {
   );
 });
 
+test("maps generic TikHub source failures back to the video error contract", async () => {
+  await assert.rejects(
+    () => fetchTikHubVideoSource({
+      sourceUrl: "https://v.douyin.com/abc/",
+      apiKey: ""
+    }),
+    (error) => (
+      error.code === "failed_extract_video"
+      && error.mediaErrorType === "provider_config_missing"
+      && error.provider === "tikhub"
+      && error.retryable === false
+    )
+  );
+});
+
 function jsonResponse(payload, { ok = true, status = 200 } = {}) {
   return {
     ok,

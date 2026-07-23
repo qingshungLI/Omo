@@ -163,6 +163,14 @@ VIDEO_VISUAL_MAX_GRIDS=4
 
 TikHub 是第一版可验证的第三方数据入口。它对拾贝的价值是把抖音/小红书公开链接转成结构化数据和可处理的视频地址。
 
+2026-07-23 融合更新：仓库中的 `tikhub/` Python 项目仅保留为接口调研与 Fixture 参考。生产实现统一位于 Node 后端：
+
+- `backend/src/sources/tikhubContentProvider.js` 负责平台识别、TikHub 请求、字段标准化和错误映射。
+- `backend/src/media/tikhubVideoProvider.js` 复用统一内容 Provider，将视频结果交给既有缓存、ASR、抽帧和 Qwen 视觉理解链。
+- 小红书图文、公众号和知乎结果转换为带稳定 block ID 的 V2 article source，继续走已有证据锚点、知识点、出题和质量门。
+- TikHub 不调用总结模型，也不产生 `MemoryItem` 或题目；`qwen3.7-plus-2026-05-26` 仍是 V3 截图分析的已选主模型。
+- TikHub 是可选增强层。截图导入和视觉理解不能依赖 TikHub 成功，短图文只有图片而正文不足时，应提示用户改用截图导入。
+
 ### 抖音
 
 优先候选接口：
@@ -208,6 +216,16 @@ TikHub 是第一版可验证的第三方数据入口。它对拾贝的价值是�
 - App V2 作为主路径。
 - 小红书端点维护成本高，响应可能需要重试或等待。
 - 不依赖播放量、下载量等小红书不稳定或不公开字段。
+
+### 公众号与知乎
+
+图文来源增强支持：
+
+- 公众号：`/api/v1/wechat_mp/v2/fetch_article_detail`
+- 知乎回答：`/api/v1/zhihu/web/fetch_answer_detail`
+- 知乎专栏：`/api/v1/zhihu/web/fetch_column_article_detail`
+
+这些端点只用于用户主动提交的公开链接。接口失败时，公众号和知乎仍尝试现有网页正文提取；小红书网页通常无法可靠提取正文，因此给出“稍后重试或改用截图”的明确反馈。
 
 ### 供应商边界
 

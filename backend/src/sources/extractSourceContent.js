@@ -1,12 +1,20 @@
 import { extractVideoLearningSource as defaultExtractVideoLearningSource } from "../media/extractVideoLearningSource.js";
 import { buildV2SourceFromLearningSource } from "../media/learningSource.js";
+import {
+  detectTikHubContentPlatform,
+  fetchTikHubContentSource as defaultFetchTikHubContentSource,
+  isTikHubArticlePlatform
+} from "./tikhubContentProvider.js";
 
 const MIN_ARTICLE_TEXT_LENGTH = 200;
+const MIN_SOCIAL_TEXT_LENGTH = 24;
 const ARTICLE_FETCH_TIMEOUT_MS = readPositiveInt(process.env.ARTICLE_FETCH_TIMEOUT_MS, 30_000);
 const WECHAT_EXTRACT_TIMEOUT_MS = readPositiveInt(process.env.WECHAT_EXTRACT_TIMEOUT_MS, 60_000);
 
 export async function extractSourceContent(input, {
-  extractVideoLearningSource = defaultExtractVideoLearningSource
+  extractVideoLearningSource = defaultExtractVideoLearningSource,
+  fetchTikHubContentSource = defaultFetchTikHubContentSource,
+  env = process.env
 } = {}) {
   const sourceType = input?.sourceType;
   if (sourceType === "text") {
@@ -44,10 +52,27 @@ export async function extractSourceContent(input, {
   }
 
   const sourceUrl = normalizeUrl(input.sourceUrl || input.rawText);
+  const platform = detectTikHubContentPlatform(sourceUrl);
+  let tikhubError = null;
+  if (shouldUseTikHubArticleSource(platform, { env })) {
+    try {
+      const content = await fetchTikHubContentSource({ sourceUrl });
+      return buildTikHubArticleSource(content, sourceUrl);
+    } catch (error) {
+      tikhubError = error;
+    }
+  }
   if (isWechatArticleUrl(sourceUrl)) {
     return extractWechatArticle(sourceUrl);
   }
-  return extractWebArticle(sourceUrl);
+  try {
+    return await extractWebArticle(sourceUrl);
+  } catch (error) {
+    if (tikhubError && platform === "xiaohongshu") {
+      throw tikhubArticleFailure(tikhubError);
+    }
+    throw error;
+  }
 }
 
 export function isLikelyUrl(value) {
@@ -92,6 +117,132 @@ function normalizeUrl(value) {
 function isWechatArticleUrl(value) {
   const hostname = new URL(value).hostname.toLowerCase();
   return hostname === "mp.weixin.qq.com";
+}
+
+function shouldUseTikHubArticleSource(platform, { env = process.env } = {}) {
+  return isTikHubArticlePlatform(platform)
+    && readBooleanFlag(env.TIKHUB_CONTENT_ENABLED, false)
+    && Boolean(String(env.TIKHUB_API_KEY || "").trim());
+}
+
+export function buildTikHubArticleSource(content, sourceUrl = "") {
+  if (!content || typeof content !== "object") {
+    throw sourceFailure("failed_extract_article", "内容平台未返回可处理的正文。");
+  }
+  if (content.kind === "video") {
+    throw sourceFailure("failed_extract_article", "这是一条视频内容，请使用视频链接入口。");
+  }
+
+  const rawText = cleanExtractedText(
+    [content.text, content.description]
+      .map((value) => String(value || "").trim())
+      .filter((value, index, values) => value && values.indexOf(value) === index)
+      .join("\n\n")
+  );
+  ensureSocialText(rawText, { hasImages: Array.isArray(content.images) && content.images.length > 0 });
+  const platform = String(content.platform || detectTikHubContentPlatform(sourceUrl) || "");
+  const blocks = buildSocialSourceBlocks(rawText, platform);
+  const title = cleanExtractedText(content.title) || platformLabel(platform);
+  const account = cleanExtractedText(content.account || content.author);
+  const canonicalUrl = String(content.sourceUrl || sourceUrl || "");
+  const source = {
+    type: "article_link",
+    platform,
+    title,
+    url: canonicalUrl,
+    author: account,
+    account,
+    accountOrDomain: account || platform,
+    rawInput: sourceUrl || canonicalUrl,
+    rawText,
+    extractedText: rawText,
+    cleanedText: rawText,
+    media: {
+      provider: "tikhub",
+      providerContentId: String(content.providerContentId || ""),
+      coverUrl: String(content.coverUrl || content.images?.[0] || ""),
+      playUrlExpiresAt: ""
+    },
+    blocks
+  };
+  return {
+    sourceType: "article_link",
+    sourceTitle: title,
+    sourceUrl: canonicalUrl,
+    sourceAccount: account,
+    rawText,
+    platform,
+    blocks,
+    source
+  };
+}
+
+function buildSocialSourceBlocks(rawText, platform) {
+  const chunks = splitTextForEvidence(rawText, 1200);
+  return chunks.map((text, index) => ({
+    id: `${platform || "social"}-platform-text-${String(index + 1).padStart(3, "0")}`,
+    type: "paragraph",
+    sourceRole: "platform_description",
+    text
+  }));
+}
+
+function splitTextForEvidence(rawText, maxLength) {
+  const paragraphs = String(rawText || "")
+    .split(/\n{2,}/)
+    .map((part) => cleanExtractedText(part))
+    .filter(Boolean);
+  const chunks = [];
+  for (const paragraph of paragraphs) {
+    if (paragraph.length <= maxLength) {
+      chunks.push(paragraph);
+      continue;
+    }
+    const sentences = paragraph.split(/(?<=[。！？!?；;])\s*/).filter(Boolean);
+    let current = "";
+    for (const sentence of sentences) {
+      if (current && current.length + sentence.length > maxLength) {
+        chunks.push(current);
+        current = "";
+      }
+      if (sentence.length > maxLength) {
+        if (current) chunks.push(current);
+        for (let offset = 0; offset < sentence.length; offset += maxLength) {
+          chunks.push(sentence.slice(offset, offset + maxLength));
+        }
+        current = "";
+      } else {
+        current += sentence;
+      }
+    }
+    if (current) chunks.push(current);
+  }
+  return chunks;
+}
+
+function ensureSocialText(rawText, { hasImages = false } = {}) {
+  if (String(rawText || "").replace(/\s/g, "").length >= MIN_SOCIAL_TEXT_LENGTH) return;
+  const suffix = hasImages ? "当前图文正文太短，请改用截图导入，让视觉模型读取图片。" : "可用正文太短，暂时无法生成复习题。";
+  throw sourceFailure("failed_extract_article", `社交平台内容提取失败：${suffix}`);
+}
+
+function tikhubArticleFailure(error) {
+  const type = String(error?.sourceErrorType || error?.mediaErrorType || "");
+  if (type === "provider_config_missing") {
+    return sourceFailure("failed_extract_article", "小红书内容取源暂未配置，请改用截图导入。");
+  }
+  if (["provider_timeout", "provider_rate_limited", "provider_unavailable"].includes(type)) {
+    return sourceFailure("failed_extract_article", "小红书内容暂时无法读取，请稍后重试或改用截图导入。");
+  }
+  return sourceFailure("failed_extract_article", error?.message || "小红书内容读取失败，请改用截图导入。");
+}
+
+function platformLabel(platform) {
+  return {
+    xiaohongshu: "小红书内容",
+    wechat: "公众号文章",
+    zhihu: "知乎内容"
+  }[platform] || "社交平台内容";
 }
 
 async function extractWebArticle(sourceUrl) {
@@ -335,4 +486,9 @@ function withTimeout(promise, timeoutMs, message) {
 function readPositiveInt(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function readBooleanFlag(value, fallback) {
+  if (value === undefined || value === null || value === "") return fallback;
+  return !["0", "false", "off", "no"].includes(String(value).trim().toLowerCase());
 }
