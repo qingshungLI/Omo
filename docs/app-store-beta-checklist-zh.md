@@ -1,0 +1,142 @@
+# 拾贝 TestFlight / App Store Beta 准备清单
+
+> 当前目标是先进入 TestFlight 用户测试。第一轮继续使用匿名设备身份，不做账号登录、不接广告、不接第三方分析 SDK；外部 TestFlight 前需要打通 APNs 远程推送。
+
+## 1. Xcode 构建检查
+
+- App 名称：拾贝
+- Bundle ID：使用 Apple Developer 中创建的正式 Bundle ID。
+- Team：选择开发者账号团队。
+- Release / TestFlight 构建必须默认连接生产云端 API。
+- Release / TestFlight 构建不得显示：
+  - Mock 场景
+  - 本地 API
+  - Railway 地址输入框
+  - 匿名设备 ID
+  - 重置匿名设备
+  - JSON decode / raw API / debug log 文案
+- App Icon 和 Launch Screen 必须使用正式素材。
+- Push Notifications capability 必须开启；Debug 使用 development APNs，Release / TestFlight 使用 production APNs。
+
+## 2. App Store Connect 基本信息
+
+- 分类建议：教育 / 效率。
+- 年龄分级：不含成人内容、赌博、暴力或用户公开社交内容。
+- 关键词方向：AI 学习、复习、知识管理、文章学习、主动回忆。
+- 副标题方向：把文章变成复习题。
+- 测试账号：第一轮无账号登录；审核说明里写明 App 使用匿名设备 Beta。
+
+## 3. 隐私标签建议
+
+第一轮 Beta 口径：
+
+- User Content：
+  - 用户提交的文本、链接、生成章节、题目和来源内容。
+  - 用途：App 功能。
+- Identifiers：
+  - 匿名设备 ID。
+  - 用途：App 功能，用于隔离用户自己的云端数据。
+- Usage Data：
+  - 复习进度、答题记录、题目反馈。
+  - 用途：App 功能，用于恢复复习状态和优化复习体验。
+- Diagnostics：
+  - 第一轮如果没有接入 crash / analytics SDK，可以暂不声明；若后续接入，需要同步更新。
+- Tracking：
+  - 不声明 Tracking。
+- 第三方广告：
+  - 不使用。
+
+## 4. 隐私政策必须说明
+
+隐私政策或 App 内隐私说明至少覆盖：
+
+- 用户提交的文本和链接会上传到拾贝云端，用于生成知识点和复习题。
+- 生成过程中，内容可能会被发送给第三方 AI 模型服务处理。
+- 拾贝会保存章节、题目、来源、通知、复习记录和题目反馈。
+- 当前 Beta 使用匿名设备 ID，不使用账号系统。
+- 用户可以在 App 内删除当前匿名设备下的数据。
+- 删除数据后，章节、通知、复习记录和反馈不可恢复。
+
+## 5. 审核备注草稿
+
+```text
+拾贝是一款 AI 学习复习 App。用户可以粘贴文字或文章链接，App 会在云端生成知识点和复习题，用户随后可以在 App 内复习。
+
+当前 TestFlight 版本不需要登录账号，使用匿名设备 ID 保存用户自己的章节、通知和复习记录。用户可以在“我的”页查看隐私说明，并通过“删除我的数据”删除当前设备对应的云端数据。
+
+当前版本不包含广告、订阅、支付或公开社交内容。
+```
+
+## 6. TestFlight 测试说明草稿
+
+```text
+请使用一篇你最近真的想学习或记住的文章/链接进行测试：
+
+1. 点击底部 + 添加内容。
+2. 粘贴文章链接或长文本。
+3. 等待生成完成。
+4. 进入章节并完成一轮复习。
+5. 在解释页查看一次来源。
+6. 如果发现题目有问题，请使用“题目有问题”反馈。
+7. 第二天再次打开 App，看是否愿意继续复习。
+
+请重点反馈：生成等待是否可接受、题目是否有帮助、解释和来源是否可信、哪一步最想退出。
+```
+
+## 7. 首轮用户测试记录维度
+
+- 第一次添加是否顺畅。
+- 是否理解拾贝的产品定位。
+- 生成等待是否可接受。
+- 题目是否帮助理解和记忆。
+- 解释页是否建立信任。
+- 来源上下文是否足够。
+- 题目反馈是否容易找到。
+- 第二天是否愿意继续打开。
+- 最想退出或最困惑的一步。
+
+## 8. Beta 前最终验收
+
+- 真机 Release / TestFlight 构建能直接连接云端。
+- 添加、生成、章节详情、复习、解释、来源、反馈、删除章节可用。
+- “删除我的数据”后首页和通知页变为空。
+- App 内没有 Mock、Railway、本地 API、deviceId、decode path 等工程文案。
+- 后端 `/api/health` 正常。
+- 后端 `DELETE /api/device-data` 只删除当前 `X-Device-Id` 的数据。
+
+## 9. APNs 云端配置
+
+Railway 后端需要配置以下环境变量。缺失时 App 内通知仍可用，但不会发送系统推送。
+
+```text
+APNS_TEAM_ID=<Apple Developer Team ID>
+APNS_KEY_ID=<APNs Auth Key ID>
+APNS_BUNDLE_ID=com.maxhan.shibei
+APNS_PRIVATE_KEY_BASE64=<.p8 文件内容 base64>
+APNS_ENV=production
+```
+
+`.p8` 文件可以用下面的方式转成环境变量值：
+
+```bash
+base64 -i AuthKey_XXXXXXXXXX.p8 | tr -d '\n'
+```
+
+验证顺序：
+
+1. 真机允许通知后，iOS 调用 `POST /api/devices/push-token`。
+2. 后端 `/api/health` 返回 `apns.configured: true`。
+3. 后端 `/api/devices/push-status` 能看到当前设备 token，且 `pushTokenCount > 0`。
+4. 提交一篇文章并等待生成完成。
+5. App 在后台或锁屏时收到系统通知。
+6. 点击通知进入对应章节详情；成功通知随后从 App 内通知页归档。
+
+### APNs 诊断口径
+
+如果真机授权后仍收不到系统通知，优先检查这三个点：
+
+- App 是否真的上传了当前设备 token：`GET /api/devices/push-status` 需要带同一个 `X-Device-Id`。
+- token 环境是否和安装方式一致：Xcode Debug 使用 `sandbox`，TestFlight / App Store 使用 `production`。
+- 最近通知是否有 APNs 返回错误：`recentNotifications[].pushDeliveryStatus` 和 `pushDeliveryError` 会记录 `BadDeviceToken`、`BadEnvironmentKeyInToken` 等错误。
+
+iOS 端应在这些时机主动同步 token：用户首次授权通知后、App 回到前台后、提交云端生成前后。这样即使系统轮换 token 或用户先拒绝后开启通知，云端也能拿到最新 token。

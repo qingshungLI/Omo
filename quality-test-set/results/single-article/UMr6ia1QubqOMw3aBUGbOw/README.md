@@ -1,0 +1,2877 @@
+# 单篇基准诊断：Hook 与 AI Coding 文章
+
+本文档固定记录 `https://mp.weixin.qq.com/s/UMr6ia1QubqOMw3aBUGbOw` 这篇文章在当前出题系统下的生成表现。后续几轮知识点、补题、质量过滤和题型覆盖调整，都优先用这篇文章做横向对比。
+
+> 2026-06-02 更新：这篇文章现在作为 **实验室黄金样本** 使用。它用于统一字段级审题标准、保存人工修订和验证局部模块优化，但不再作为直接修改生产 prompt 的唯一依据。后续实验与生产隔离规则见 `docs/question-generation-experiment-isolation-plan-zh.md`。
+
+这篇文章适合作为单篇基准，是因为它同时包含概念解释、方法判断、场景信号、工具边界和产品经理工程直觉，能暴露三个核心问题：
+
+- 知识点是否覆盖完整主线。
+- 每个知识点是否能稳定生成 1-3 道不同角度题。
+- 质量过滤是否把可复习题误杀。
+
+## 2026-05-31 阶段性复盘：回到线上基线重新设计
+
+v4-v13 的连续实验带来了很多可观察指标，但整体结论不是“越复杂越好”。单篇基准能帮助我们发现问题，却也放大了过拟合风险：后续版本为了修 Hook 文章里的来源复用、认知动作覆盖、题量不足，不断把文章结构、source block、practice blueprint、教学评分细则塞进生产 prompt 和选择器里，最终出现了新的负面现象：
+
+- prompt 变长、约束变多，模型注意力被规则抢走，知识点表述反而可能变差。
+- 题量和覆盖指标变好，但低置信比例长期偏高，说明指标改善没有等价于真实学习质量提升。
+- 对 Hook 样本的结构诊断越来越细，泛化到其它用户上传文章的价值没有被充分证明。
+- 轻量题卡是有效发现，但如果把“轻”推过头，又会牺牲题目质量。
+
+因此新生产版本以线上已验证体验为基准做“瘦身设计”：
+
+| 维度 | 新生产原则 |
+| --- | --- |
+| 题量 | 普通知识点 1 道，高价值知识点 2 道，极高价值且多角度自然时 3 道；不再默认追每点 3 道 |
+| prompt | 保留可信、轻量、答案唯一、来源忠实；移除单篇结构绑定和过细认知动作流程 |
+| 补题 | 停用生产强补题；一次生成 + 一次必要重写后仍不足时接受少题 |
+| 实验能力 | article structure / source block / blueprint / rubric 继续留在实验报告，不默认牵引生产生成 |
+| 验收 | 优先看知识点表述准确、题目自然、来源可信、题卡轻，而不是单篇指标是否更漂亮 |
+
+这不是回退到“完全不要实验”，而是把实验产物分层：已经证明能改善产品体验的留下，未证明泛化价值的先退出生产链路。
+
+### v14：Lean Baseline Reset
+
+| 字段 | 内容 |
+| --- | --- |
+| 实验标签 | `v14-lean-baseline-reset` |
+| 运行时间 | 2026-05-31 18:58 |
+| JSON | `runs/20260531-185804-v14-lean-baseline-reset.json` |
+| CSV | `reviews/20260531-185804-v14-lean-baseline-reset.csv` |
+| Analysis | `analysis/20260531-185804-v14-lean-baseline-reset.md` |
+
+#### 实验假设
+
+以线上部署版体验为基准收缩生产链路：减少 prompt 规则、停用单篇结构绑定、停用强补题，让模型把注意力重新放回“知识点准确、题目自然、来源可信、题卡轻”。
+
+#### Prompt 改动
+
+- 从“认知动作 + article structure + blueprint + source block + 轻量化”的复合大 prompt，收缩为“可信、轻量、答案唯一、来源忠实、少量高价值题”的核心 prompt。
+- 保留 `memoryAngle` 作为轻量意图标签，但不再强制绑定 `practiceBlueprint`。
+- 删除 Hook 样本相关的结构节点强约束和过细的边界/场景内部推理步骤。
+
+#### 确定性规则改动
+
+- 普通知识点默认 1 道题。
+- 高价值/高可考知识点 2 道题。
+- 只有重要度 5、可考性 5 且有多个自然角度时才给 3 道题。
+- 生产链路停用 supplement，不再为了补足题量额外发起补题调用。
+- 仍保留一次 rewrite、答案唯一性、来源支撑和题卡低摩擦检测。
+
+#### 指标结果
+
+| 指标 | v13 | v14 Lean |
+| --- | ---: | ---: |
+| 保留知识点 | 7 | 7 |
+| 入池题数 | 21 | 7 |
+| 动态预期题数 | 21 | 16 |
+| 动态覆盖率 | 100% | 43.8% |
+| 平均每知识点题数 | 3.0 | 1.0 |
+| 低置信题比例 | 90.5% | 71.4% |
+| 平均来源精准度 | 4.8 | 5.0 |
+| 平均来源最小化 | 4.7 | 4.7 |
+| 平均低摩擦题卡分 | 4.9 | 4.0 |
+| 高摩擦题数 | 1 | 3 |
+| 重复练习风险题 | 4 | 2 |
+
+#### 结论
+
+v14 证明“瘦身”能立刻减少题量和部分复杂度，但不是可以直接上线的最终状态：
+
+- 正向：来源精准度回到 5.0，重复练习风险下降，低置信比例低于 v13。
+- 负向：题量收缩过猛，7 个知识点只有 7 道入池题；动态覆盖率只有 43.8%。
+- 更关键的是：低摩擦分从 4.9 降到 4.0，高摩擦题从 1 道升到 3 道，说明只收缩 prompt 不足以自动带来更轻的题卡，反而需要更明确的短题卡约束或更好的 rewrite。
+
+下一轮不应回到“堆指标追题量”，也不能接受 v14 的少题结果。更合理的方向是：在 lean prompt 基础上恢复一个温和的目标下限，例如高价值点至少 2 题；同时把题卡低摩擦作为硬护栏，而不是依赖模型自然做到。
+
+### v15：Lean Floor + Friction Guardrail
+
+| 字段 | 内容 |
+| --- | --- |
+| 实验标签 | `v15-lean-floor-friction-guardrail` |
+| 运行时间 | 2026-05-31 19:16 |
+| JSON | `runs/20260531-191601-v15-lean-floor-friction-guardrail.json` |
+| CSV | `reviews/20260531-191601-v15-lean-floor-friction-guardrail.csv` |
+| Analysis | `analysis/20260531-191601-v15-lean-floor-friction-guardrail.md` |
+
+#### 实验假设
+
+v14 的问题不是“lean 方向错了”，而是 lean prompt 把 `targetQuestionCount` 写成了上限，模型自然会保守到每点 1 题；同时评分器把一部分合法定义题误判为理解太浅。v15 只做小修，不恢复复杂 blueprint / structure 方案：
+
+- 把 `targetQuestionCount` 从“最多生成”改成“温和目标”：优先生成目标数量，只有来源不支撑、答案不唯一或会换壳重复时才少出题。
+- 修正核心定义题误杀：像“Hook 的本质是什么？”这类概念本质题，只要答案唯一且来源支撑，不应因为带有“根据原文”就被判为 `understandingDepth_low`。
+- 对高摩擦重写加入明确压缩要求：题干优先 15-45 个中文字符，选项优先 8-24 个中文字符，把背景和解释放到答后。
+
+#### Prompt 改动
+
+- 系统 prompt 增加：“如果输入里的 `targetQuestionCount` 是 2 或 3，请把它当作值得尝试覆盖的温和目标；除非会变成重复、无来源或答案不唯一，不要默认只出 1 道。”
+- 用户 prompt 增加：“如果 `targetQuestionCount >= 2`，优先覆盖核心理解 + 边界辨析或场景迁移；如果 `targetQuestionCount = 3`，再补第三个自然角度。”
+- rewrite prompt 针对 `review_friction`、`question_card_too_heavy`、`scenario_background_too_long` 等问题增加题卡压缩指令。
+
+#### 确定性规则改动
+
+- `scoreUnderstandingDepth` 增加“本质 / 核心 / 主张 / 关键 / 意味着 / 不是...而是”等概念理解信号，避免把合法定义题直接丢弃。
+- 保留 v14 的 lean 选择器、停用 supplement、一次 rewrite、来源支撑、答案唯一和低摩擦检测。
+- 新增单测覆盖：定义型核心题不被 discard；friction rewrite prompt 必须包含压缩题卡约束。
+
+#### 指标结果
+
+| 指标 | v14 Lean | v15 |
+| --- | ---: | ---: |
+| 保留知识点 | 7 | 7 |
+| 入池题数 | 7 | 9 |
+| 动态预期题数 | 16 | 16 |
+| 动态覆盖率 | 43.8% | 56.3% |
+| 覆盖知识点 | 6 / 7 | 7 / 7 |
+| 平均每知识点题数 | 1.0 | 1.3 |
+| 低置信题比例 | 71.4% | 88.9% |
+| 高置信题 | 2 | 1 |
+| 平均来源精准度 | 5.0 | 4.9 |
+| 平均来源最小化 | 4.7 | 4.6 |
+| 平均低摩擦题卡分 | 4.0 | 5.0 |
+| 平均可见阅读负担 | 151.6 | 83.6 |
+| 高摩擦题数 | 3 | 0 |
+| 重复练习风险题 | 2 | 0 |
+
+#### 有效结果
+
+- **题量和覆盖小幅恢复。** 入池题从 7 到 9，且所有知识点都有至少 1 道题；`kp-1` 不再 0 覆盖。
+- **题卡轻量感明显改善。** 低摩擦分从 4.0 到 5.0，高摩擦题从 3 到 0，平均可见阅读负担几乎减半。
+- **重复风险归零。** 在恢复少量题量的同时，没有重新引入同判断换壳题。
+- **来源复用保持干净。** source reuse / overlap / block reuse Top 均为空，没有回到大段来源复用问题。
+
+#### 新问题
+
+- **低置信比例反而升高。** v15 有 8 / 9 道 `needs_rewrite`。主要原因是 `source_coverage_incomplete` 6 次，说明题目经常把题干判断扩到来源片段未完整覆盖的范围。
+- **来源覆盖均分下降。** 平均 source coverage 从 v14 的 3.1 降到 2.9。来源仍精准、最小，但它常常只能支撑题目的一部分复合判断。
+- **认知动作仍不稳定。** `core_claim_too_literal`、`boundary_confusion_not_real`、`scenario_is_restatement` 仍出现，说明 v15 只修了“定义题误杀”和“题卡轻”，没有解决教学动作质量。
+
+#### 第一性原理结论
+
+v15 验证了两个事实：
+
+1. **lean prompt 可以保留，但需要温和目标下限。** 直接把题量说成上限会让模型过度保守；恢复“值得尝试覆盖”的表达后，覆盖率能回升。
+2. **轻量题卡可以通过明确 rewrite 护栏稳定改善。** 这部分是可保留的产品体验约束。
+
+但 v15 也证明下一步不能继续只调题量或题卡长度。当前最主要矛盾已经变成：**题目应该主动收窄到来源能完整支撑的判断，而不是让来源片段去追赶更大的题目判断。**
+
+下一轮应做 **v16：source coverage aware question narrowing**：
+
+- 生成题目前先把每个知识点的 `sourceQuote` / 最小证据块转成“可安全考察的判断范围”。
+- 出题 prompt 要求题目只考这个范围内的一个判断点，不能把多个原文节点合成一道复合判断。
+- 评分器对 `source_coverage_incomplete` 不只标低置信，还输出“题目应收窄到哪个判断点”的 repair hint。
+- 成功标准：动态覆盖率不低于 v15，低摩擦分保持 4.5+，同时 `source_coverage_incomplete` 明显下降。
+
+## 基准信息
+
+| 字段 | 内容 |
+| --- | --- |
+| 运行日期 | 2026-05-29 |
+| 文章链接 | `https://mp.weixin.qq.com/s/UMr6ia1QubqOMw3aBUGbOw` |
+| 提取标题 | 和AI产品经理聊天，她说"我用Vibe coding做Demo"，我问她：怎么用hook？她说我一般用claude code |
+| 生成章节标题 | AI Coding 与 Hook 的工程边界 |
+| 清洗后正文长度 | 3884 字 |
+| 章节状态 | completed |
+| 临时报告 | `/tmp/shibei-quality-runs/UMr6ia1QubqOMw3aBUGbOw.json` |
+
+临时 JSON 只用于本次诊断，不进入正式测试集。后续若要复跑，应重新生成新的临时报告，并把关键指标追加到本文档。
+
+## 基准指标
+
+| 指标 | 当前值 |
+| --- | ---: |
+| 模型候选知识点 | 8 |
+| 保留知识点 | 7 |
+| 被过滤知识点 | 1 |
+| 候选题总数 | 27 |
+| 入池题总数 | 13 |
+| 平均每知识点入池题数 | 1.9 |
+| 达到 3 题的知识点 | 3 / 7 |
+| 低置信入池题 | 4 |
+| 未覆盖知识点 | 2 |
+
+### 每知识点入池题数分布
+
+| 入池题数 | 知识点数量 |
+| ---: | ---: |
+| 0 | 2 |
+| 1 | 0 |
+| 2 | 2 |
+| 3 | 3 |
+
+### 题型分布
+
+| 题型 | 候选题 | 入池题 |
+| --- | ---: | ---: |
+| multiple_choice | 8 | 6 |
+| scenario_judgment | 17 | 7 |
+| true_false | 2 | 0 |
+
+当前最大问题不是总题量绝对不足，而是题型覆盖和知识点覆盖不均衡：系统能为一部分知识点产出 3 道题，但另一些知识点被过滤到 0 道。
+
+## 知识点诊断
+
+| 知识点 | 结构角色 | 重要度 | 可考性 | 后端目标题数 | 候选题 | 入池题 | 主要问题 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Hook 的本质：控制器而非提示词 | main_claim | 5 | 5 | 3 | 3 | 3 | 达到题量，但全部是选择题，角度多样性一般 |
+| Hook 与 Prompt 的分工对比 | supporting_reason | 4 | 5 | 3 | 3 | 3 | 达到题量，但全部是选择题 |
+| 判断 Hook 使用的黄金法则 | method_step | 5 | 5 | 3 | 3 | 3 | 达到题量，全部是场景判断，其中 1 道低置信 |
+| 引入 Hook 的四个信号 | method_step | 4 | 5 | 3 | 6 | 0 | 有多道可用候选被 trust blocking 误杀；另有模型混淆 React Hook |
+| 四类实用 Hook 场景 | method_step | 4 | 4 | 2 | 5 | 0 | 后端目标本来只有 2；答案唯一性和来源支撑判断过严 |
+| AI 产品经理应具备的工程直觉 | boundary | 4 | 4 | 2 | 3 | 2 | 后端目标本来只有 2；未向 3 题补齐 |
+| Vibe Coding 与 Hook 的分工 | main_claim | 4 | 5 | 3 | 4 | 2 | 质量过滤/阻断导致少 1 道，入池题均为低置信 |
+
+## 被过滤知识点
+
+| 知识点 | 重要度 | 可考性 | 过滤原因 | 判断 |
+| --- | ---: | ---: | --- | --- |
+| Hook、CI、Prompt 的分工边界 | 5 | 5 | source_not_supported | 应保留。原文确实有这一节，但模型给出的 `sourceQuote` 拼接了不连续句子，导致后处理认为来源不支撑。 |
+
+这是本篇最关键的知识点遗漏。它不是因为动态上限裁剪，也不是因为低可考，而是因为知识点提取阶段没有保证 `sourceQuote` 是原文连续子串。
+
+## 第一性原理分析
+
+### 1. 为什么知识点不全
+
+这篇文章的主线至少应覆盖：
+
+- AI coding 让 demo 变快，但可控性不足。
+- Hook 是控制器，不是提示词。
+- Hook 与 prompt 的本质区别。
+- 什么时候该上 hook：从可运行到可复用。
+- 四个引入 hook 的信号。
+- 高频 hook 场景。
+- prompt / CLAUDE.md / hook / CI 的分工边界。
+- 产品经理需要补上的工程直觉。
+- vibe coding 负责起飞，hook 负责别偏航。
+
+当前系统基本覆盖了大多数主线，但漏掉了 `prompt / CLAUDE.md / hook / CI 的分工边界`。根因是：
+
+1. 模型提取到了这个知识点，说明候选生成不是主要问题。
+2. 后处理过滤掉了它，原因是 `source_not_supported`。
+3. 实际原文中有完整章节讲这件事，但模型给的引用不是稳定连续原文片段。
+
+所以这一类问题的修复方向不是放宽所有过滤，而是要求知识点提取阶段输出可定位的连续来源，或者在后处理阶段用标题/关键词重新定位原文段落。
+
+### 2. 为什么没有每个知识点 3 道题
+
+本轮数据证明，当前实现和 PRD 的理想目标还有偏差：
+
+#### 目标策略本身不是每点 3 题
+
+当前 `targetQuestionCountForPoint` 是动态策略：
+
+- 高可考、高价值、题角足够：3 题。
+- 普通高可考或高价值：2 题。
+- 其它：1 题。
+
+因此 `四类实用 Hook 场景` 和 `AI 产品经理应具备的工程直觉` 在后端目标层就只给了 2 题。它们不可能自然达到“每点 3 题”。
+
+#### 质量阻断把部分可复习题挡掉
+
+`引入 Hook 的四个信号` 生成了 6 道候选，其中前 3 道规则和 judge 都是 pass，但因为 trust 层写入了 `weak_source_support` / `weak_explanation_faithfulness` 到 `blockingReasons`，最终 0 题入池。
+
+这说明当前低置信和不可入池的边界过硬。只要题目结构合法、答案唯一、来源基本支撑，就应该优先低置信入池，而不是被 blocking 直接杀掉。
+
+#### 模型存在概念歧义
+
+`引入 Hook 的四个信号` 里有 3 道题被 judge 判为 React Hook 方向，和原文 AI agent Hook 无关。这说明 question prompt 还没有强约束：
+
+- 本文的 hook 指 Claude Code / AI agent lifecycle hook。
+- 禁止把 hook 理解为 React Hook、前端状态 Hook 或通用组件 Hook。
+
+#### 补题路径语义不清
+
+系统确实触发了 4 次 supplement，且没有 generation error。但 supplement 复用了 `rewrite: true` 路径，prompt 开头仍是“上一题没有通过质量检查，请重写”。这会让模型更像在修旧题，而不是按缺失类型补齐不同题型/不同角度。
+
+## 当前根因排序
+
+| 优先级 | 根因 | 影响 |
+| --- | --- | --- |
+| P0 | trust blocking 把弱支撑/弱解释直接当阻断 | 可用题被误杀，知识点变成 0 题 |
+| P0 | 知识点 `sourceQuote` 不保证连续可定位 | 关键知识点被 `source_not_supported` 过滤 |
+| P1 | 目标题数策略与 PRD 不一致 | 普通知识点天然只有 1-2 题 |
+| P1 | supplement 复用 rewrite prompt | 补题不能稳定补齐题型和角度 |
+| P1 | hook 概念未消歧 | 模型误出 React Hook 题 |
+| P2 | 题型多样性不足 | 达到 3 题的点也常集中在同一题型 |
+
+## 实验记录：代码与 Prompt 改动
+
+本节只记录这几轮围绕本单篇基准做过的出题系统改动。记录方式按实验报告组织，避免只留下“结果变好了”的结论，而看不到为什么改、改了哪里、验证了什么。
+
+### 实验 0：基准问题复现
+
+| 项目 | 内容 |
+| --- | --- |
+| 实验目的 | 复现“有知识点但题目覆盖不足”的问题，拆清楚到底是知识点漏了、候选题没生成，还是质量过滤误杀。 |
+| 样本 | `https://mp.weixin.qq.com/s/UMr6ia1QubqOMw3aBUGbOw` |
+| 关键观察 | 保留 7 个知识点、入池 13 题、3 题知识点 3 个、0 题知识点 2 个。 |
+| 第一性原理判断 | 用户复习价值来自“知识点完整 + 每点足够题型强化 + 解释页来源可信”。任一环节断掉，都会让用户觉得生成内容不完整或不可信。 |
+
+本轮没有改代码，只建立诊断口径：
+
+- 知识点层：看候选是否覆盖文章主线、是否被过滤、过滤原因是什么。
+- 出题层：看每个知识点的候选题、入池题、题型、低置信、阻断原因。
+- 质量层：看 blocked 是不是只发生在真正不可复习的问题上。
+
+### 实验 1：恢复“每个知识点尽量 3 题”
+
+| 项目 | 内容 |
+| --- | --- |
+| 假设 | 当前系统少题，不只是模型没生成，而是后端目标策略和补题语义没有真正按 PRD 的“每点 1-3 题”执行。 |
+| 改动类型 | Prompt + 入池选择器 + 补题策略 + 阻断边界。 |
+| 主要文件 | `backend/src/generation/generateQuestions.js`、`backend/src/generation/index.js`、`backend/src/generation/evaluateQuestions.js`、`backend/src/generation/prompts/questions.js` |
+| 验证指标 | 每知识点入池题数、3 题知识点数量、0 题知识点数量、题型覆盖、低置信比例。 |
+
+#### 1.1 目标题数策略改动
+
+原策略是动态目标：只有高价值、高可考、题角足够的知识点才给 3 题；普通点给 1-2 题。这样和 PRD 的“理想 3 题”存在天然偏差。
+
+改后策略：
+
+```js
+if (testabilityScore <= 2) return { count: 1, reason: "low_testability" };
+if (testabilityScore === 3 && importanceScore <= 2) return { count: 1, reason: "low_importance" };
+if (testabilityScore === 3 && angleCount === 0 && !["main_claim", "method_step", "supporting_reason"].includes(role)) {
+  return { count: 2, reason: "limited_angles" };
+}
+return { count: 3, reason: "default_three_question_target" };
+```
+
+设计意图：
+
+- 默认把可复习知识点推向 3 题。
+- 只有低可考、低重要度、角度明显不足的点才降级。
+- 降级必须记录原因，避免以后不知道少题是系统判断还是生成失败。
+
+#### 1.2 出题通用 Prompt 改动
+
+出题用户 prompt 增加了多题强化要求：
+
+```text
+请为每个知识点生成 targetQuestionCount 道候选题。
+targetQuestionCount 是根据该知识点价值动态给出的候选数量，不代表最终入池数量。
+每个知识点至少返回 1 道结构完整题，不要跳过任何知识点。
+当 targetQuestionCount 为 2 或 3 时，不要生成同质题：
+优先覆盖“理解核心判断”“辨析误区/边界”“迁移到具体场景”三个不同记忆角度，并尽量使用不同题型。
+preferredQuestionType 是推荐题型：优先使用它；如果另一种题型更自然、更能考理解，也可以改用其它允许题型。
+```
+
+这几个变化解决两个问题：
+
+- 不再把 `preferredQuestionType` 当硬约束，避免因为题型不匹配把可用题打掉。
+- 明确 2-3 题不是重复问法，而是不同记忆角度的强化。
+
+#### 1.3 题型和术语消歧 Prompt
+
+系统 prompt 和用户 prompt 增加了两类约束：
+
+```text
+同一知识点多道题必须考不同角度，不要重复问法。
+遇到多义术语时，必须按文章语境理解，不要套用其它领域含义。
+```
+
+补题 prompt 中进一步加入本文样本暴露出的 `hook` 消歧：
+
+```text
+本文中的术语必须按文章语境理解；
+例如 hook 指 AI agent / Claude Code lifecycle hook，不是 React Hook。
+```
+
+设计意图：
+
+- 本文的 `hook` 是 AI agent / Claude Code 生命周期 hook，不是 React Hook。
+- 这个问题如果只靠 judge 事后发现，会浪费候选题；应该在生成前就消歧。
+
+#### 1.4 补题 Prompt 从 rewrite 拆出
+
+原逻辑虽然有 supplement，但语义仍像“上一题没过审后的重写”，会让模型围绕旧题修补，而不是补缺失题型/角度。
+
+新增 supplement prompt：
+
+```text
+这是补题任务，不是重写失败题。请只为给定知识点补充 N 道新题，用来补齐缺失的题型和记忆角度。
+已有题目和缺口：...
+要求：
+- 不要复用已有题干、选项结构或相同场景。
+- 优先补齐缺失题型：multiple_choice、true_false、scenario_judgment。
+- 优先补齐缺失角度：理解核心判断、辨析误区/边界、迁移到具体场景。
+- 如果某个题型不自然，可以换成更自然的题型，但必须明确覆盖新的考察角度。
+```
+
+同时补题上下文从后端生成：
+
+```text
+target_question_count:3;
+current_reviewable_count:1;
+missing_question_types:true_false|scenario_judgment;
+question_angles:...;
+existing_reviewable_questions:multiple_choice:已有题干
+```
+
+设计意图：
+
+- 模型知道“当前已经有什么题”。
+- 模型知道“还缺什么题型/角度”。
+- 防止补题变成同一问题的改写。
+
+#### 1.5 阻断边界改动
+
+原 trust 层会把 `weak_source_support`、`weak_explanation_faithfulness` 等弱信号直接写进 `blockingReasons`，导致结构合法、可复习的题被误杀。
+
+改后原则：
+
+| 类型 | 处理 |
+| --- | --- |
+| 结构错误、正确答案缺失、答案不唯一 | blocked |
+| 来源完全找不到、完全不支撑 | blocked |
+| 来源偏弱、解释偏弱、上下文偏弱 | low confidence |
+| 题型不完全匹配 | low confidence |
+| judge 建议 rewrite 但结构合法 | low confidence |
+
+设计意图：
+
+- blocked 只表示“用户不应该复习这道题”。
+- low confidence 表示“可以复习，但需要质量工作台和人工抽查关注”。
+
+#### 1.6 实验 1 结果
+
+| 指标 | 基准 | 实验 1 |
+| --- | ---: | ---: |
+| 保留知识点 | 7 | 6 |
+| 入池题 | 13 | 13 |
+| 平均每点题数 | 1.9 | 2.2 |
+| 3 题知识点 | 3 | 4 |
+| 0 题知识点 | 2 | 1 |
+| 低置信题 | 4 | 10 |
+
+结论：
+
+- 目标策略和补题 prompt 方向正确，3 题覆盖有提升。
+- 但 `Hook 与 CI、Prompt、项目规则的分工` 仍然 0 题，说明根因不只在出题 prompt，而在来源上下文定位和知识点 sourceQuote 可追溯性。
+
+### 实验 2：来源上下文定位与 sourceQuote 修复
+
+| 项目 | 内容 |
+| --- | --- |
+| 假设 | 候选题已经生成，但进不了复习池，根因是来源链路不稳定：知识点 `sourceQuote` 不是连续原文，题目来源上下文也不一定能支撑答案。 |
+| 改动类型 | 确定性规则为主，Prompt 不继续扩写。 |
+| 主要文件 | `backend/src/generation/filterKnowledgePoints.js`、`backend/src/generation/evaluateQuestions.js`、`backend/src/generation/index.js`、`backend/src/generation/tests/qualityReport.js` |
+| 验证指标 | 被过滤知识点、blocked 题、每点 3 题覆盖、sourceContextSelection 方法分布、低置信原因。 |
+
+#### 2.1 为什么这一轮不继续堆 Prompt
+
+第一性原理判断：
+
+> 解释页的来源片段必须来自原文，并且能支撑用户判断正确答案。这个事实不能交给模型“说它支撑”，而应该由后端根据原文确定性选择。
+
+所以本轮没有继续让模型“更认真地选来源”，而是让后端自己做：
+
+- 原文段落定位。
+- 同小节相关段落回退。
+- 关键词相关段落回退。
+- 选择方法、分数、回退原因的结构化日志。
+
+#### 2.2 知识点 sourceQuote 修复
+
+问题：
+
+- 模型提取到了 `Hook、Prompt、CLAUDE.md、CI 的分工边界`。
+- 但给出的 `sourceQuote` 是不连续拼接句。
+- 旧过滤器找不到连续来源，于是 `source_not_supported`，知识点被删。
+
+改动：
+
+```js
+const repairedPoint = repairPointSourceQuote(normalizePoint(candidate), cleanedText);
+```
+
+修复策略：
+
+1. 如果 `sourceQuote` 已经能在原文中定位，保持不动。
+2. 如果不能定位，用 `title + keyClaim + summary + coverageReason` 抽关键词。
+3. 在原文句子窗口中找最相关、长度合适、能支撑该知识点的连续片段。
+4. 找到后回填 `sourceQuote`，并记录：
+   - `originalSourceQuote`
+   - `sourceQuoteWasRepaired`
+5. 找不到才过滤。
+
+设计意图：
+
+- 保留模型已经识别出的关键知识点。
+- 把“来源是否连续可追溯”从模型输出质量问题，转成后端可修复问题。
+
+#### 2.3 题目来源上下文选择 v2
+
+旧逻辑：
+
+- 优先找包含知识点 `sourceQuote` 的段落。
+- 如果 `sourceQuote` 很短或段落不够支撑，题目会因为来源弱被低分甚至阻断。
+
+新逻辑：
+
+```js
+const fallback = selectFallbackSourceContext({ paragraphs, anchorIndexes, question, point });
+if (bestAnchor && shouldPreferAnchorContext(bestAnchor, fallback)) return bestAnchor;
+return best scored candidate;
+```
+
+候选上下文来源：
+
+| 方法 | 含义 |
+| --- | --- |
+| `source_quote_anchor` | 直接命中 sourceQuote 的完整段落 |
+| `source_quote_anchor_expanded` | sourceQuote 段落过短，向前后段扩展 |
+| `source_quote_anchor_sentence_window` | 长段落内按句子窗口裁剪 |
+| `same_section_relevance` | sourceQuote 命中了，但该段不够支撑题目；在同小节内找更相关段落 |
+| `keyword_relevance_fallback` | sourceQuote 找不到，用题干、答案、keyClaim、标题关键词定位原文 |
+
+每道题新增诊断：
+
+```json
+{
+  "method": "same_section_relevance",
+  "paragraphIndex": 12,
+  "score": 123,
+  "relevanceScore": 5,
+  "anchorMatched": false,
+  "fallback": true,
+  "fallbackReason": "anchor_context_weak"
+}
+```
+
+设计意图：
+
+- 不再把短引用当成用户可见来源。
+- 解释页展示的是能帮助理解题目的上下文段落。
+- 每次回退都有日志，方便质量工作台审查。
+
+#### 2.4 解释一致性和阻断日志
+
+新增字段：
+
+```js
+primaryBlockingReason
+repairHint
+```
+
+示例修复建议：
+
+| primaryBlockingReason / confidenceReason | repairHint |
+| --- | --- |
+| `structure_invalid` | 修复题目结构、选项数量或正确答案字段 |
+| `answer_not_unique` | 重写选项，确保只有一个答案能被来源和正确理解同时支撑 |
+| `weak_source_support` blocked | 重新选择能直接支撑正确答案的原文上下文 |
+| `weak_explanation_faithfulness` | 收窄解释，只解释来源中能支撑的判断 |
+| `weak_context_relevance` | 换用更贴近题干和正确答案的原文段落 |
+
+设计意图：
+
+- 后续人工审查时，不只看到“低置信”，还能知道应该修 prompt、修选项、修解释，还是修来源定位。
+
+#### 2.5 实验 2 结果
+
+| 指标 | 实验 1 | 实验 2 |
+| --- | ---: | ---: |
+| 保留知识点 | 6 | 7 |
+| 被过滤知识点 | 0 | 0 |
+| 入池题 | 13 | 21 |
+| 平均每点题数 | 2.2 | 3.0 |
+| 3 题知识点 | 4 | 7 |
+| 0 题知识点 | 1 | 0 |
+| blocked 题 | 多个 | 0 |
+| 低置信题 | 10 | 18 |
+
+结论：
+
+- 来源链路修复有效，关键知识点重新进入复习池。
+- “每个知识点 3 题”的数量目标达成。
+- 但低置信显著升高，说明下一步不能再追求题量，而要评估低置信题的真实可复习价值。
+
+### 当前实验结论
+
+这几轮实验把问题从“系统出不够题”推进到了更准确的阶段：
+
+1. **题量问题基本不是模型能力问题。**
+   在目标策略、补题语义和来源定位修复后，同一篇文章可以做到 7 个知识点、每点 3 题。
+
+2. **真正的质量瓶颈转移到了可信度。**
+   21 道入池题中 18 道低置信，说明接下来要验证的是：这些题是否真的能从来源上下文判断答案，而不是形式上可入池。
+
+3. **Prompt 只解决生成意图，不能替代事实校验。**
+   多题型、语境消歧、补题角度适合写进 prompt；但来源片段是否来自原文、是否支撑答案，必须由后端规则和质量工作台复盘。
+
+4. **下一轮实验应从“更多题”转向“更可信的题”。**
+   重点不再是继续放宽阻断，而是人工审查低置信题、减少不必要的 source backfill、提高单知识点内题型多样性。
+
+## 下一轮修复建议
+
+### A. 修正低置信与阻断边界
+
+只把这些问题作为 blocked：
+
+- 结构错误。
+- 正确答案不存在或不在选项中。
+- 答案不唯一。
+- 来源完全找不到或完全不支撑。
+- 题目明显偏离知识点。
+
+这些问题应进入 low confidence，而不是 blocked：
+
+- 来源支撑偏弱但存在。
+- 解释忠实度偏弱。
+- 上下文相关性偏弱。
+- 题型不完全匹配。
+- judge 建议 rewrite 但结构合法。
+
+### B. 知识点来源定位改为连续片段优先
+
+知识点提取 prompt 需要明确：
+
+- `sourceQuote` 必须是原文连续子串。
+- 不允许拼接多个段落。
+- 如果一个知识点来自一整节，应选该节中最能代表主张的一段连续句子。
+
+后处理可以增加二次定位：
+
+- 如果 `sourceQuote` 不命中原文，尝试用 `title + keyClaim` 找到最相关段落。
+- 找到后回填 `sourceQuote`，而不是直接过滤。
+- 回填失败才过滤。
+
+### C. 把补题 prompt 从 rewrite 中拆出来
+
+新增独立 supplement prompt，语义改为：
+
+- 当前知识点已有哪些题。
+- 还缺哪些题型。
+- 还缺哪些记忆角度。
+- 请补齐缺失题，而不是重写旧题。
+
+补题输入应包含已入池题 stem，避免重复。
+
+### D. 目标题数向 PRD 靠齐
+
+如果产品目标是“每个知识点理想 3 题”，建议改成：
+
+- 默认目标：3 题。
+- 明确低可考点：降为 1-2 题，并记录 `targetQuestionCountReason`。
+- 质量报告必须统计“降级原因”，否则后续无法知道少题是系统判断还是生成失败。
+
+### E. 加入文章级术语消歧
+
+本文暴露了 `hook` 的歧义。可以在知识点或出题 prompt 里加入：
+
+- 本文 hook 指 AI agent / Claude Code lifecycle hook。
+- 不得解释为 React Hook。
+- 如果术语有多个行业含义，以文章语境为准。
+
+## 后续迭代对比模板
+
+每轮改动后，在这里追加一行：
+
+| 日期 | 改动方向 | 保留知识点 | 入池题 | 平均每点题数 | 3题知识点 | 0题知识点 | 低置信题 | 主要改善 | 新问题 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 2026-05-29 | 当前基准 | 7 | 13 | 1.9 | 3 | 2 | 4 | 已能部分多题入池 | 关键知识点被过滤；trust 阻断过硬；补题语义不清 |
+| 2026-05-29 | 默认 3 题目标 + 低置信入池 + 独立补题 prompt | 6 | 13 | 2.2 | 4 | 1 | 10 | 0 题知识点减少；true_false 入池从 0 增至 4；补题进入独立 supplement 阶段 | 知识点数少 1 个；低置信题显著增加；`Hook 与 CI、Prompt、项目规则的分工` 仍 0 题 |
+| 2026-05-29 | 来源上下文定位 v2 + 知识点 sourceQuote 修复 | 7 | 21 | 3.0 | 7 | 0 | 18 | 关键知识点全部保留；每个知识点均达到 3 题；blocked 降为 0 | 低置信比例过高；题型在单个知识点内仍偏集中；大量题依赖上下文回填 |
+
+## 2026-05-29 第一轮覆盖率修复复测
+
+本轮按三个方向修改后复测：
+
+- 可复习知识点默认目标改为 3 题，只有低可考或低重要度才降级，并记录降级原因。
+- 弱来源、弱解释、弱上下文和题型不匹配不再默认作为强阻断，而是进入低置信原因。
+- 补题从 `rewrite` 语义拆成独立 `supplement` 语义，明确要求补齐缺失题型和记忆角度。
+
+临时报告：
+
+- JSON：`/tmp/shibei-quality-runs/UMr6ia1QubqOMw3aBUGbOw-after-20260529T141745Z.json`
+- Markdown：`/tmp/shibei-quality-runs/UMr6ia1QubqOMw3aBUGbOw-after-20260529T141745Z.md`
+
+### 复测指标
+
+| 指标 | 基准 | 修复后 | 变化 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 6 | -1 |
+| 被过滤知识点 | 1 | 0 | 改善 |
+| 候选/评估题总数 | 27 | 29 | +2 |
+| 入池题总数 | 13 | 13 | 持平 |
+| 平均每知识点入池题数 | 1.9 | 2.2 | 改善 |
+| 达到 3 题的知识点 | 3 | 4 | 改善 |
+| 0 题知识点 | 2 | 1 | 改善 |
+| 低置信入池题 | 4 | 10 | 增加 |
+| true_false 入池题 | 0 | 4 | 改善 |
+
+### 本轮有效的地方
+
+1. **目标题数策略真正向 PRD 靠近了。**
+   复测中 6 个保留知识点全部目标为 3 题，`pointDiagnostics.targetQuestionCountReason` 均为 `default_three_question_target`。这说明少题不再被“后端目标本来只有 1-2”掩盖。
+
+2. **题型覆盖恢复了一部分。**
+   入池题从只有 `multiple_choice` / `scenario_judgment`，变成 `multiple_choice: 6`、`true_false: 4`、`scenario_judgment: 3`。其中关键修复是判断题的答案唯一性：原来 `成立` 与 `不成立` 被近似文本规则误判为重复，导致 true/false 题大量被 `answer_not_unique` 误杀。
+
+3. **补题路径已经从重写变成补齐。**
+   生成记录中出现独立 `question_supplement` / `judge_supplement` 阶段，说明补题不再复用“失败题重写”的入口。补题虽然还没把所有点补满，但链路语义已经正确。
+
+4. **0 题知识点减少。**
+   基准有 2 个知识点 0 题，修复后降到 1 个。`引入 Hook 的四个信号` 已从 0 题恢复到 3 题，并覆盖选择、判断和场景判断三种题型。
+
+### 仍然暴露的问题
+
+1. **总入池题数没有增加。**
+   虽然平均每点题数从 1.9 到 2.2，但总入池仍是 13。原因是本轮保留知识点从 7 变成 6，说明知识点提取仍存在模型波动；后续不能只看总题数，要同时看“每点题数”和“知识点覆盖完整性”。
+
+2. **低置信比例明显升高。**
+   低置信题从 4 增到 10。这符合“弱来源/弱解释先进池”的方向，但也意味着下一轮必须用人工审查判断这些低置信题到底是可接受补强，还是把质量风险转嫁给用户。
+
+3. **`Hook 与 CI、Prompt、项目规则的分工` 仍然 0 题。**
+   这个点本轮有 6 道候选、3 道 pass，但最终 6 道都被阻断，主要集中在 `weak_source_support`、`weak_explanation_faithfulness` 和 `question_type_mismatch`。这说明问题已经从“没有生成题”收敛为“来源定位/解释一致性诊断过硬或上下文不准”。
+
+4. **`Vibe Coding 与 Hook 的关系` 仍只入池 1 题。**
+   它生成了 7 道候选，但 blocked 6 道，问题同样集中在弱来源、弱解释、题型不匹配和少量答案唯一性。这个点适合作为下一轮“来源上下文选择 + 解释一致性”的重点样例。
+
+### 下一轮判断
+
+这轮改动方向是对的，但还没有达到“5 个以上知识点达到 3 题”的目标。下一轮不应再继续扩大低置信放行，而应集中修：
+
+- 来源上下文是否选到了真正支撑题目的段落。
+- judge / 规则对 `weak_source_support` 和 `weak_explanation_faithfulness` 的判定是否过硬。
+- 同一知识点多个候选题是否因为相似度或解释措辞被一起打掉。
+
+下一轮成功标准建议：
+
+- `Hook 与 CI、Prompt、项目规则的分工` 至少 2 题入池。
+- `Vibe Coding 与 Hook 的关系` 至少 2 题入池。
+- 3 题知识点保持 4 个以上，并争取到 5 个。
+- 低置信题数量不再继续明显上升，人工抽查可接受率不下降。
+
+## 2026-05-29 第二轮可信度修复复测
+
+本轮没有继续简单放宽质量门槛，而是回到题目能否被用户理解的第一性原理：解释页展示的来源上下文必须能支撑唯一答案和解释。修复重点是两层：
+
+- 题目来源上下文不再只依赖知识点 `sourceQuote`，而是结合题干、正确答案、正确理解、知识点标题和 `keyClaim` 重新选择更相关的原文段落。
+- 知识点过滤前，如果 `sourceQuote` 不是原文连续子串，先用知识点标题、关键主张和关键词回到原文中修复连续来源片段，修复失败才过滤。
+
+临时报告：
+
+- JSON：`/tmp/shibei-quality-runs/UMr6ia1QubqOMw3aBUGbOw-after-20260529T151851Z.json`
+- Markdown：`/tmp/shibei-quality-runs/UMr6ia1QubqOMw3aBUGbOw-after-20260529T151851Z.md`
+
+### 复测指标
+
+| 指标 | 第一轮修复后 | 第二轮修复后 | 变化 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 6 | 7 | +1 |
+| 被过滤知识点 | 0 | 0 | 持平 |
+| 候选/评估题总数 | 29 | 24 | -5 |
+| 入池题总数 | 13 | 21 | +8 |
+| 平均每知识点入池题数 | 2.2 | 3.0 | 改善 |
+| 达到 3 题的知识点 | 4 | 7 | 改善 |
+| 0 题知识点 | 1 | 0 | 改善 |
+| 低置信入池题 | 10 | 18 | 增加 |
+| blocked 题 | 多个弱来源/弱解释阻断 | 0 | 改善 |
+
+### 本轮有效的地方
+
+1. **知识点保留回到完整主线。**
+   本轮保留 7 个知识点，被过滤知识点为 0。上一轮缺失或 0 题的 `Hook、Prompt、CLAUDE.md、CI 的分工明确` 回到复习池，并拿到 3 道题。这说明此前的主要问题不是“这类知识点不适合复习”，而是 `sourceQuote` 不连续导致来源过滤误杀。
+
+2. **每个知识点都达到 3 题。**
+   `questionCountDistribution` 变为 `{ "3": 7 }`，7 个保留知识点全部命中 PRD 理想目标。这验证了“默认 3 题目标 + 独立补题 + 来源定位修复”这条路径是有效的。
+
+3. **blocked 原因归零。**
+   本轮 `blockingReasonFrequency` 为空，`primaryBlockingReasonFrequency` 全部为 `none`。弱来源、弱解释、弱上下文没有再被直接当成不可复习阻断，而是进入低置信诊断。
+
+4. **来源定位从短锚点扩展为上下文选择。**
+   24 道评估题里，来源选择方法分布为：`same_section_relevance: 15`、`source_quote_anchor_expanded: 4`、`keyword_relevance_fallback: 3`、`none: 2`。这说明系统已经不再只机械匹配 `sourceQuote`，而是能在同一小节或关键词相关段落里寻找更能解释题目的上下文。
+
+### 新问题和风险
+
+1. **低置信比例过高。**
+   21 道入池题里有 18 道低置信。主要原因是 `source_context_backfilled: 18`，其次有 `weak_source_support: 3`、`weak_misconception_support: 4`、`judge_rewrite: 4`、`weak_distractors: 4`。这说明数量覆盖已经恢复，但质量风险被集中转移到了“来源回填题”上。下一步必须人工抽查这些低置信题，确认它们是“可接受的弱支撑”，还是来源定位仍然不够准。
+
+2. **同一知识点内题型仍偏集中。**
+   虽然总题型覆盖变好，但单点内仍有明显集中：例如 `Hook 是在 AI agent 关键节点自动执行命令的控制机制` 3 道全是选择题，`引入 Hook 的四个信号` 3 道全是场景判断，`产品经理需要补上的工程直觉` 3 道全是真假判断。PRD 期待的是理解、辨析、应用多角度强化，而不是同一题型堆满 3 道。
+
+3. **`sourceContextSelection.method = none` 仍出现。**
+   评估题中有 2 道显示 `none`。虽然最终没有阻断，但这类题需要在质量工作台里重点审查：如果来源上下文为空或不可追溯，应该进入 blocked；如果只是诊断字段丢失，则需要补齐日志。
+
+### 第一性原理结论
+
+这轮结果证明，上一轮“候选题进不了复习池”的核心根因不是模型完全不会出题，而是来源链路的事实来源不稳定：
+
+1. 知识点阶段的 `sourceQuote` 可能不是原文连续片段。
+2. 题目阶段只靠短锚点无法保证解释页上下文支撑题目。
+3. trust 层把“来源弱/解释弱”过早归为 blocked，导致可复习题被误杀。
+
+第二轮修复后，系统能把更多题放回复习池，但这只是把“能不能复习”修到合格线。下一轮真正要看的是：这些低置信题是否真的能帮助用户理解原文，而不是为了满足 3 题目标而牺牲解释可信度。
+
+### 下一轮建议
+
+- 对本轮 18 道低置信题做人工审查，优先检查 `source_context_backfilled` 题的来源上下文是否足够支撑答案。
+- 调整补题目标，不只要求补满 3 题，还要补齐不同题型和不同记忆角度；同一知识点内三题不能全是同一题型，除非该知识点天然只适合一种题型。
+- 把 `sourceContextSelection.method = none` 的题列为 P0 诊断项：要么补齐选择日志，要么阻断入池。
+- 在质量报告中增加“单知识点题型多样性”指标，而不仅统计全章题型分布。
+
+## 判断下一轮是否有效
+
+下一轮如果有效，至少应看到：
+
+- `Hook、CI、Prompt 的分工边界` 被保留。
+- `引入 Hook 的四个信号` 不再是 0 题。
+- `四类实用 Hook 场景` 至少有 2 道入池题。
+- 3 题知识点数量从 3 个提升到 5 个以上。
+- 入池题型中出现更多 `true_false` 或更明确的辨析题。
+- 新增题不显著增加来源不支撑、答案不唯一、解释错误。
+
+这篇文章后续作为“出题覆盖率和质量过滤”的固定单篇回归样本使用。它不替代批量 baseline，但适合在每次小改动后快速观察方向是否正确。
+
+## 2026-05-29 第三轮诊断基础设施复测
+
+本轮不是继续放宽入池，而是把五阶段路线图里的前三个诊断能力先落地：低置信分层、来源精准度、单知识点记忆角度。目标是让下一轮人工审查能明确判断：题目到底是安全低置信、需要重写，还是应该阻断。
+
+实验产物：
+
+- JSON：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/runs/20260529-173826-v4-trust-diagnostics.json`
+- CSV：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/reviews/20260529-173826-v4-trust-diagnostics.csv`
+- Analysis：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/analysis/20260529-173826-v4-trust-diagnostics.md`
+
+### 本轮假设
+
+第二轮已经证明“默认 3 题 + 来源定位修复”能恢复覆盖率，但低置信比例过高。第三轮的假设是：不要再用单一 `low` 判断质量，而要把低置信拆成可复盘层级，并把“来源能支撑”和“来源是否精准”拆开评分。
+
+### Prompt 改动
+
+- 出题 schema 新增 `memoryAngle`，固定为：
+  - `core_understanding`
+  - `misconception_boundary`
+  - `scenario_application`
+- 出题 prompt 明确：同一知识点多道题要覆盖不同记忆角度，不只是换题型。
+- 补题 prompt 从“缺失题型”扩展为“缺失题型 + 缺失记忆角度”，要求补齐不同理解路径。
+
+### 确定性规则改动
+
+- 新增 `confidenceTier`：
+  - `high_confidence`
+  - `safe_low_confidence`
+  - `needs_rewrite`
+  - `should_block`
+- 来源选择器新增：
+  - `sourcePrecisionScore`
+  - `sourceSpecificityScore`
+  - `sourceReuseCount`
+  - `sourceContextSelection`
+- 来源复用不再作为硬阻断，而是记录到报告 Top 5，交给人工审查判断是否过泛。
+- 入池选择优先覆盖不同 `memoryAngle`，再覆盖不同题型；硬去重只保留“题干近重复”作为底线。
+
+### 复测指标
+
+| 指标 | 第二轮修复后 | 第三轮复测 | 变化 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题总数 | 21 | 20 | -1 |
+| 平均每知识点入池题数 | 3.0 | 2.9 | 略降 |
+| 达到 3 题的知识点 | 7 | 6 | -1 |
+| 0 题知识点 | 0 | 0 | 持平 |
+| 低置信题 | 18 | 5 | 明显下降 |
+| 低置信比例 | 85.7% | 25% | 明显下降 |
+| blocked 原因 | 0 | `answer_not_unique: 4` | 阻断重新集中到答案唯一性 |
+| 平均来源精准度 | 未统计 | 4.8 | 新增指标 |
+
+### 本轮有效的地方
+
+1. **低置信不再泛滥。**
+   入池题从 21 道降到 20 道，但低置信从 18 道降到 5 道。说明“精准来源回填不自动降为 low”的校准有效，系统不再把所有后端定位过的来源都视为风险。
+
+2. **低置信分层更可解释。**
+   20 道入池题中，`high_confidence: 15`、`safe_low_confidence: 2`、`needs_rewrite: 3`。下一轮人工审查可以优先看 `needs_rewrite`，而不是平均用力检查所有 low。
+
+3. **来源精准度整体较好。**
+   平均 `sourcePrecisionScore = 4.8`，说明当前选择器通常能找到足够精准的原文上下文。来源问题没有消失，但已经从“找不到/不支撑”变成“是否复用过多、是否最小充分”。
+
+4. **记忆角度覆盖明显更均衡。**
+   20 道入池题中，`core_understanding: 4`、`misconception_boundary: 8`、`scenario_application: 8`。这比只看题型更接近 PRD 想要的“理解、辨析、应用”强化。
+
+### 新问题和风险
+
+1. **一个知识点只有 2 题。**
+   `实用Hook场景：改后自动整理` 最终只有 2 道入池题，主要因为该点有 2 道候选被 `answer_not_unique` 阻断。下一轮不应放宽答案唯一性，而应优化该类题的选项构造。
+
+2. **题型仍然偏向选择题和场景判断。**
+   本轮入池题型是 `multiple_choice: 9`、`scenario_judgment: 11`，没有 `true_false` 入池。记忆角度已经多样，但题型层面仍有偏科。
+
+3. **来源复用仍需人工判断。**
+   来源复用 Top 1 是 `paragraph:28`，被 4 道题使用；另有两个段落各被 3 道题使用。它们可能是合理的同一小节集中支撑，也可能意味着来源选择仍偏向大段落。这个问题不能靠机器分数单独判断，需要人工看 CSV。
+
+4. **候选阻断重新集中到答案唯一性。**
+   `blockingReasonFrequency` 只有 `answer_not_unique: 4`。这是一件好事，因为阻断边界收敛了；但也说明下一轮最具体的生成修复点是“干扰项边界”和“唯一答案表达”。
+
+### 第一性原理结论
+
+第三轮说明：出题系统已经从“覆盖率不够”进入“可信度可分层诊断”的阶段。下一步最值得做的不是继续调大题量，而是人工检查这 5 道低置信和 4 道 `answer_not_unique` 阻断题，确认机器分层是否符合人的判断。
+
+如果人工发现 `needs_rewrite` 大多确实不可直接复习，就应把这层从入池降级为候选重写；如果人工发现 `safe_low_confidence` 大多可接受，则可以保留它作为复习池的灰度层。
+
+### 下一轮实验
+
+- 人工标注本轮 CSV 中的 5 道低置信题和 4 道 `answer_not_unique` 阻断题。
+- 专门分析 `paragraph:28` 的 4 次复用是否合理。
+- 若主要 reject 来自答案唯一性，下一轮做“边界/分工题选项构造模板”。
+- 若主要 reject 来自来源复用过泛，下一轮做“最小充分上下文裁剪 + 同段复用上限”。
+
+## 2026-05-29 第四轮：来源片段 v4 最小充分证据
+
+本轮针对用户在质量工作台里指出的更本质问题：来源片段虽然“能支撑答案”，但经常复用同一大段原文。这不符合解释页的学习目标。解释页来源不是为了证明模型没瞎编，而是为了帮助用户快速回到原文关键位置，重新理解这道题为什么成立。
+
+实验产物：
+
+- 失败记录 JSON：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/runs/20260529-183103-v5-source-minimality.json`
+- 中间复测 JSON：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/runs/20260529-184224-v5-source-minimality-rerun.json`
+- 裁剪复测 JSON：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/runs/20260529-184723-v5-source-minimality-crop.json`
+- 主结果 JSON：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/runs/20260529-185620-v5-source-minimality-strict-overlap.json`
+- 主结果 CSV：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/reviews/20260529-185620-v5-source-minimality-strict-overlap.csv`
+- 主结果 Analysis：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/analysis/20260529-185620-v5-source-minimality-strict-overlap.md`
+
+### 本轮假设
+
+来源选择不能只问“这段能不能支撑答案”，还要问“这是解释这道题所需的最小充分证据吗”。如果系统默认返回整段上下文，即使答案可信，用户也会在解释页重新面对一大块原文，复习效率下降。
+
+### Prompt 改动
+
+本轮没有新增专用模型调用，也没有大改出题 prompt。核心选择是先用确定性规则修来源，不继续依赖模型自己给出更精准的 `sourceSnippet`。
+
+### 确定性规则改动
+
+- 来源窗口从“完整段落优先”改为“最小充分证据优先”。
+- 对长段落先按题干、正确答案、正确理解、知识点标题和 `keyClaim` 做关键词定位，再按句子边界裁剪。
+- `sourceSnippet` 必须能在清洗后原文中定位；只存在于模型生成的 `sourceQuote` 中不再算有效来源，避免 `……` 这类模型拼接引用进入解释页。
+- 新增来源诊断字段：
+  - `sourceMinimalityScore`
+  - `sourceEvidenceRole`
+  - `sourceOverlapRatio`
+  - `sourceOverlapGroupId`
+- 修正 overlap 分组口径：只有文本重叠超过 70% 才进入同一 overlap group，弱相似只记录比例，不再误报为来源复用。
+
+### 复测过程
+
+| 轮次 | 结果 | 判断 |
+| --- | --- | --- |
+| `v5-source-minimality` | 模型返回不可解析 JSON | 保存失败产物，不作为质量结论 |
+| `v5-source-minimality-rerun` | 7 知识点 / 21 题 / 平均最小化 2.9 | 覆盖率好，但来源仍偏大段 |
+| `v5-source-minimality-crop` | 6 知识点 / 16 题 / 平均最小化 4.5 | 裁剪有效，但暴露 `sourceQuote` 省略号问题 |
+| `v5-source-minimality-strict-overlap` | 7 知识点 / 20 题 / 平均最小化 4.5 | 本轮主结果，覆盖率和来源最小化达到较好平衡 |
+
+### 主结果指标
+
+| 指标 | 第三轮 | 第四轮主结果 | 变化 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题总数 | 20 | 20 | 持平 |
+| 平均每知识点入池题数 | 2.9 | 2.9 | 持平 |
+| 达到 3 题的知识点 | 6 | 6 | 持平 |
+| 0 题知识点 | 0 | 0 | 持平 |
+| 低置信题 | 5 | 11 | 上升 |
+| 低置信比例 | 25% | 55% | 上升 |
+| 平均来源精准度 | 4.8 | 4.9 | 略升 |
+| 平均来源最小化 | 未统计 | 4.5 | 新增且达标 |
+| 主要阻断原因 | `answer_not_unique: 4` | `answer_not_unique: 3` | 基本持平 |
+
+### 本轮有效的地方
+
+1. **大段来源问题明显收敛。**
+   来源片段平均最小化达到 4.5，说明解释页不再默认返回 450-500 字的大段上下文。Hook 定义、生命周期、prompt vs hook 对比这类题，已经能定位到更短的关键证据。
+
+2. **覆盖率没有因裁剪来源明显下降。**
+   仍然保留 7 个知识点、20 道入池题，6 个知识点达到 3 题，0 题知识点仍为 0。这说明“来源更短”没有把系统拉回少题状态。
+
+3. **来源必须来自原文的底线更清楚。**
+   裁剪复测暴露出模型 `sourceQuote` 可能含省略号或非连续拼接。严格原文验证后，这类片段不会再直接进入用户可见解释页。
+
+4. **来源诊断更可复盘。**
+   现在可以同时看段落复用和文本重叠复用，不会只凭段落 index 判断。overlap group 加阈值后，报告不再把弱相似误报为同一来源大组。
+
+### 仍然存在的问题
+
+1. **同一小节内来源仍会集中复用。**
+   主结果里 `paragraph:18` 被 5 道题使用，`source-7` overlap group 覆盖 4 道题。抽查发现它集中在“什么时候需要 hook：从可运行到可复用”这一小节。这里的问题已经不是“返回整篇大段”，而是多个题都围绕同一个小节证据，没有进一步分散到定义、信号、例子、边界的不同句子。
+
+2. **低置信比例回升。**
+   低置信从第三轮 25% 回升到 55%。这不一定表示质量变差，因为本轮对来源更严格，弱来源/弱解释会更诚实地暴露出来。但下一步必须人工抽查这些 low 题，确认它们是可接受的 `safe_low_confidence`，还是应该进入重写。
+
+3. **题型仍偏选择题和场景判断。**
+   主结果题型为 `multiple_choice: 10`、`scenario_judgment: 9`、`true_false: 1`。记忆角度比较均衡，但题型层仍不够丰富。
+
+### 第一性原理结论
+
+本轮证明，解释页来源的正确目标应该分成三层：
+
+1. **可信**：来源必须来自原文，并且支撑答案。
+2. **精准**：来源应匹配当前题意，而不是只匹配知识点标题。
+3. **最小充分**：来源应尽量短，但足够解释答案和关键误区。
+
+第四轮已经把系统从“可信 + 大段上下文”推进到“可信 + 较精准 + 较短证据”。剩下的问题是“同一小节多题如何分配不同证据块”。这需要下一轮继续做原文结构块，而不是再单纯调短字符串长度。
+
+### 下一轮实验
+
+- 做 `sourceBlocks`：把正文显式切成 heading / paragraph / sentence window，并标注 definition、mechanism、contrast、example、boundary、method。
+- 每个知识点绑定 `primaryEvidenceText`、`supportingExampleText` 和 `contextSectionTitle`，让题目来源优先从对应证据块选择。
+- 对同一知识点的 2-3 道题增加“证据块多样性”约束：同点多题不应全部复用同一句或同一个短窗口。
+- 人工审查本轮 low 题，重点看 `paragraph:18` 与 `source-7` 这组来源是否真的过度复用。
+
+## 2026-05-29 第五轮：sourceBlocks 与证据块分配
+
+本轮继续上一轮结论：只把来源裁短还不够，系统需要知道“这道题用的是原文里的哪一个证据块”。目标是让同一知识点的多道题尽量绑定到不同的原文节点，减少同小节内的证据集中复用。
+
+实验产物：
+
+- JSON：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/runs/20260529-191215-v6-source-blocks-evidence-diversity.json`
+- CSV：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/reviews/20260529-191215-v6-source-blocks-evidence-diversity.csv`
+- Analysis：`quality-test-set/results/single-article/UMr6ia1QubqOMw3aBUGbOw/analysis/20260529-191215-v6-source-blocks-evidence-diversity.md`
+
+### 本轮假设
+
+解释页来源的关键问题已经从“是否大段”变成“是否结构化定位”。如果系统能先把原文切成 source blocks，再按题目意图分配 definition、mechanism、contrast、example、boundary、method 等证据角色，同一知识点多题应该更少复用同一段。
+
+### Prompt 改动
+
+本轮不改出题 prompt，不新增模型调用。所有变化都在后端确定性来源选择和报告诊断层。
+
+### 确定性规则改动
+
+- 新增 `sourceBlocks` 构建：从 `cleanedText` 切出 heading、paragraph、sentence window。
+- 每个 block 记录 `sourceBlockId`、`sectionTitle`、`paragraphIndex`、`sentenceStart`、`sentenceEnd`、`evidenceRole`。
+- 每道题按题目意图优先匹配不同证据角色：定义、机制、对比、例子、边界、方法。
+- 同一知识点内复用同一 block 或同一 role 会被扣分，并记录：
+  - `sourceEvidenceDiversityScore`
+  - `sourceReuseReason`
+  - `sourceBlockId`
+- 报告新增 `sourceBlockReuseTop` 和 `sourceBlockCoverageByPoint`。
+
+### 指标对比
+
+| 指标 | 第四轮主结果 | 第五轮 sourceBlocks | 变化 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题总数 | 20 | 21 | +1 |
+| 平均每知识点入池题数 | 2.9 | 3.0 | 提升 |
+| 达到 3 题的知识点 | 6 / 7 | 7 / 7 | 提升 |
+| 0 题知识点 | 0 | 0 | 持平 |
+| 低置信比例 | 55% | 76.2% | 上升 |
+| 平均来源精准度 | 4.9 | 5.0 | 略升 |
+| 平均来源最小化 | 4.5 | 4.6 | 略升 |
+| 来源段落复用 Top | 5 题 | 2 题 | 明显改善 |
+| 证据块复用 Top | 未统计 | 2 题 | 新增且可控 |
+
+### 本轮有效的地方
+
+1. **题量和覆盖达到当前 PRD 理想状态。**
+   7 个知识点全部达到 3 题，平均每点 3 题，未覆盖知识点为 0。
+
+2. **来源复用显著下降。**
+   上一轮 `paragraph:18` 被 5 道题复用；本轮来源复用 Top 只到 2 题。source block 复用 Top 也只到 2 题，说明证据块分配确实打散了原文节点。
+
+3. **来源精准和最小化没有被牺牲。**
+   平均来源精准度 5.0，平均最小证据 4.6，都比上一轮略高。说明用 source block 分配并没有让来源变长或变泛。
+
+4. **报告开始能看见同知识点内部证据分布。**
+   `sourceBlockCoverageByPoint` 能显示每个知识点 3 道题用了几个 source block、几种 evidence role。这个指标比只看段落复用更接近用户复习体验。
+
+### 新问题和风险
+
+1. **低置信比例明显回升。**
+   本轮低置信 76.2%，主要来自 `weak_misconception_support`、`weak_explanation_faithfulness`、`weak_source_support`。这说明来源分散后，系统更严格地暴露了解释/误区支撑不足，而不是来源定位本身失败。
+
+2. **仍有少数知识点证据块不够分散。**
+   `kp-2` 和 `kp-6` 都是 3 题只使用 1 个 source block。它们是下一轮人工检查重点：如果原文确实只有一个证据块，可以接受；如果不是，就说明 block 选择仍偏窄。
+
+3. **题型仍然偏选择题和场景判断。**
+   本轮 `multiple_choice: 8`、`scenario_judgment: 12`、`true_false: 1`。题量和来源变好了，但题型结构还没完全回到 PRD 理想。
+
+### 第一性原理结论
+
+第五轮证明：`sourceBlocks` 是正确方向。它没有靠放宽质量规则换题量，而是在保持来源精准的同时，把“来源复用”从段落级集中降到了 block 级可诊断。
+
+但新的瓶颈也更清楚：当来源定位变准以后，低置信主要不再是“找不到来源”，而是“解释、误区和干扰项是否真正被这块来源支撑”。下一轮应该进入解释一致性和误区支撑专项，而不是继续调来源裁剪。
+
+### 下一轮实验
+
+- 人工抽查本轮 16 道低置信题，重点看 `weak_explanation_faithfulness` 和 `weak_misconception_support` 是否真的影响复习。
+- 对 `kp-2`、`kp-6` 做 source block 人工审查：判断 3 题共用 1 个 block 是否合理。
+- 如果低置信 reject 主要来自解释/误区，下一轮做“解释与误区必须绑定到原文证据”的专项。
+- 如果低置信 reject 主要来自选项，下一轮做“边界/分工题选项构造模板”。
+
+## 2026-05-30 第六轮准备：认知动作驱动 PRD 对齐
+
+第五轮之后，我们重新对照 PRD 和学习理论讨论了一个更底层的问题：拾贝不应该把“每个知识点 3 道题”当作最高目标。题量已经不是当前瓶颈，真正的问题是这些题是否帮助用户从“看过文章”走到“理解、分清、会用”。
+
+本节记录理论调研、PRD 口径更新和下一轮实验计划。它不是一次已完成的模型复测，而是第六轮实验的设计依据。
+
+### 理论依据
+
+| 理论 / 研究方向 | 对拾贝出题的启发 |
+| --- | --- |
+| Retrieval Practice / Testing Effect | 主动回忆比重复阅读更能促进长期记忆。拾贝的第一类题应帮助用户取回知识点核心判断，而不是只识别关键词。 |
+| Transfer of Learning | 测试可以促进迁移。拾贝需要场景迁移题，让用户把原文判断用到新场景。 |
+| Elaborative Interrogation | 学习者需要理解“为什么”。解释页不能只给答案，必须说明答案为什么成立、其它选项为什么不成立。 |
+| ICAP 框架 | 越需要学习者主动构造、比较、解释，学习越深。拾贝题目应尽量促发比较、归因、迁移，而不是被动识别。 |
+| Desirable Difficulties / Interleaving | 适度困难和变化练习能帮助长期掌握。同一知识点的多题应有变化，但变化应服务认知动作，而不是机械换题型。 |
+| Multiple-choice Feedback | 多选题需要高质量反馈，否则干扰项可能强化误解。因此解释和误区支撑必须纳入质量控制。 |
+
+### PRD 口径更新
+
+旧口径更容易被工程实现误解为：
+
+> 每个知识点尽量生成 1-3 道题，最好不同题型。
+
+新口径改为：
+
+> 每个高价值知识点应尽量生成 1-3 道递进复习题。多题的目标不是凑数量，也不是机械换题型，而是覆盖不同认知动作：核心回忆、边界辨析、场景迁移。
+
+这意味着：
+
+- 题型多样是手段，不是目标。
+- 同一知识点 3 道同题型不一定错误；如果它们分别完成核心回忆、边界辨析、场景迁移，可以接受。
+- 同一知识点 3 道不同题型也不一定合格；如果只是换壳重复同一个判断，就不应全部入池。
+- 质量检查必须判断题目是否真的完成声明的认知动作。
+
+### 三类认知动作
+
+| 认知动作 | 目标 | 好题特征 | 常见失败 |
+| --- | --- | --- | --- |
+| 核心回忆 | 帮用户取回知识点最重要的判断 | 问核心主张，不问局部细节；答案直接被来源支撑 | 只考关键词或原文字面 |
+| 边界辨析 | 帮用户分清相似概念、适用边界和常见误区 | 干扰项来自真实混淆对象；解释能说明为什么其它选项不合适 | 干扰项凑数；误区泛泛想象 |
+| 场景迁移 | 帮用户把知识点用于新场景 | 场景不是原文复述，但判断依据来自原文 | 把原文例子换皮；开放题变成主观判断 |
+
+### 对第五轮结果的重新解释
+
+第五轮 v6 的表面指标很好：
+
+- 7 个知识点全部覆盖。
+- 21 道题入池。
+- 每个知识点 3 道题。
+- 来源复用 Top 降到 2 题。
+- 平均来源精准度 5.0，最小证据 4.6。
+
+但按新的 PRD 口径看，它仍有偏差：
+
+1. **题量达标不代表复习动作达标。**
+   多个知识点仍出现 3 道同题型，例如 3 道全是 `scenario_judgment` 或 3 道全是 `multiple_choice`。如果三题确实承担不同认知动作，可以接受；否则就是换壳重复。
+
+2. **`memoryAngle` 已经出现，但还不是强契约。**
+   现在系统会标记 `core_understanding`、`misconception_boundary`、`scenario_application`，但质量检查还没有严格判断题目是否真的完成该角度。
+
+3. **低置信问题说明解释层还弱。**
+   低置信 76.2%，主要原因是 `weak_misconception_support`、`weak_explanation_faithfulness` 和 `weak_source_support`。这说明题干和答案可能可用，但解释、误区、干扰项还没有足够被原文证据约束。
+
+### 第六轮实验假设
+
+下一轮不再优先增加题量，也不继续单纯裁短来源。实验假设是：
+
+> 如果先为每个知识点生成练习蓝图，再按蓝图出题，并按蓝图验收，系统会比单纯 prompt 要求“不同题型”更稳定地生成递进复习题。
+
+### 第六轮计划
+
+实验标签建议：`v7-cognitive-blueprint-alignment`
+
+关键改动：
+
+1. **新增 `practiceBlueprint`。**
+   每个知识点先生成 1-3 个练习目标，分别对应核心回忆、边界辨析、场景迁移。
+
+2. **按蓝图出题。**
+   出题 prompt 不再只说“生成 3 道不同题”，而是要求每道题服务一个蓝图项。
+
+3. **入池选择器按认知动作优先。**
+   选择优先级改为：可信度 > 不同认知动作 > 低重复 > 题型多样。
+
+4. **质量检查按认知动作验收。**
+   新增 `memoryAngleFitScore` 和 `blueprintAlignmentScore`，判断题目是否真的完成声明的认知动作。
+
+5. **解释、误区、干扰项拆分诊断。**
+   将 `weak_explanation_faithfulness` 和 `weak_misconception_support` 拆成更具体原因，方便判断是 prompt、选项、解释还是来源问题。
+
+### 第六轮验收指标
+
+| 指标 | 目标 |
+| --- | --- |
+| 保留知识点 | 不少于 7 |
+| 入池题数 | 不设全文章固定数；看每个知识点动态目标的 `actual / expected` 覆盖率 |
+| 高价值知识点认知动作覆盖 | 每点至少 2 个不同认知动作 |
+| 3 道同题型知识点 | 必须有 `typeDiversityReason`，且人工判断不重复 |
+| 低置信题 | 不要求立即下降，但原因必须更具体 |
+| 解释忠实 | `weak_explanation_faithfulness` 不再笼统出现，拆成可修复原因 |
+| 误区支撑 | `weak_misconception_support` 不再笼统出现，拆成可修复原因 |
+| 人工抽查 | 低置信题 accept + fixable 目标高于 80% |
+
+### 第一性原理结论
+
+拾贝不是考试生成器，也不是 Anki 卡片批量器。它的出题系统应该像一个轻量教学设计器：先判断一个知识点值得怎么练，再生成对应题目，最后检查题目是否真的完成练习目标。
+
+因此下一轮优化不应该是“再改几个 prompt 词”，而应把学习理论转成系统结构：
+
+```text
+知识点
+-> 练习蓝图
+-> 按认知动作出题
+-> 按蓝图入池选择
+-> 按解释、误区、干扰项可信度验收
+-> 单篇实验复测和人工抽查
+```
+
+这才是把检索练习、迁移学习、精细加工等理论真正用进系统，而不是让模型“听说过理论”。
+
+## 2026-05-30 第七轮：认知动作蓝图 v7 复测
+
+实验标签：`v7-cognitive-blueprint-alignment`
+
+本轮按上一节计划落地了第一版 `practiceBlueprint`。系统在出题前先为每个知识点生成 1-3 个练习目标，再要求模型把题目绑定到具体蓝图项，而不是只笼统要求“题型多样”。
+
+### 本轮改动
+
+1. **新增确定性练习蓝图。**
+   每个知识点根据目标题数生成 `core_understanding`、`misconception_boundary`、`scenario_application` 三类练习目标。低可考知识点仍可降级，但本篇 7 个知识点都保留 3 个目标。
+
+2. **Prompt 改成分层结构。**
+   系统 prompt 从单段规则改为产品原则、题目结构规则、练习蓝图、输出格式四层。用户 prompt 要求每道题输出 `blueprintItemId` 和 `blueprintGoal`。
+
+3. **选择器优先认知动作。**
+   入池选择先看 `blueprintItemId` / `memoryAngle` 是否覆盖不同认知动作，再看题型是否不同。同题型 3 题可以保留，但必须记录 `typeDiversityReason`。
+
+4. **低置信原因拆细。**
+   原来的 `weak_explanation_faithfulness` 和 `weak_misconception_support` 被拆成 `explanation_overextends_source`、`explanation_not_tied_to_answer`、`misconception_too_generic`、`misconception_not_grounded` 等更可修复原因。
+
+### 原始产物
+
+- JSON：`runs/20260530-141747-v7-cognitive-blueprint-alignment.json`
+- CSV：`reviews/20260530-141747-v7-cognitive-blueprint-alignment.csv`
+- 机器分析：`analysis/20260530-141747-v7-cognitive-blueprint-alignment.md`
+
+### 指标对比
+
+| 指标 | v6 source blocks | v7 cognitive blueprint | 变化 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题数 | 21 | 21 | 持平 |
+| 每点 3 题覆盖率 | 100% | 100% | 持平 |
+| 低置信比例 | 76.2% | 66.7% | 改善 |
+| 高置信题 | 5 | 7 | 改善 |
+| 平均来源精准 | 5.0 | 5.0 | 持平 |
+| 平均最小证据 | 4.6 | 4.7 | 小幅改善 |
+| 平均蓝图匹配 | 未统计 | 4.5 | 新增 |
+| memoryAngle 匹配 | 未统计 | 5.0 | 新增 |
+| 来源段落复用 Top | 2 题 | 2 题 | 持平 |
+| source overlap Top | 2 题 | 3 题 | 局部回升 |
+
+### 本轮有效的地方
+
+1. **题量没有回退。**
+   7 个知识点仍全部达到 3 题，总入池 21 题，说明蓝图层没有牺牲覆盖率。
+
+2. **低置信比例下降。**
+   低置信从 76.2% 降到 66.7%，高置信从 5 题升到 7 题。虽然还不够低，但方向是好的。
+
+3. **低置信原因更可诊断。**
+   本轮不再主要出现笼统的 `weak_explanation_faithfulness` / `weak_misconception_support`，而是拆成 `misconception_not_grounded`、`explanation_overextends_source`、`answer_grounding_weak` 等更能指导下一轮修复的标签。
+
+4. **认知动作覆盖变成可检查字段。**
+   `averageBlueprintAlignmentScore = 4.5`，`averageMemoryAngleFitScore = 5.0`。这说明题目在机器诊断上基本能对齐声明的练习目标。
+
+### 新问题和风险
+
+1. **source overlap 局部回升。**
+   `source-3` 被 3 道题复用，集中在同一组问题上。虽然来源段落复用 Top 仍只有 2 题，但文本重叠层面说明有些题仍共享同一最小证据。
+
+2. **部分知识点仍只用 1 个 source block。**
+   `kp-2`、`kp-3` 都是 3 题只用 1 个 source block。对于原文证据单一的知识点可以接受，但需要人工判断这是否导致三题变成同一证据的换壳练习。
+
+3. **题型多样性仍不是完全均衡。**
+   本轮题型分布为 `scenario_judgment: 11`、`true_false: 7`、`multiple_choice: 3`。这比上一轮更接近“边界辨析 + 场景迁移”，但多选题偏少，需要检查是否影响核心理解题质量。
+
+4. **仍有 3 个答案唯一性阻断。**
+   `blockingReasonFrequency.answer_not_unique = 3`，说明复杂边界 / 分工类题的选项设计仍可能让多个选项看起来都成立。
+
+### 第一性原理结论
+
+第七轮证明：把学习理论落实成系统结构，比继续往 prompt 里加理论术语更有效。`practiceBlueprint` 让“每个知识点 3 题”从数量目标变成了认知动作目标，低置信比例和诊断可读性都有改善。
+
+但它也暴露了下一层瓶颈：即使题目对齐了蓝图，证据块和选项设计仍可能让几道题围绕同一个原文节点反复变化。因此后续不能只看 `memoryAngle` 是否齐全，还要看：
+
+- 同一知识点 3 题是否真的使用不同证据或不同推理任务。
+- 边界辨析题的干扰项是否来自真实混淆对象。
+- 场景迁移题是否只是把原文例子换皮。
+
+### 下一轮实验
+
+- 人工抽查本轮 14 道低置信题，重点看 `misconception_not_grounded` 是否真的影响复习价值。
+- 对 `source-3` 和 `kp-2` / `kp-3` 做来源复用审查：判断复用是合理的“唯一证据”，还是题目重复。
+- 进入“复杂边界题模板”专项：对工具分工、机制边界、概念对比类知识点，要求干扰项来自真实混淆对象，并解释其它选项为什么不合适。
+- 如果人工确认 source overlap 的题仍可接受，则下一轮优先修 `answer_not_unique`；如果不可接受，则继续加强 source block 分配和重复题去重。
+
+## 2026-05-30 第八轮：教学质量评分 v8 复测
+
+实验标签：`v8-pedagogical-rubric-calibration`
+
+本轮没有继续提高题量，也没有继续往出题 prompt 里堆规则；重点是把评分系统从“格式 / 来源检查”升级为“教学质量审查器”。核心问题是：v7 的题量和蓝图字段看起来不错，但机器评分仍不能回答“这三道题是否真的帮助用户记住、分清、会用”。
+
+### 本轮改动
+
+1. **题型错配降级。**
+   `question_type_mismatch` 不再直接作为低置信核心原因。题型只是实现手段；如果题目完成了对应 `memoryAngle`，就只记录为提示。
+
+2. **新增认知动作评分。**
+   每道题新增 `cognitiveActionFitScore`，并拆成：
+   - `coreRecallFitScore`
+   - `boundaryDiscriminationFitScore`
+   - `scenarioTransferFitScore`
+
+3. **新增同知识点组合评分。**
+   入池后的同一知识点 3 题会记录：
+   - `practiceProgressionScore`：是否形成“记住 -> 分清 -> 会用”的递进。
+   - `practiceDuplicateRiskScore`：是否重复考同一判断。
+   - `sourceReuseLearningReason`：如果复用同一 source block，说明复用对学习是否有风险。
+
+4. **新增来源学习价值评分。**
+   `evidenceLearningValueScore` 用来区分“来源能证明答案”和“来源能帮助用户回到原文关键节点理解答案”。
+
+5. **误区和干扰项问题拆细。**
+   原来的 `weak_distractors`、`misconception_not_grounded` 被进一步拆成更可修复的原因，例如 `distractors_too_obvious`、`misconception_too_generic`、`misconception_not_reflected_in_options`。
+
+### 原始产物
+
+- JSON：`runs/20260530-163959-v8-pedagogical-rubric-calibration.json`
+- CSV：`reviews/20260530-163959-v8-pedagogical-rubric-calibration.csv`
+- 机器分析：`analysis/20260530-163959-v8-pedagogical-rubric-calibration.md`
+
+### 指标对比
+
+| 指标 | v7 cognitive blueprint | v8 pedagogical rubric | 变化 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题数 | 21 | 21 | 持平 |
+| 每点 3 题覆盖率 | 100% | 100% | 持平 |
+| 低置信比例 | 66.7% | 90.5% | 上升 |
+| 高置信题 | 7 | 2 | 下降 |
+| 平均来源精准 | 5.0 | 5.0 | 持平 |
+| 平均最小证据 | 4.7 | 4.8 | 小幅提升 |
+| 平均蓝图匹配 | 4.5 | 4.4 | 基本持平 |
+| memoryAngle 匹配 | 5.0 | 4.9 | 基本持平 |
+| 平均认知动作匹配 | 未统计 | 3.6 | 新增 |
+| 平均练习递进 | 未统计 | 5.0 | 新增 |
+| 平均证据学习价值 | 未统计 | 4.7 | 新增 |
+| 重复练习风险题 | 未统计 | 8 | 新增 |
+
+### 本轮有效的地方
+
+1. **评分尺子更接近 PRD。**
+   现在能区分“题型对不对”和“认知动作是否完成”。`question_type_mismatch` 退出主要低置信原因，说明评分系统不再机械惩罚题型。
+
+2. **暴露了 v7 没看见的问题。**
+   v7 看起来低置信下降，但 v8 发现很多题仍然是 `core_recall_too_literal`、`boundary_not_teaching_real_confusion`、`scenario_transfer_too_literal`。这说明之前的蓝图字段有时只是“填对字段”，不代表练习真的成立。
+
+3. **解释错误被显性统计。**
+   本轮出现 4 个 `explanation_wrong` 机器问题，典型是解释里写错正确选项字母。这类问题对用户信任伤害很大，下一轮应单独修。
+
+4. **来源问题从“大段复用”转向“学习价值”。**
+   来源精准和最小证据分都高，但仍有 8 道重复练习风险题。这说明当前瓶颈不再是来源太长，而是同一知识点多题是否真的训练不同判断。
+
+### 新问题和风险
+
+1. **v8 评分可能过严。**
+   低置信升到 90.5%，高置信只剩 2 道。这里不能简单理解为题变差，而是新评分器把更多教学质量问题暴露出来。需要人工校准哪些 low 是真实 reject，哪些只是可接受提醒。
+
+2. **核心回忆题太像字面题。**
+   `core_recall_too_literal = 6`，说明核心理解题常常没有真正让用户复述主张，而是在识别原文或局部表述。
+
+3. **边界题还缺真实混淆对象。**
+   `boundary_not_teaching_real_confusion = 4`，说明边界辨析题仍可能是“泛泛说一个错误理解”，而不是训练真实会混淆的对象。
+
+4. **场景迁移题有换皮风险。**
+   `scenario_transfer_too_literal = 2`，说明部分场景题还只是把原文例子换成题干，不是真正迁移到新情境。
+
+5. **解释和选项生成仍是最大信任风险。**
+   4 道解释错误、1 道干扰项弱，说明下一轮不能只改评分；要修生成 prompt / 后处理，特别是解释必须引用 `correctOptionId` 对应的选项，不能写错字母。
+
+### 第一性原理结论
+
+v8 的价值不是让指标立刻更漂亮，而是让评分系统终于开始问正确的问题：题目是否真的完成了学习动作。它证明当前系统已经能稳定做到“7 个知识点、21 道题、来源精准”，但还没有稳定做到“每个知识点 3 道题形成真实认知递进”。
+
+当前更像是：出题生产力达标，教学质量审查刚开始变准。
+
+下一步不能为了降低低置信比例把尺子调松；应该先人工校准 v8 标出的低置信题。如果人工确认这些问题真实存在，就进入生成侧修复：核心回忆题模板、边界误区模板、场景迁移模板、解释一致性校验。
+
+### 下一轮实验
+
+- 生成 v8 低置信题审查页，人工标注 `accept / fixable / reject`。
+- 优先审查四类问题：
+  - `core_recall_too_literal`
+  - `boundary_not_teaching_real_confusion`
+  - `scenario_transfer_too_literal`
+  - `explanation_wrong`
+- 如果人工 reject 集中在解释错误，先做解释一致性硬校验。
+- 如果人工 reject 集中在核心 / 边界 / 场景动作不成立，下一轮进入“按认知动作拆 prompt 模板”，而不是继续统一大 prompt。
+
+## 2026-05-31 第九轮：文章结构骨架驱动 v9 与结构绑定修复
+
+实验标签：
+
+- 初始实验：`v9-article-structure-rubric`
+- 结构绑定修复验证：`v9-structure-binding-fix`
+- 结构绑定二次修复验证：`v9-structure-binding-fix2`
+
+本轮从第一性原理重新看评分系统：一道题是否值得进入复习池，不只取决于题本身是否格式正确，而取决于它是否绑定到文章真实结构中的一个学习节点。也就是说，系统需要先知道文章有哪些主张、定义、边界、方法、案例，再判断知识点和题目是否忠实于这些节点。
+
+### 本轮改动
+
+1. **新增文章结构骨架字段。**
+   生成链路开始构建 `articleStructureMap`，并把知识点绑定到 `structureNodeId`、`roleInArticle`、`sourceEvidenceIds`。题目和质量报告同步透出这些字段。
+
+2. **新增结构与主张忠实度指标。**
+   质量报告增加 `sourceCoverageScore`、`claimFidelityScore`、`learningEffectivenessScore`，并统计结构节点覆盖情况，避免只看题量和来源长度。
+
+3. **修复微信文章提取兜底。**
+   微信链接优先尝试静态 HTML 提取，避免 Playwright 被微信环境校验拦住后直接失败。
+
+4. **修复结构骨架伪节点过多。**
+   初始 v9 把大量句窗当成结构节点，产生 47 个伪节点。修复后按段落归并、过滤导语/噪声、限制高价值结构节点，结构节点降到 24 个。
+
+5. **修复知识点误绑定到开头场景。**
+   初始 v9 中多个知识点被误绑到开头 demo 场景，根因是结构绑定使用中文 2 字符滑窗，`产品经理 / hook / demo` 这类高频词造成误匹配。修复后改为优先 `sourceQuote` 命中和有意义关键词，导语/背景段不再抢占后文知识点。
+
+### 原始产物
+
+- 初始 JSON：`runs/20260531-015650-v9-article-structure-rubric.json`
+- 初始 CSV：`reviews/20260531-015650-v9-article-structure-rubric.csv`
+- 初始分析：`analysis/20260531-015650-v9-article-structure-rubric.md`
+- 一次修复 JSON：`runs/20260531-020431-v9-structure-binding-fix.json`
+- 一次修复 CSV：`reviews/20260531-020431-v9-structure-binding-fix.csv`
+- 一次修复分析：`analysis/20260531-020431-v9-structure-binding-fix.md`
+- 二次修复 JSON：`runs/20260531-020815-v9-structure-binding-fix2.json`
+- 二次修复 CSV：`reviews/20260531-020815-v9-structure-binding-fix2.csv`
+- 二次修复分析：`analysis/20260531-020815-v9-structure-binding-fix2.md`
+
+### 指标对比
+
+| 指标 | v8 pedagogical rubric | v9 初始 | v9 fix2 | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 8 | 小幅增加 |
+| 入池题数 | 21 | 20 | 24 | 恢复到每点 3 题 |
+| 每点 3 题覆盖率 | 100% | 85.7% | 100% | 修复后恢复 |
+| 低置信比例 | 90.5% | 95.0% | 79.2% | 仍高，但较初始 v9 改善 |
+| 高置信题 | 2 | 1 | 5 | 改善 |
+| 平均来源精准 | 5.0 | 4.8 | 4.7 | 略降但仍可接受 |
+| 平均最小证据 | 4.8 | 5.0 | 4.9 | 稳定 |
+| 平均来源覆盖 | 未统计 | 3.6 | 3.6 | 新瓶颈 |
+| 平均主张忠实 | 未统计 | 4.7 | 4.8 | 较好 |
+| 结构节点数 | 未统计 | 47 | 24 | 伪节点减少 |
+| 被知识点覆盖的结构节点 | 未统计 | 3 | 7 | 明显改善 |
+| 答案不唯一阻断 | 约 3 | 3 | 1 | 改善 |
+
+### 本轮有效的地方
+
+1. **结构绑定从“明显错误”变成“可诊断”。**
+   初始 v9 把多个后文知识点绑到标题/开头场景，fix2 后主要知识点已经能分别绑定到定义、prompt 对比、判断标准、demo 原因、四种场景、分工等节点。
+
+2. **出题覆盖没有因为结构约束下降。**
+   fix2 保留 8 个知识点、24 道题，每个知识点 3 道题，说明结构层没有牺牲 PRD 中“多题强化”的目标。
+
+3. **答案唯一性有所改善。**
+   `answer_not_unique` 从 3 降到 1，说明结构绑定和主张忠实度对复杂分工题有一定帮助。
+
+4. **报告能看出结构问题在哪里。**
+   现在可以看到哪些结构节点有知识点、哪些没有，哪些知识点绑定过宽。这比之前只看 `source_support` 更接近“文章理解是否完整”的问题。
+
+### 新问题和风险
+
+1. **结构骨架仍偏碎。**
+   fix2 有 24 个结构节点，其中“四个信号”被拆成多个节点。对系统来说，这有利于定位证据；对知识点选择来说，可能过细，后续需要把相邻证据节点聚合成“文章主线节点”。
+
+2. **来源覆盖分仍低。**
+   `averageSourceCoverageScore = 3.6`，说明题目经常只覆盖知识点所需证据的一部分。当前不是来源长度问题，而是题目、知识点和证据块之间还没有形成稳定的多证据绑定。
+
+3. **低置信比例仍高。**
+   fix2 低置信 79.2%，主要原因仍包括 `source_coverage_incomplete`、`misconception_not_grounded`、`answer_grounding_weak`。这说明 v9 修的是结构绑定，不是误区 / 干扰项 / 解释质量的最终解。
+
+4. **有些知识点跨结构节点。**
+   例如“四个信号”本质上由 4 个子证据组成，但绑定到一个总节点或多个子节点都各有问题。下一轮需要区分“复习知识点”与“证据子节点”：知识点可以是一个综合单元，但题目应明确引用它所考察的子证据。
+
+### 第一性原理结论
+
+v9 证明“文章结构骨架”是必要方向，但第一版不能只把 source blocks 当作结构骨架。真正的结构层至少需要两级：
+
+- **文章主线节点**：用户需要记住的主张、方法、边界、分工。
+- **证据子节点**：解释这个主线节点的定义句、机制句、案例句、边界句。
+
+当前 fix2 更像“证据子节点层”，已经能减少错误绑定，但还没有稳定生成“主线节点层”。因此下一轮不应该继续单纯加规则裁剪 source block，而应把结构层显式拆成“主线节点 -> 证据块”，再让知识点绑定主线节点、题目绑定证据块。
+
+### 下一轮实验
+
+- 设计 `ArticleStructure v2`：把结构骨架从单层节点升级为“主线节点 + 证据块”两层。
+- 对“四个信号”“四种场景”“prompt / CLAUDE.md / hook / CI 分工”这类综合知识点，允许一个知识点绑定多个 evidence block。
+- `sourceCoverageScore` 改成检查题目是否覆盖当前题所需证据，而不是要求每道题覆盖知识点全部证据。
+- 继续保留 v9 的结构覆盖报告，但把“未覆盖结构节点”分成“未覆盖主线节点”和“未覆盖证据子节点”，避免误判。
+
+## 2026-05-31 第十轮：ArticleStructure v2 主线节点 + 证据子节点
+
+实验标签：
+
+- 初始实验：`v10-mainline-evidence-structure`
+- 绑定修复验证：`v10-mainline-evidence-structure-fix` / `fix2` / `fix3` / `fix4b` / `fix5` / `fix6`
+- `fix4` 为模型返回不可解析 JSON 的失败 run，仅保留原始产物，不纳入质量对比。
+
+本轮继续推进第九轮的结论：单层 source block 更像“证据子节点”，不能直接等同于文章主线。真正需要的是两层结构：
+
+- **主线节点**：用户应该记住的定义、边界、方法、分工和工程直觉。
+- **证据子节点**：支撑主线节点的具体原文句窗、案例和边界句。
+
+### 本轮改动
+
+1. **新增 `evidenceNodes`。**
+   `articleStructureMap` 现在同时包含 `nodes` 和 `evidenceNodes`：前者是主线，后者是可定位证据。质量报告也开始分别统计主线覆盖和证据覆盖。
+
+2. **将相邻证据归并为主线节点。**
+   例如四个信号、四类 hook 场景、Prompt / CLAUDE.md / Hook / CI 分工，会被归并成主线节点，同时保留多个 evidence block。
+
+3. **知识点绑定改为 source evidence 优先。**
+   之前绑定容易被 `prompt`、`hook`、`PostToolUse` 这类高频词带偏；现在先看 `sourceQuote` 命中的 evidence node，再用关键词补充。
+
+4. **修复几个具体误绑。**
+   - `PostToolUse` 同时出现在 prompt/hook 对比和实用场景中，规则改为先识别工具分工、定义、prompt 边界，再识别实用场景。
+   - 长 `sourceQuote` 覆盖多个证据块时，绑定排序增加“命中证据块数量”，避免只命中一个相似例子的早期节点抢赢。
+   - 结尾 `vibe coding 负责起飞，hook 负责别偏航` 明确归入产品经理工程直觉。
+
+### 原始产物
+
+- 初始 JSON：`runs/20260531-135238-v10-mainline-evidence-structure.json`
+- 初始 CSV：`reviews/20260531-135238-v10-mainline-evidence-structure.csv`
+- 初始分析：`analysis/20260531-135238-v10-mainline-evidence-structure.md`
+- 代表性最终 JSON：`runs/20260531-141831-v10-mainline-evidence-structure-fix6.json`
+- 代表性最终 CSV：`reviews/20260531-141831-v10-mainline-evidence-structure-fix6.csv`
+- 代表性最终分析：`analysis/20260531-141831-v10-mainline-evidence-structure-fix6.md`
+
+### 指标对比
+
+| 指标 | v9 fix2 | v10 初始 | v10 fix6 | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| 保留知识点 | 8 | 7 | 7 | v10 受模型候选波动影响，没有继续增加知识点 |
+| 入池题数 | 24 | 21 | 20 | fix6 有 1 个知识点只入池 2 题 |
+| 每点 3 题覆盖率 | 100% | 100% | 85.7% | 数量不是本轮收益点 |
+| 低置信比例 | 79.2% | 90.5% | 90.0% | 仍高，说明教学质量问题未解决 |
+| 平均来源精准 | 4.7 | 4.9 | 4.9 | 保持高位 |
+| 平均最小证据 | 4.9 | 4.7 | 4.9 | 保持高位 |
+| 平均来源覆盖 | 3.6 | 3.5 | 3.6 | 仍是瓶颈 |
+| 平均主张忠实 | 4.8 | 4.6 | 4.9 | 改善 |
+| 结构节点数 | 24 | 14 | 13 | 主线节点更少、更接近文章骨架 |
+| 被知识点覆盖的主线节点 | 7 | 4 | 7 | 修复后恢复 |
+| 证据子节点数 | 未统计 | 24 | 36 | 新增可诊断层 |
+
+### 本轮有效的地方
+
+1. **结构层更接近文章主线。**
+   v9 fix2 仍把很多证据句当结构节点，v10 fix6 将主线节点压到 13 个，同时保留 36 个 evidence node。这个结构更像“文章骨架 + 证据块”，不是一堆句窗。
+
+2. **关键误绑被修掉。**
+   最终有效 run 中，核心知识点绑定已经基本符合文章结构：Hook 定义、Prompt/Hook 边界、四个信号、四类实用场景、工具分工、工程直觉都能落到对应主线。
+
+3. **报告能分清“主线未覆盖”和“证据未覆盖”。**
+   这让后续判断更清楚：一个 evidence node 没出题不一定是问题；一个主线节点没有知识点才更可能是知识点提取问题。
+
+4. **来源复用没有明显恶化。**
+   fix6 的段落复用 Top 最高为 2 题，说明两层结构没有把来源片段重新拉回大段复用。
+
+### 新问题和风险
+
+1. **题量和知识点数出现波动。**
+   fix6 只有 7 个知识点、20 道题，低于 v9 fix2 的 8 个知识点、24 道题。这不是结构绑定直接导致，而是模型候选和后续质量选择仍有随机性。后续需要在实验统计里区分“结构规则效果”和“生成候选波动”。
+
+2. **低置信比例仍然高。**
+   fix6 低置信 90.0%，高频原因仍是 `source_coverage_incomplete`、`boundary_not_teaching_real_confusion`、`answer_grounding_weak`。这说明结构绑定修的是“题目归属”，不是“题目教学质量”。
+
+3. **来源覆盖分仍低。**
+   `averageSourceCoverageScore = 3.6`。第一性原理上，这说明很多题只用了知识点的一部分证据，解释和误区未必覆盖完整判断链。
+
+4. **主线节点仍有未覆盖。**
+   未覆盖主线包括“hook 不是替代 agent”“产品经理忽略 Hook 的原因”“hook 价值在代码变多后出现”等。部分节点可以不单独出题，但需要后续人工判断是否属于应保留主线。
+
+### 第一性原理结论
+
+v10 的主要收益不是让指标立刻更漂亮，而是把系统的结构契约从“source block 即知识结构”推进到“文章主线节点 + 原文证据节点”。这让知识点和题目不再只靠关键词漂移，而能回到文章结构上。
+
+但 v10 也证明：结构绑定不是出题质量的终点。现在剩下的主要问题已经不是“题目找不到来源”，而是：
+
+- 题目是否覆盖了知识点所需的完整证据链。
+- 边界题是否真的训练真实混淆。
+- 解释是否忠实且能讲清为什么。
+- 模型候选知识点是否稳定覆盖文章主线。
+
+### 下一轮实验
+
+- 进入“主线覆盖校准”：人工判断未覆盖主线节点哪些应该成为知识点，哪些只是辅助证据。
+- 把 `sourceCoverageScore` 从单题证据覆盖升级为“当前题所需证据覆盖”，避免要求每道题覆盖整组知识点。
+- 对低置信题继续做人工校准，重点看 `boundary_not_teaching_real_confusion` 和 `answer_grounding_weak` 是否真实影响复习价值。
+- 若知识点候选继续波动，下一步应考虑让模型先输出稳定的文章主线骨架，再从骨架中选择知识点，而不是一次性提取知识点。
+
+## 2026-05-31 阶段性综合结论：题量达标后进入教学质量稳定化
+
+综合 v4 到 v10 的实验结果，出题系统不是线性稳步提升，而是螺旋式推进：**来源定位、题量覆盖和诊断能力在明显变好；低置信比例、知识点数量稳定性和认知动作质量仍有波动**。
+
+### 代表性阶段对比
+
+| 阶段 | 代表 run | 保留知识点 | 入池题 | 每点 3 题覆盖 | 低置信比例 | 来源精准 / 最小化 | 关键结论 |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| v4 | `v4-trust-diagnostics` | 7 | 20 | 85.7% | 25.0% | 4.8 / 未统计 | 题量恢复，但诊断维度还粗 |
+| v7 | `v7-cognitive-blueprint-alignment` | 7 | 21 | 100% | 66.7% | 5.0 / 4.7 | 练习蓝图方向有效 |
+| v8 | `v8-pedagogical-rubric-calibration` | 7 | 21 | 100% | 90.5% | 5.0 / 4.8 | 评分变严格，暴露教学质量问题 |
+| v9 | `v9-structure-binding-fix2` | 8 | 24 | 100% | 79.2% | 4.7 / 4.9 | 文章结构绑定改善，但仍有低置信 |
+| v10 | `v10-mainline-evidence-structure-fix6` | 7 | 20 | 85.7% | 90.0% | 4.9 / 4.9 | 主线/证据结构更清楚，但教学质量未稳定 |
+
+### 稳定提升
+
+- **题量覆盖恢复**：系统已经从“部分知识点无题”推进到大多数 run 能达到每点约 2-3 题。
+- **来源片段改善**：来源精准度和最小证据评分长期稳定在高位，早期大段来源复用问题已明显收敛。
+- **诊断能力增强**：系统能区分来源、结构、主张忠实、认知动作、重复风险，不再只给笼统低置信。
+
+### 负向波动和真实风险
+
+- **低置信比例仍高**：v8 之后低置信比例经常在 75%-90%，一部分来自评分更严格，一部分是真实教学质量问题。
+- **题量和知识点数仍有波动**：同一篇文章有时 8 个知识点 24 题，有时 7 个知识点 20 题，说明候选知识点和质量选择仍不够稳定。
+- **认知动作质量未突破**：核心理解、边界辨析、场景迁移的平均评分仍在中等偏上区间，没有像来源精准度一样稳定到高位。
+- **来源覆盖仍是瓶颈**：来源片段短且准，但有些题需要的证据链更完整，`sourceCoverageScore` 长期低于来源精准度。
+
+### 第一性原理判断
+
+当前阶段不应继续追求更多题。对用户来说，真正有价值的不是“每点 3 题”这个数字，而是三道题是否分别帮助他：
+
+1. 记住核心主张。
+2. 分清真实误区和边界。
+3. 把原则迁移到新场景。
+
+因此下一阶段进入 **教学质量稳定化**：采用动态题量目标，把主要精力放到“每道题是否完成一个明确认知动作”。
+
+### 下一轮实验假设
+
+实验标签：`v11-cognitive-action-rubric-loop`
+
+假设：
+
+- 如果把生成 prompt 和评分系统都围绕认知动作收紧，而不是继续追题量，低置信原因会变得更具体，重复练习风险会下降。
+- 入池题数不需要超过 v10，也不应该设置全文章硬下限；只要每个知识点的实际题量接近它自身的动态目标，并且认知动作覆盖改善，就足够验证教学质量是否改善。
+- 一道题是否合格，优先看它是否完成 `core_understanding`、`misconception_boundary` 或 `scenario_application`，题型只是次级表达形式。
+
+本轮计划改动：
+
+- 生成 prompt 明确三类认知动作的契约。
+- 补题只补缺失认知动作，不补单纯题量。
+- 评分系统拆出 `core_claim_too_literal`、`boundary_confusion_not_real`、`scenario_is_restatement` 等更具体问题。
+- 入池选择器降低换壳重复题优先级，即使题型不同，只要考同一判断也不应保留。
+
+## 2026-05-31 第十一轮：动态题量 + 认知动作闭环
+
+实验标签：`v11-cognitive-action-rubric-loop`
+
+本轮不是为了继续增加题量，而是验证一个更重要的假设：当生成 prompt、入池选择器和评分系统都围绕认知动作收紧后，系统能否减少换壳重复，并把低置信原因落到更具体、可修复的教学问题上。
+
+### 本轮改动
+
+1. **生成 prompt 改成认知动作契约。**
+   明确 `core_understanding` 训练核心主张、`misconception_boundary` 训练真实误区和边界、`scenario_application` 训练新场景迁移。题型只作为表达手段，不再作为主要目标。
+
+2. **补题语义改成补认知动作。**
+   补题 prompt 不再强调补缺失题型或凑满数量，而是只补缺失的 `practiceBlueprint.id` / `memoryAngle`；如果来源无法可靠支撑，可以少补题。
+
+3. **评分原因更具体。**
+   将旧的笼统问题进一步落到 `core_claim_too_literal`、`boundary_confusion_not_real`、`scenario_is_restatement`，方便判断到底是哪类教学动作没完成。
+
+4. **入池选择器降低换壳重复题优先级。**
+   即使题型不同，只要正确理解高度重复，也不再为了凑 3 题保留；同题型但不同认知动作仍可保留。
+
+### 原始产物
+
+- JSON：`runs/20260531-144958-v11-cognitive-action-rubric-loop.json`
+- CSV：`reviews/20260531-144958-v11-cognitive-action-rubric-loop.csv`
+- 分析：`analysis/20260531-144958-v11-cognitive-action-rubric-loop.md`
+
+### 指标对比
+
+| 指标 | v10 fix6 | v11 | 结论 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题数 | 20 | 15 | 总量下降；不能单独判定，需要看动态目标覆盖 |
+| 每点 3 题覆盖率 | 85.7% | 28.6% | 明显下降 |
+| 低置信比例 | 90.0% | 73.3% | 改善，但可能部分来自少题 |
+| 高置信题 | 2 | 4 | 改善 |
+| 平均来源精准 | 4.9 | 5.0 | 维持高位 |
+| 平均最小证据 | 4.9 | 4.5 | 略降但仍可接受 |
+| 平均认知动作匹配 | 3.7 | 4.0 | 小幅改善 |
+| 平均练习递进 | 未重点记录 | 4.3 | 可用 |
+| 重复练习风险题 | 6 | 0 | 明显改善 |
+
+### 本轮有效的地方
+
+- **重复风险显著下降。** `duplicatePracticeRiskCount` 从 v10 fix6 的 6 降到 0，说明“不同题型但同一判断”的换壳题被有效压住。
+- **低置信原因更具体。** 高频原因集中到 `boundary_confusion_not_real`、`scenario_is_restatement`、`misconception_not_reflected_in_options`，比旧的 weak explanation 更可修。
+- **认知动作评分略有提升。** 平均认知动作匹配从约 3.7 提升到 4.0，核心理解均分 4.5，说明 rubric 开始把题目拉向教学目标。
+- **来源质量没有崩。** 来源精准仍为 5.0，来源复用 Top 最高 2 题，没有回到大段来源复用问题。
+
+### 新问题
+
+- **题量总数下降，需要按动态目标重算。** 入池题 15 道不能直接说通过或失败；真正要看每个知识点的动态目标是多少、实际覆盖了几个认知动作。3 题知识点比例只有 28.6%，说明选择器去重和认知动作约束较硬，可能误伤了一些可接受题，也可能更符合“少而准”的方向，需要按知识点逐个判断复习密度是否够用。
+- **边界辨析仍是短板。** `boundary_confusion_not_real` 出现 4 次，边界辨析均分 3.5，说明模型仍不稳定地产生真实混淆对象。
+- **场景迁移仍有换壳风险。** `scenario_is_restatement` 出现 1 次，场景迁移均分 3.8，仍需让场景题更像“新情境判断”，不是复述原文。
+- **部分知识点证据块为空。** `kp-2`、`kp-6` 的 sourceBlockCount 为 0，说明来源选择和报告字段之间仍有兼容问题，后续需要排查。
+
+### 第一性原理结论
+
+v11 证明了一个方向：**认知动作约束确实能压低重复题，并让低置信问题更可解释。** 它也暴露出新的平衡问题：如果去重和认知动作门槛过硬，系统会把题量压低。这个低不是由“15 是否过线”判断，而要看每个知识点是否完成了它应有的多维理解练习。
+
+所以 v11 方向成立，但还不能算最终稳定。它更像一次“收紧质量闸门”的实验：让我们看见哪些题是靠重复和宽松规则撑起来的。下一步要做的是把被挡掉的题分成两类：
+
+- 真重复、真无教学价值：继续挡。
+- 可修复、可低置信入池：通过补题 prompt 或 rewrite 修回来。
+
+### 下一轮实验
+
+- 保留 v11 的认知动作具体问题标签。
+- 放松入池选择器的“正确理解重复”硬阈值，改为先标记高重复风险，再结合不同 source block / 不同 memoryAngle 判断是否淘汰。
+- 对 `boundary_confusion_not_real` 做专项 prompt：边界题必须先写出真实混淆对象，再生成选项。
+- 对 `scenario_is_restatement` 做专项 prompt：场景题必须包含原文之外的新情境变量，但答案仍可由原文原则推出。
+- 复测目标：不设固定总题数；重点统计每个知识点 `actual / expected` 的动态覆盖率、缺失认知动作和重复风险。如果能在不引入重复和低质量题的前提下提高动态覆盖率，才视为改善。
+
+## 2026-05-31 第十二轮：动态覆盖率与可恢复题召回
+
+实验标签：`v12-dynamic-coverage-recall`
+
+本轮执行的是 v11 之后的校准计划：不再用固定总题数判断好坏，而是把每个知识点的 `actual / expected` 动态覆盖率、缺失认知动作和可恢复 blocked 题显式记录出来。同时尝试放松一部分过硬去重，让“相似主张但训练不同认知动作”的题能回到复习池。
+
+### 本轮改动
+
+1. **质量报告新增动态覆盖指标。**
+   每个知识点开始记录 `expectedQuestionCount`、`actualQuestionCount`、`dynamicCoverageRate`、`expectedMemoryAngles`、`coveredMemoryAngles`、`missingMemoryAngles` 和 `dynamicCoverageStatus`。报告不再只说“总共 15 道/18 道”，而是能解释哪些知识点达标、哪些知识点缺什么认知动作。
+
+2. **入池选择器从硬去重改成认知动作敏感去重。**
+   旧规则只要 `correctUnderstanding` 重叠高就容易挡掉题。新规则只有在高度重叠，或同蓝图、同认知动作、同来源且题型相近时才强挡；如果两道题训练不同认知动作，可以保留。
+
+3. **补题原因改为缺失蓝图和缺失认知动作。**
+   `shouldSupplementPoint` 不只看数量，还把 `missing_blueprint_ids`、`expectedMemoryAngles` 和 `missingMemoryAngles` 写入诊断。补题的目标更接近“补缺失学习动作”，不是单纯凑题。
+
+4. **边界题和场景题 prompt 增加内部推理步骤。**
+   边界题要求先识别真实混淆对象、混淆原因、正确边界和错误选项对应的误区；场景题要求先识别新场景变量、原文原则、迁移理由和为什么不是原文换壳。
+
+### 原始产物
+
+- JSON：`runs/20260531-155345-v12-dynamic-coverage-recall.json`
+- CSV：`reviews/20260531-155345-v12-dynamic-coverage-recall.csv`
+- 分析：`analysis/20260531-155345-v12-dynamic-coverage-recall.md`
+
+### 指标对比
+
+| 指标 | v11 | v12 | 结论 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题数 | 15 | 18 | 召回增加，但不能单独视为改善 |
+| 预期题数 | 未统计 | 21 | v12 开始按动态目标记录 |
+| 动态覆盖率 | 未统计 | 85.7% | 7 个知识点实际 18 / 预期 21 |
+| full coverage 知识点 | 未统计 | 4 / 7 | 还有 3 个 partial |
+| 缺失认知动作 | 未统计 | `core_understanding` 2 次，`scenario_application` 1 次 | 缺口可解释 |
+| 低置信比例 | 73.3% | 88.9% | 明显回升，是主要负面结果 |
+| 高置信题 | 4 | 2 | 下降 |
+| 平均来源精准 | 5.0 | 4.9 | 基本保持 |
+| 平均最小证据 | 4.5 | 4.9 | 改善 |
+| 平均认知动作匹配 | 4.0 | 3.6 | 下降 |
+| 平均练习递进 | 4.3 | 4.7 | 改善 |
+| 重复练习风险题 | 0 | 6 | 回升，说明召回放松带来副作用 |
+| 可恢复 blocked 题 | 未统计 | 8 | 现在能看见“可修回来”的候选题池 |
+
+### 本轮有效的地方
+
+- **动态覆盖口径建立起来了。** 现在能明确知道本篇是 18 / 21，而不是用固定 15、18、24 判断质量。3 个 partial 知识点也能看到缺的是哪类认知动作。
+- **题量召回确实有效。** 入池从 v11 的 15 道回到 18 道，且 7 个知识点全部有题。
+- **来源质量没有被召回破坏。** 来源精准 4.9、最小证据 4.9，source block 复用 Top 最高仍为 2 题，没有回到早期大段来源复用。
+- **可恢复候选开始可见。** `recoverableBlockedCount = 8` 表明后续可以把“结构合法但教学质量不足”的候选作为 rewrite / supplement 对象，而不是只看最终入池题。
+
+### 新问题和负面结果
+
+- **低置信比例明显回升。** v12 的低置信为 88.9%，说明召回的新增题大多不是稳定高质量题。第一性原理上，这不是“多了 3 道题所以更好”，而是“多召回了一批仍需要教学质量校准的题”。
+- **重复练习风险回来了。** v11 把重复风险压到 0，v12 回到 6。放松正确理解重叠阈值能召回题，但也会重新放进“换壳问同一判断”的题。
+- **认知动作匹配下降。** 平均认知动作匹配从 4.0 降到 3.6，说明新增题没有稳定完成对应认知动作。
+- **高置信题减少。** 高置信从 4 降到 2，说明 v12 更像一次召回实验，而不是质量提升实验。
+
+### 第一性原理结论
+
+v12 的价值在于把问题看清楚，而不是把问题彻底修好。它证明：
+
+1. **动态覆盖率是正确指标。** 用户需要的是每个知识点按自身价值获得足够练习，而不是全篇固定题数。
+2. **题量缺口可以通过放松召回补回来。** 但召回本身不会自动提高教学质量。
+3. **下一步不能继续盲目放宽。** 低置信和重复风险已经说明，系统需要把可恢复候选拿去重写/改写，而不是直接入池。
+
+因此下一轮应固定动态覆盖指标，进入 **v13：可恢复题 rewrite 与认知动作质量校准**：
+
+- 保留 `dynamicCoverageRate`、`missingMemoryAngles` 和 `recoverableBlockedCount`。
+- 对 `core_claim_too_literal`、`boundary_confusion_not_real`、`scenario_is_restatement` 分别设计 rewrite 指令。
+- 对重复风险题不直接放行，先要求改题干、改场景变量或改干扰项。
+- 成功标准不是题数继续上升，而是在动态覆盖率不下降的前提下，让低置信比例、重复风险和认知动作匹配回到更稳定区间。
+
+## 2026-05-31 第十三轮：轻量复习感与低摩擦判断
+
+实验标签：`v13-review-friction-calibration`
+
+本轮先处理一个产品体验层面的新约束：题目即使质量分高，如果题干和选项太长，也会破坏拾贝“随时复习、轻快判断”的核心体验。因此本轮不是放宽质量检测，而是在现有认知动作和来源评分之外，新增 **题卡可见阅读负担** 评分。
+
+### 本轮假设
+
+- 轻量复习不是降低题目质量，而是把题卡拆成线性体验：题卡只承载必要判断条件，复杂背景、原文证据和完整解释放到答后展开。
+- 高摩擦题应优先进入 rewrite，而不是直接丢弃；因为问题通常是表达过重，不一定是答案或来源不可用。
+- 如果低摩擦约束有效，应该能减少题卡阅读负担，同时不明显牺牲知识点覆盖、来源精准和认知动作覆盖。
+
+### Prompt 改动
+
+系统 prompt 增加“低摩擦题卡”原则：
+
+```text
+题卡要保持低摩擦：题干只承载必要判断条件，复杂背景、证据链和完整解释放到答后解释与来源里。
+轻量不等于低质量；题目仍要有明确判断，但不要把一段文章、完整案例或解释段落塞进题干和选项。
+```
+
+出题规则新增三条具体约束：
+
+```text
+题干和选项要像手机上随手复习的卡片：一个核心判断、一组简短选项。
+场景题只保留关键变量：一个角色、一个冲突或一个决策点即可。
+选项是判断对象，不是解释段落；每个选项应短而可比较。
+```
+
+用户 prompt 同步要求模型把复杂背景、证据链和完整解释放到 `explanation / correctUnderstanding / sourceSnippet`，不要塞进题干或选项。
+
+### 规则和评分改动
+
+新增 `reviewFrictionDiagnostics`：
+
+- `stemLength`：题干可见长度。
+- `maxOptionLength`：最长选项可见长度。
+- `visibleReadingLoad`：题干 + 全部选项的可见阅读负担。
+- `reviewFrictionScore`：1-5 分，5 表示轻量，低于 4 说明题卡偏重。
+- `reviewFrictionReasons`：例如 `question_card_too_heavy`、`scenario_background_too_long`、`option_too_explanatory`。
+
+第一版阈值：
+
+| 指标 | 高摩擦 | 强制重写级 |
+| --- | ---: | ---: |
+| 题干 + 选项总负担 | >170 | >220 |
+| 场景题题干 | >80 | >110 |
+| 最长选项 | >45 | >60 |
+
+高摩擦题进入 `rewrite`，并作为低置信原因；但不进入 `blockingReasons`。这符合本轮原则：表达过重需要改写，不等于题目不可复习。
+
+### 原始产物
+
+- JSON：`runs/20260531-171646-v13-review-friction-calibration.json`
+- CSV：`reviews/20260531-171646-v13-review-friction-calibration.csv`
+- 分析：`analysis/20260531-171646-v13-review-friction-calibration.md`
+
+### 指标对比
+
+| 指标 | v11 | v12 | v13 | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 7 | 持平 |
+| 入池题数 | 15 | 18 | 21 | v13 达到动态目标满覆盖 |
+| 预期题数 | - | 21 | 21 | v12 后开始稳定记录动态目标 |
+| 动态覆盖率 | - | 85.7% | 100% | 改善 |
+| 平均每知识点题数 | 2.1 | 2.6 | 3.0 | 达到本篇上限 |
+| 低置信比例 | 73.3% | 88.9% | 90.5% | 仍偏高，不能只看题量 |
+| 平均来源精准 | 5.0 | 4.9 | 4.8 | 略降但仍高 |
+| 平均最小证据 | 4.5 | 4.9 | 4.7 | 稳定可接受 |
+| 平均认知动作匹配 | 4.0 | 3.6 | 3.7 | 比 v12 略回升，但不如 v11 |
+| 平均练习递进 | 4.3 | 4.7 | 4.9 | 改善 |
+| 重复练习风险题 | 0 | 6 | 4 | 比 v12 改善，但未回到 v11 |
+| 平均低摩擦题卡分 | - | - | 4.9 | 新指标，整体很轻 |
+| 平均可见阅读负担 | - | - | 87.1 | 大多数题卡阅读负担可控 |
+| 高摩擦题数 | - | - | 1 | 只有 1 道需要改写 |
+| 强制重写级高摩擦题 | - | - | 0 | 没有极重题卡 |
+
+### 本轮有效的地方
+
+- **低摩擦指标建立起来了。** 以后可以直接看到哪些题“太重”，而不是只靠主观体感。
+- **整体题卡负担可控。** 平均可见阅读负担 87.1，平均低摩擦分 4.9；本轮没有出现强制重写级高摩擦题。
+- **覆盖率恢复。** 7 个知识点全部 3 题，动态覆盖率 100%。这说明加入轻量约束没有直接破坏题量。
+- **重复风险比 v12 降低。** 从 6 降到 4，但仍未回到 v11 的 0。
+
+### 新问题
+
+- **低置信比例仍然很高。** v13 有 19 / 21 道低置信。原因主要不是题卡太重，而是 `source_coverage_incomplete`、`core_claim_too_literal`、`boundary_confusion_not_real`、`answer_grounding_weak` 等教学质量问题。
+- **认知动作质量没有显著提升。** 平均认知动作匹配 3.7，只比 v12 略高，低于 v11。说明轻量约束解决的是“题卡体验”，不是“认知动作是否成立”。
+- **核心理解题仍偏字面。** `core_claim_too_literal` 出现 6 次，是本轮最重要的新旧共性问题。
+- **边界辨析仍不稳定。** `boundary_confusion_not_real` 仍有 4 次，说明真实混淆对象没有稳定生成。
+- **来源覆盖仍是主要低置信原因。** `source_coverage_incomplete` 10 次，说明题目经常考到了来源片段没有完整覆盖的复合判断。
+
+### 第一性原理结论
+
+v13 证明“轻量复习感”可以被加入评分系统，而且不会必然牺牲题量和来源质量。但它也证明：**当前主要瓶颈不是题卡太重，而是题目认知动作和来源覆盖仍不够稳。**
+
+从用户体验角度看，v13 是必要的护栏：它能防止系统为了追求“高质量解释”把题卡做重。但从出题质量主线看，下一步仍应回到认知动作闭环：
+
+- 核心理解题不能只是问字面主张。
+- 边界题必须有真实混淆对象。
+- 场景题必须是真迁移，而不是换壳复述。
+- 复合判断题必须有足够来源覆盖，否则应缩窄题目。
+
+### 下一轮实验
+
+下一轮不继续追题量，也不继续加“轻”的约束。建议进入 **v14：认知动作专项 rewrite**：
+
+- 对 `core_claim_too_literal` 的题，重写为“核心主张判断”而不是“原文说法识别”。
+- 对 `boundary_confusion_not_real` 的题，强制先生成真实混淆对象，再生成选项。
+- 对 `source_coverage_incomplete` 的题，优先缩窄题目范围，而不是扩大来源片段。
+- 成功标准：动态覆盖率不低于 80%，平均低摩擦分不低于 4.5，同时低置信比例和重复风险下降。
+
+## 2026-06-01 第十九轮：回到瘦身基线重新观察
+
+实验标签：`v19-lean-restart-baseline`
+
+这一轮的目的不是继续加规则，而是把前面过重的 claim / source block / rubric 实验先收住，回到更接近线上可用版本的瘦身基线重新观察。判断标准也同步收窄：不再追题量，不再强求最小来源，先看题目是否可读、来源是否可信、解释是否有明显错误。
+
+### 原始产物
+
+- JSON：`runs/20260601-013706-v19-lean-restart-baseline.json`
+- CSV：`reviews/20260601-013706-v19-lean-restart-baseline.csv`
+- 分析：`analysis/20260601-013706-v19-lean-restart-baseline.md`
+
+### 关键指标
+
+| 指标 | v19 |
+| --- | ---: |
+| 保留知识点 | 7 |
+| 入池题数 | 12 |
+| 平均每知识点题数 | 1.7 |
+| 低置信比例 | 75% |
+| 平均来源精准 | 5.0 |
+| 平均认知动作匹配 | 4.3 |
+| 平均低摩擦题卡分 | 5.0 |
+| 重复练习风险题 | 0 |
+| 未覆盖知识点 | 0 |
+
+### 结论
+
+v19 的价值在于“清醒”：题量回落，但题卡轻、重复风险低、来源精准高，说明系统不需要继续靠堆 prompt 和指标来维持体验。它也暴露出一个必须修的底线问题：有一类题虽然被保留，但 judge 已经指出解释和正确答案存在矛盾。这类问题不能再用 `needs_rewrite` 留在复习池里，因为它伤害的是用户对答案的基本信任。
+
+下一轮只修这个 P0：**解释与答案明显矛盾的题不得入池**。不借这个机会继续扩 prompt 或新增大体系。
+
+## 2026-06-01 第二十轮：解释/答案矛盾题强阻断
+
+实验标签：`v20-fatal-explanation-guard`
+
+本轮只做一个确定性规则：如果质量问题里明确出现“解释与答案矛盾 / 不一致 / 错误地认为某选项最佳”这类 fatal explanation issue，该题不允许进入复习池。 softer 的解释质量提示，例如“解释需要更具体说明错误选项”，仍然可以作为低置信进入复习池。
+
+### 原始产物
+
+- JSON：`runs/20260601-014222-v20-fatal-explanation-guard.json`
+- CSV：`reviews/20260601-014222-v20-fatal-explanation-guard.csv`
+- 分析：`analysis/20260601-014222-v20-fatal-explanation-guard.md`
+
+### 关键指标
+
+| 指标 | v19 | v20 | 结论 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 10 | 模型输出波动，不能直接视为改进 |
+| 入池题数 | 12 | 14 | 略增，但不是本轮目标 |
+| 低置信比例 | 75% | 85.7% | 变差，说明整体质量未稳定改善 |
+| 平均来源精准 | 5.0 | 4.9 | 基本保持 |
+| 平均认知动作匹配 | 4.3 | 3.9 | 下降 |
+| 平均低摩擦题卡分 | 5.0 | 5.0 | 保持 |
+| 重复练习风险题 | 0 | 2 | 变差 |
+| `answer_not_unique` 阻断 | 1 | 8 | 明显变多，需要后续单独看 |
+| fatal 解释矛盾题 | 有 | 未进入入池统计 | P0 底线修复有效 |
+
+### 结论
+
+v20 不能被解释为“整体质量提升”。它只证明一个小而确定的底线修复有效：**解释和答案明显冲突的题不会再被放进复习池**。其它指标受本次模型生成波动影响明显，尤其是 `answer_not_unique` 阻断变多、认知动作匹配下降、重复风险回升。
+
+因此接下来不能继续往 prompt 里补规则。更合理的顺序是：
+
+1. 保留 fatal explanation guard，作为质量底线。
+2. 对 `answer_not_unique` 做样本级排查，判断是题目选项真的歧义，还是 judge 过严。
+3. 对 `source_coverage_incomplete` 做少量人工抽查，但不回到“强求最小来源”的方向。
+4. 至少再跑 1-2 篇不同类型文章，再决定是否改 prompt，避免继续围绕 Hook 文章过拟合。
+
+## 2026-06-01 第二十一轮：从 PRD 出发重写精简 Prompt
+
+实验标签：`v21-prd-first-clean-prompt`
+
+本轮不参考前面十几轮的实验补丁做增量修补，而是重新按 PRD 写一个更短、更清晰的出题 prompt。核心任务收束为：围绕高价值知识点生成可信、轻量、来源支撑的复习题；题量是温和尝试，不是硬指标；不要为了覆盖而生成重复、歧义或无来源支撑的题。
+
+### 原始产物
+
+- JSON：`runs/20260601-015910-v21-prd-first-clean-prompt.json`
+- CSV：`reviews/20260601-015910-v21-prd-first-clean-prompt.csv`
+- 分析：`analysis/20260601-015910-v21-prd-first-clean-prompt.md`
+
+### 改动记录
+
+- Prompt 改动：把 question prompt 重写成 5 个短区块：角色任务、好题标准、题量策略、题型最小契约、输出字段用途。
+- Prompt 去重：user prompt 只保留本轮动态任务、目标题数和知识点 JSON，不再重复 system prompt 的长规则。
+- 实验脚手架降噪：不再把 `practiceBlueprint`、`expectedCognitiveActions` 这类实验字段暴露给模型作为主任务。
+- 规则改动：保留 v20 的 fatal explanation guard；没有新增复杂评分体系。
+
+### 关键指标
+
+| 指标 | v20 | v21 | 结论 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 10 | 8 | 更收敛，但需人工看是否漏主线 |
+| 入池题数 | 14 | 17 | 够用，不作为主要胜负指标 |
+| 平均每知识点题数 | 1.4 | 2.1 | 回到较自然的 2 题左右 |
+| 低置信比例 | 85.7% | 82.4% | 仍然偏高，指标本身仍需校准 |
+| 平均来源精准 | 4.9 | 4.9 | 保持 |
+| 平均来源覆盖 | - | 3.3 | 仍是核心问题 |
+| 平均认知动作匹配 | 3.9 | 4.5 | 明显回升 |
+| 平均低摩擦题卡分 | 5.0 | 4.9 | 保持轻量 |
+| 高摩擦题数 | 0 | 1 | 可接受，但需看具体题 |
+| 重复练习风险题 | 2 | 0 | 改善 |
+| `answer_not_unique` 阻断 | 8 | 5 | 改善但未消失 |
+
+### 结论
+
+v21 证明“从 PRD 出发重写精简 prompt”是正确的收束方向：认知动作匹配回升，重复风险下降，题卡仍然轻，来源精准度没有明显损失。它没有解决全部问题，尤其是 `source_coverage_incomplete` 仍有 8 次，`misconception_not_grounded` 仍有 4 次，说明仅靠更干净的 prompt 不能自动修复来源覆盖和误区落地。
+
+这一轮最重要的判断是：**不要回到堆规则的方向。** 目前更像是“主 prompt 终于清爽了一点”，下一步应继续围绕 PRD 做小范围人工审查：看 8 个知识点是否代表原文主线、看低置信题中哪些是真的不可用、看 `source_coverage_incomplete` 是来源片段太短还是题目判断越界。
+
+### 下一步
+
+- 用 HTML 审查页人工看 v21 的 17 道题，不先改代码。
+- 优先标注三类问题：核心知识点是否漏、题目是否真的帮助理解、来源是否足够解释答案。
+- 如果需要继续改，只做一个小方向：要么收窄题目判断范围，要么校准低置信逻辑，不再同时改 prompt、评分、来源策略。
+
+### 人工标注结果
+
+人工标注文件：`reviews/20260601-015910-v21-prd-first-clean-prompt.manual-annotations.json`
+
+| 人工结论 | 数量 |
+| --- | ---: |
+| 可用 | 12 |
+| 可修 | 4 |
+| 仅备注未定性 | 1 |
+| 不可用 | 0 |
+
+人工反馈集中在一个方向：**题目本身太容易，正确答案过于显眼，干扰项质量偏低**。
+
+- `q-1`、`q-3`：正确答案太明显，不懂内容也能猜出答案。
+- `q-9`：正确答案有些太明显。
+- `q-12`：提问方式不好，问题太简单。
+- `q-20`：干扰项质量太低。
+- `q-21`：可用，但干扰项质量略低。
+
+这和机器诊断形成明显偏差：机器反复报警 `source_coverage_incomplete`、`misconception_not_grounded`、`answer_grounding_weak`，但人工并没有把这些题判为不可用。相反，人工真正感知到的质量问题是“判断太低摩擦到没有学习价值”，也就是题干和选项没有制造有效辨析。
+
+### 标注后的结论
+
+v21 的质量状态不是“来源/解释大面积失败”，而是：
+
+1. **可用性基本成立。** 17 道入池题里没有人工 reject。
+2. **机器低置信指标偏严且偏离人工关注点。** 大量机器 `needs_rewrite` 题被人工接受。
+3. **下一轮不应该继续围绕来源 coverage 大修。** 更应该小步优化干扰项和题目辨析度。
+4. **PRD 里的“帮助用户理解回忆”需要落到选项设计上。** 题目不能只是让正确答案看起来最正常，而要让错误选项代表真实混淆。
+
+下一轮建议只做一个窄改动：**干扰项与显而易见答案校准**。目标不是让题更难，而是让题目必须依赖用户理解原文中的关键边界才能判断。
+
+## 2026-06-01 第二十二轮：干扰项与显而易见答案校准
+
+实验标签：`v22-distractor-contrast-calibration`
+
+本轮根据 v21 人工标注只做一个窄方向：让系统识别“正确答案太显眼 / 干扰项太弱”的题，并在 prompt 里要求错误选项来自本文真实相邻概念、同一语境、同一层级。目标不是提高题量，也不是让题变难，而是避免用户不理解内容也能靠选项气质猜中。
+
+### 原始产物
+
+- JSON：`runs/20260601-042518-v22-distractor-contrast-calibration.json`
+- CSV：`reviews/20260601-042518-v22-distractor-contrast-calibration.csv`
+- 分析：`analysis/20260601-042518-v22-distractor-contrast-calibration.md`
+
+### 改动记录
+
+- Prompt 改动：在好题标准和动态任务里增加“真实混淆对象 / 同一语境 / 同一层级”的选项设计要求。
+- 规则改动：新增 `answer_too_obvious` 诊断，用于识别正确答案比错误选项明显更具体、更专业、更正常的题。
+- 修复策略：如果触发 `answer_too_obvious`，进入 `needs_rewrite`，修复建议优先改错误选项，而不是继续扩大来源片段。
+
+### 关键指标
+
+| 指标 | v21 | v22 | 结论 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 8 | 7 | 下降，不是好信号 |
+| 入池题数 | 17 | 11 | 明显下降 |
+| 覆盖知识点比例 | 100% | 85.7% | 下降 |
+| 动态覆盖率 | 81.0% | 64.7% | 下降 |
+| 低置信比例 | 82.4% | 90.9% | 变差 |
+| 平均来源精准 | 4.9 | 4.9 | 保持 |
+| 平均来源覆盖 | 3.3 | 3.3 | 没改善 |
+| 平均认知动作匹配 | 4.5 | 4.6 | 基本持平 |
+| 平均低摩擦题卡分 | 4.9 | 4.9 | 保持 |
+| 高摩擦题数 | 1 | 0 | 小幅改善 |
+| `answer_too_obvious` | 0 | 6 | 新诊断能抓到问题 |
+| `answer_not_unique` 阻断 | 5 | 2 | 降低，但代价是入池减少 |
+
+### 结论
+
+v22 不是整体质量提升。它做对了一件事：**把人工标注中“正确答案太明显”的问题显性化了**。例如 `q-2`、`q-4`、`q-6`、`q-10` 都被标出 `answer_too_obvious`，这和 v21 人工反馈方向一致。
+
+但生成侧没有因此变好。相反，入池题从 17 降到 11，覆盖从 100% 降到 85.7%，低置信比例继续上升。这说明仅靠在 prompt 里补一句“错误选项要真实混淆”不够，模型仍然倾向于生成“一个明显正确答案 + 几个功能性错误选项”。如果继续沿这个方向堆规则，很可能回到之前的复杂化失败路径。
+
+### 下一步
+
+不要把本轮 prompt 增量视为成功方案，也不要继续用 `answer_too_obvious` 压低题目。下一步更合理的方向是：
+
+1. 把干扰项问题从“多写规则”改成“生成前先确定混淆对象”：每道题先明确 2-3 个来自原文相邻概念的真实混淆对象，再生成选项。
+2. 只在选项层做小型结构化，不重构知识点、来源、评分全链路。
+3. 验收时优先看人工可用率和“是否还靠选项气质猜答案”，不再把低置信比例作为主要指标。
+
+## 2026-06-01 第二十三轮：给模型输入相邻混淆对象
+
+实验标签：`v23-confusion-candidates-options`
+
+本轮先回退 v22 的 `answer_too_obvious` 强诊断，不再用一个新机器指标去压低题目。新的尝试是：在生成题目前，后端从同篇文章的其它知识点里为每个知识点整理少量 `confusionCandidates`，作为错误选项的候选边界。也就是说，不再只是告诉模型“干扰项要好”，而是给它一些真实相邻概念，让错误选项更有来源。
+
+### 原始产物
+
+- JSON：`runs/20260601-043251-v23-confusion-candidates-options.json`
+- CSV：`reviews/20260601-043251-v23-confusion-candidates-options.csv`
+- 分析：`analysis/20260601-043251-v23-confusion-candidates-options.md`
+
+### 改动记录
+
+- 回退 v22 代码：移除 `answer_too_obvious` 作为质量分层原因，保留 v22 实验记录作为失败参考。
+- Prompt 改动：不再追加“同一层级、同等可信”这类泛规则；改为让模型优先使用输入里的 `confusionCandidates`。
+- 规则改动：为每个知识点从相邻知识点中提取最多 4 个混淆候选，包含 label、whyConfusing、boundary。
+- 边界：不改来源策略、不改评分系统、不改知识点提取，不引入新的全链路复杂结构。
+
+### 关键指标
+
+| 指标 | v21 | v22 | v23 | 结论 |
+| --- | ---: | ---: | ---: | --- |
+| 保留知识点 | 8 | 7 | 10 | v23 覆盖更广，但需人工看是否引入低价值点 |
+| 入池题数 | 17 | 11 | 15 | v23 回到可用区间，但不追题量 |
+| 覆盖知识点比例 | 100% | 85.7% | 100% | v23 修复了 v22 覆盖下降 |
+| 动态覆盖率 | 81.0% | 64.7% | 68.2% | 仍低于 v21 |
+| 低置信比例 | 82.4% | 90.9% | 86.7% | 仍然不适合作为主指标 |
+| 平均来源精准 | 4.9 | 4.9 | 4.9 | 保持 |
+| 平均来源覆盖 | 3.3 | 3.3 | 3.6 | 小幅改善 |
+| 平均认知动作匹配 | 4.5 | 4.6 | 3.9 | 下降，是本轮最大问题 |
+| 平均低摩擦题卡分 | 4.9 | 4.9 | 5.0 | 变轻 |
+| 平均可见阅读量 | 96.1 | 111.7 | 84.6 | v23 明显更轻 |
+| 重复练习风险题 | 0 | 0 | 0 | 保持 |
+| `answer_not_unique` 阻断 | 5 | 2 | 4 | 介于 v21/v22 之间 |
+
+### 结论
+
+v23 比 v22 更健康：覆盖恢复到 100%，题卡更轻，来源覆盖略有改善，也没有带回重复练习风险。这说明“给模型输入相邻混淆对象”比“单纯追加干扰项规则”更符合方向。
+
+但 v23 还不是明确胜过 v21。它的问题是认知动作匹配下降，尤其 `scenario_is_restatement` 和 `core_claim_too_literal` 增多，说明模型使用了相邻概念后，题目更容易变成基础定义或原文换壳，而不是更高质量的理解题。换句话说，`confusionCandidates` 能帮助选项更贴近文章，但还没有保证题目真的形成有效辨析。
+
+### 下一步
+
+不要继续大改。下一步只需要人工抽查 v23 的 15 道题，重点看两个问题：
+
+1. 干扰项是否比 v21 更像真实混淆，而不是无关凑数。
+2. 题目是否因为引入混淆候选而变得更字面、更像定义题。
+
+如果人工确认 v23 的干扰项确实改善，但题目变浅，下一轮只在 `confusionCandidates` 的使用方式上加一个约束：**错误选项可以来自相邻概念，但题干必须仍然考当前知识点的边界或应用，不允许退回概念识别。**
+
+## 2026-06-01 第二十四轮：把边界辨析放回题干
+
+实验标签：`v24-explicit-boundary-stem`
+
+本轮先把代码层回到 v21 的 PRD-first prompt 基线，移除 v23 的 `confusionCandidates` 生成前注入。新的小方向是：不再要求模型把错误选项写得“像正确”，而是要求误区/边界类题目在题干里直接呈现需要区分的两个相邻概念、场景或判断边界。核心假设是：真正的辨析应该来自题目任务本身，而不是靠选项气质制造难度。
+
+### 原始产物
+
+- JSON：`runs/20260601-044112-v24-explicit-boundary-stem.json`
+- CSV：`reviews/20260601-044112-v24-explicit-boundary-stem.csv`
+- 分析：`analysis/20260601-044112-v24-explicit-boundary-stem.md`
+
+### 改动记录
+
+- 回退 v23：移除 `confusionCandidates` 字段和相邻知识点混淆对象注入。
+- Prompt 改动：在好题标准和动态任务中加入一条小原则：误区/边界题的题干要直接呈现辨析对象，不要把辨析完全藏进选项。
+- 没有新增评分指标、没有改来源策略、没有改知识点提取。
+
+### 关键指标
+
+| 指标 | v21 | v22 | v23 | v24 | 结论 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 保留知识点 | 8 | 7 | 10 | 7 | v24 更收敛 |
+| 入池题数 | 17 | 11 | 15 | 12 | 够用但不追题量 |
+| 覆盖知识点比例 | 100% | 85.7% | 100% | 100% | v24 保住覆盖 |
+| 动态覆盖率 | 81.0% | 64.7% | 68.2% | 75.0% | 低于 v21，高于 v22/v23 |
+| 低置信比例 | 82.4% | 90.9% | 86.7% | 58.3% | 明显改善，但仍需人工确认 |
+| 严重机器问题数 | 15 | 8 | 8 | 3 | 明显下降 |
+| 平均来源覆盖 | 3.3 | 3.3 | 3.6 | 3.8 | 连续改善 |
+| 平均认知动作匹配 | 4.5 | 4.6 | 3.9 | 4.3 | 接近 v21，优于 v23 |
+| 平均低摩擦题卡分 | 4.9 | 4.9 | 5.0 | 5.0 | 保持轻 |
+| 平均可见阅读量 | 96.1 | 111.7 | 84.6 | 89.4 | 轻量体验良好 |
+| 重复练习风险题 | 0 | 0 | 0 | 2 | 新问题，需要人工看 |
+| `answer_not_unique` 阻断 | 5 | 2 | 4 | 2 | 比 v21/v23 好 |
+
+### 结论
+
+v24 是 v22-v24 三轮里最值得继续看的方向。它没有靠堆新字段，也没有引入新的复杂评分；只把“辨析”放回题干，结果低置信比例、严重机器问题、来源覆盖、题卡轻量都明显改善。
+
+但它也不是可以直接上线的结论：入池题数更少，认知动作匹配仍略低于 v21，并且出现了 2 个重复练习风险题。这说明“题干显式辨析”可能提高了机器稳定性，但也可能让部分题围绕同一判断重复。
+
+### 下一步
+
+不要继续增加规则。下一步应该做人工审查，重点只看 v24 的 12 道题：
+
+1. 题干显式辨析后，用户是否更难只靠选项气质猜答案。
+2. 2 个重复练习风险题是否真的重复，还是机器误判。
+3. 和 v21 人工标注的那些“正确答案太明显”问题相比，v24 是否有肉眼改善。
+
+如果人工确认 v24 的题目确实更稳，下一轮只处理重复风险，不继续改 prompt 主体。
+
+### 人工标注回流
+
+标注文件：`reviews/20260601-044112-v24-explicit-boundary-stem.manual-annotations.json`
+
+| 人工结果 | 数量 | 占比 |
+| --- | ---: | ---: |
+| 通过 | 12 | 85.7% |
+| 可修 | 2 | 14.3% |
+| 不可用 | 0 | 0% |
+
+人工标注说明了两个重要事实：
+
+1. v24 的机器低置信已经不应被当作主要问题指标。本轮 7 道机器低置信题里，人工接受 5 道、可修 2 道、拒绝 0 道。也就是说，低置信更像“需要关注”，不是“不可用”。
+2. 真实问题集中在干扰项和误区价值，而不是来源、知识点或题卡重量。两道可修题分别是：
+   - `q-5`：干扰项质量偏低，正确选项太明显。
+   - `q-7`：常见误区复习价值略低。
+
+这轮人工结论支持继续沿 v24 的“少量、结构清楚、PRD-first”方向推进。下一轮不应再追题量，也不应继续修低置信比例，而应针对 **干扰项质量** 和 **误区复习价值** 做小范围改进：让错误选项来自真实相邻概念或真实错误做法，但不要重新引入 v23 那种全局 `confusionCandidates` 复杂结构。
+
+## 2026-06-02 第二十五轮：黄金样本对照起点
+
+实验标签：`v25-golden-sample-baseline`
+
+本轮不是继续调 prompt，而是为“人工把一篇文章修到完美，再反推系统差距”的新方法建立一个当前系统输出基线。它的作用是回答：如果不靠打分继续改，而是把这篇 Hook 文章人工修成理想学习包，那么当前自动系统和理想答案之间差在哪里。
+
+### 原始产物
+
+- JSON：`runs/20260602-134111-v25-golden-sample-baseline.json`
+- CSV：`reviews/20260602-134111-v25-golden-sample-baseline.csv`
+- 分析：`analysis/20260602-134111-v25-golden-sample-baseline.md`
+
+### 关键指标
+
+| 指标 | v24 | v25 | 结论 |
+| --- | ---: | ---: | --- |
+| 保留知识点 | 7 | 7 | 持平 |
+| 入池题数 | 12 | 11 | 略少，但仍可作为人工修订起点 |
+| 覆盖知识点比例 | 100% | 85.7% | 下降，出现 1 个未覆盖知识点 |
+| 动态覆盖率 | 75.0% | 78.6% | 略升，但意义有限 |
+| 低置信比例 | 58.3% | 100% | 指标再次失真，不作为方向盘 |
+| 严重机器问题数 | 3 | 8 | 机器诊断变差，需要人工核对 |
+| 平均来源覆盖 | 3.8 | 2.7 | 明显下降，是本轮最大警报 |
+| 平均来源精准 | 4.9 | 4.8 | 基本持平 |
+| 平均认知动作匹配 | 4.3 | 4.5 | 略升 |
+| 平均低摩擦题卡分 | 5.0 | 5.0 | 保持轻 |
+| 平均可见阅读量 | 89.4 | 80.4 | 更轻 |
+| 重复练习风险题 | 2 | 2 | 持平 |
+| `answer_not_unique` 阻断 | 2 | 2 | 持平 |
+
+### 结论
+
+v25 适合作为“人工黄金样本”的对照起点，但不适合作为继续自动优化的成功方向。它说明当前系统的题卡已经足够轻，认知动作看起来也不差，但来源覆盖、误区与干扰项仍然不稳定。
+
+最重要的信号不是低置信比例。低置信已经在前几轮被证明会误报。真正要看的是：
+
+1. **未覆盖知识点**：如果人工认为这个点是主线，就说明系统仍会漏掉该复习点。
+2. **来源覆盖下降**：题目、正确理解、解释没有被同一段原文充分托住时，用户会失去信任。
+3. **干扰项和误区**：`misconception_not_reflected_in_options`、`distractors_too_obvious` 仍然高频，说明题目常常有正确答案，但错误选项没有学习价值。
+
+### 下一步
+
+不要继续根据 v25 的机器分数修 prompt。下一步应该把这篇文章人工修成“黄金学习包”，至少包括：
+
+- 文章结构骨架。
+- 必须保留的核心知识点。
+- 每个知识点的理想复习目标。
+- 每道理想题的题干、选项、正确理解、误区、解释和来源。
+- 每道题为什么这样设计，哪些题主动不要。
+
+然后用这个黄金样本反推系统缺口。指标只用于辅助描述差距，不再主导下一轮方向。
+
+### 黄金样本三轮人工修订记录
+
+本轮从“看机器指标”切换到“把一篇文章人工修到理想状态”。这不是为了给每道题打一个分，而是为了暴露自动系统和理想学习包之间的结构差距。
+
+#### 产物
+
+- 三轮人工标注：`reviews/20260602-134111-v25-golden-sample-baseline.manual-annotation-rounds.json`
+- 候选修订稿：`reviews/20260602-134111-v25-golden-sample-baseline.proposed-revisions.json`
+
+#### 三轮标注概览
+
+| 轮次 | 标注数 | 主要标注位置 | 暴露的问题 |
+| --- | ---: | --- | --- |
+| 第一轮：原始输出标注 | 13 | 题干、常见误区、干扰项、知识点覆盖 | 题干有模板腔；误区抽象或写反；干扰项语义不明；部分知识点没有题 |
+| 第二轮：第一版候选稿标注 | 10 | 题干、选项、正确理解 | 修订后仍有浅题；干扰项会被改成接近正确答案；正确理解不够具体；部分题仍像背文章 |
+| 第三轮：第二版候选稿标注 | 4 | 干扰项、题干 | 主要问题收敛到干扰项价值和同知识点题目重复；说明大方向更稳，但仍需要题目级精修 |
+
+#### 第一轮：从机器输出到人工问题定位
+
+第一轮标注显示，当前系统最明显的问题不是“不会生成题”，而是题目经常不符合用户轻量复习的心智：
+
+- 题干像阅读理解考试。`根据文章`、`文章指出` 这类表达会让题卡变成“背原文”，而不是“判断自己是否理解”。
+- 常见误区没有真正帮助理解。例如把问题归因到“产品经理技术不足”，或者把 Vibe coding 的误区写反，说明模型在误区字段里经常补一个听起来合理、但没有抓住原文边界的句子。
+- 干扰项质量弱。`严格测试`、`放弃使用 AI`、`责怪工程师` 这类选项没有真实认知干扰价值，用户不理解内容也能排除。
+- 知识点覆盖仍有洞。`实用 Hook 场景：自动格式化与风险拦截` 没有对应题，说明自动系统会保留知识点，但不一定给它稳定生成可复习题。
+
+第一轮修订思路是先做“去模板化 + 纠正误区 + 替换低价值干扰项 + 补缺失题”。它的参考价值在于：**黄金样本不能只记录题目答案，还要记录每个字段为什么这样写**，否则下一轮模型仍会复现同类浅层错误。
+
+#### 第二轮：候选稿暴露“修订也会引入新错误”
+
+第二轮不是简单确认第一版修订，而是发现人工候选稿本身也会出问题：
+
+- 修题干时容易只做语言压缩，没有提升考察深度。例如 `为什么产品经理容易忽略 Hook？` 仍然偏浅。
+- 干扰项如果写得“太像真实混淆”，可能被改成接近正确答案。例如 `认为 Prompt 已能稳定强制执行规则` 作为干扰项时，已经接近 Hook 与 Prompt 区分题里的核心正确边界。
+- 正确理解必须具体。`对控制需求不强` 这种说法不够好，因为它没有交代“对什么控制需求不强”：格式化、危险命令拦截、测试校验、流程固化。
+- 有些题仍在考“文章最后强调了什么”，这会退回背诵文章结论，而不是考用户能不能迁移理解。
+
+第二轮修订思路是把题目从“问文章说了什么”改成“问用户如何判断边界”。例如 q14 从“文章最后强调了什么”改成“PM 用一句话生成 Demo 越容易，越需要补上哪种判断”。这轮的参考价值在于：**黄金样本修订不是润色文字，而是把题目从文章背诵转成产品心智里的判断题**。
+
+#### 第三轮：问题收敛到干扰项价值和重复题
+
+第三轮只标了 4 个点，问题范围明显收窄：
+
+- q5 的 `放弃格式化` 仍然太极端，不能形成真实干扰。
+- q6 的 `CI 会自动处理 Demo 阶段所有风险` 和题目核心关系弱。
+- q7 和 q6 都围绕“为什么 Demo 阶段容易忽略 Hook”，出现同知识点重复考察。
+- q8 的 `写更多的 Prompt` 需要改成更具体的错误做法：`把重复检查继续写进提示词里`。
+
+第三轮修订思路是：不再继续大改整套题，而是做精修：
+
+- 把极端错误项换成真实但错误的做法，例如“只等到 CI 阶段再发现格式问题”。
+- 把弱干扰项改成同一场景下的过度判断，例如“Hook 会让 Demo 完全失去快速迭代的优势”。
+- 对重复题做认知动作重分配。q6 保留“为什么 Demo 阶段不先上 Hook”，q7 改成“什么时候该从 Vibe coding 升级到 Hook”。
+
+这轮的参考价值非常重要：**自动系统后续不应该只检测单题质量，还要检测同一知识点内多题是否在考同一个判断**。同一知识点可以有多题，但每题要承担不同任务：原因、边界、升级时机、场景应用。
+
+#### 本轮总结出的根因
+
+这三轮人工修订说明，当前出题系统的问题不适合再用“低置信比例”这类机器指标主导，而应该转向黄金样本反推：
+
+1. **题干任务不够清楚。** 模型容易写成“根据文章 / 文章指出 / 文章强调什么”，这会把复习体验变成阅读理解。
+2. **误区字段缺少真实混淆来源。** 模型会补抽象误区，甚至写反。误区必须来自原文边界、错误选项或用户真实可能做错的判断。
+3. **干扰项需要同语境、同层级、有学习价值。** 太离谱的错误项没有复习意义；太接近正确答案又会破坏答案唯一性。
+4. **同知识点多题需要分工。** 多题不是换壳重复，而是分别考原因、边界、应用或升级时机。
+5. **正确理解要补足判断对象。** 不能只写“控制需求不强”，要写清楚控制的是格式化、危险命令拦截、测试校验等确定性流程。
+
+#### 对下一轮迭代的指导
+
+下一轮不要再从“增加规则”开始，而应该从黄金样本里抽出更小、更稳定的生成契约：
+
+- 题干禁止模板腔：不用 `根据文章`、`文章指出`、`文章最后强调` 作为默认开头。
+- 每道题必须声明自己在考哪一种判断：原因、边界、升级时机、场景应用。
+- 干扰项生成前先确定错误做法：继续靠 prompt、晚到 CI 才发现、把 Demo 速度误认为可靠性、把 Hook 误认为上线后才需要。
+- 同一知识点已有题时，新题必须说明和已有题的差异，否则不生成。
+- 误区必须能映射到某个错误选项或原文边界，否则宁可不写泛化误区。
+
+这套黄金样本记录会作为后续 prompt / 规则优化的人工基准，而不是再让机器评分单独决定方向。
+
+## 2026-06-04 第二十六轮：字段标准驱动的精简 Prompt
+
+实验标签：`v26-prd-field-standard-lean-prompt`
+
+本轮从刚统一的字段级标准出发，只重构题目生成 prompt，不动知识点提取，也不恢复 DSPy、source block、claim 或复杂教学评分体系到生产 prompt。目标是验证：把 prompt 收束成“产品目标 + 好题原则 + 字段职责 + 输出格式”后，模型是否能在不被大量规则分散注意力的情况下，生成更轻、更自然、更符合字段职责的题。
+
+### 产物
+
+- JSON：`runs/20260604-022023-v26-prd-field-standard-lean-prompt.json`
+- CSV：`reviews/20260604-022023-v26-prd-field-standard-lean-prompt.csv`
+- 分析：`analysis/20260604-022023-v26-prd-field-standard-lean-prompt.md`
+
+> 同名 `20260604-021951` 产物是一次错误 provider 的失败记录，不参与本轮结论。
+
+### Prompt 改动
+
+- system prompt 改成四块：产品目标、好题原则、字段职责、输出格式。
+- 字段职责只吸收人工标准的核心原则：题干轻、正确答案唯一自然、干扰项组形成判断空间、误区能被选项承载、来源是准确原文锚点。
+- user prompt 改成“本次任务单”：只放任务类型、温和目标题数、推荐题型和知识点 JSON，不再重复完整字段标准。
+- rewrite guidance 保留短提示，只针对当前失败原因给方向，避免重新堆出一套大 prompt。
+
+### 指标对比
+
+| 指标 | v25 黄金样本基线 | v26 |
+| --- | ---: | ---: |
+| 保留知识点 | 7 | 8 |
+| 入池题数 | 11 | 20 |
+| 覆盖知识点比例 | 85.7% | 100% |
+| 平均每知识点题数 | 1.6 | 2.5 |
+| 平均来源精准度 | 4.8 | 5.0 |
+| 平均来源覆盖 | 2.7 | 3.4 |
+| 平均低摩擦题卡分 | 5.0 | 5.0 |
+| 高摩擦题数 | 0 | 0 |
+| 重复练习风险题 | 2 | 0 |
+| `answer_not_unique` 阻断 | 2 | 2 |
+
+### 初步结论
+
+v26 的方向值得继续人工审查，但不能仅凭机器指标判定成功：
+
+- 正向：题卡轻量感保持，知识点覆盖恢复到 100%，来源精准度到 5.0，重复练习风险为 0。
+- 正向：prompt 结构明显更轻，user prompt 不再重复 system prompt 的字段标准，降低了“规则抢注意力”的风险。
+- 风险：入池题数从 11 增到 20，可能带来题量回弹；需要人工判断这些新增题是否真的有价值。
+- 风险：机器低置信仍高达 95%，但这个指标已被多轮证明不适合作为方向盘。更应看具体字段问题。
+- 仍需关注：`source_coverage_incomplete` 10 次、`misconception_not_reflected_in_options` 6 次、`explanation_not_tied_to_answer` 4 次，说明误区、解释和来源锚点之间仍可能脱节。
+
+### 人工审查重点
+
+下一步用 HTML 审查页按字段看 v26，不做逐字对照黄金样本：
+
+1. 题干是否迅速进入知识点判断，而不是阅读理解或背诵文章。
+2. 正确选项是否准确唯一，但没有因为更长、更专业而暴露答案。
+3. 干扰项组是否形成合理判断空间，而不是三个低价值排除项。
+4. 常见误区是否能被某个干扰项承载。
+5. 正确理解是否解释了“为什么答案对”，而不是复述正确选项。
+6. 来源片段是否是准确锚点，长度适中，不要求承担完整解释。
+
+如果人工接受率明显高于 v25，下一轮应继续微调“误区 -> 干扰项”关系；如果新增题大量可修或不可用，则需要收紧 targetQuestionCount 的触发方式，而不是继续改字段标准。
+
+### 人工字段审查结果
+
+人工标注文件：`reviews/20260604-065437-v26-field-review-user-annotations.json`
+
+本轮共导出 55 条字段级标注，其中 `accept` 41 条，`fixable` 14 条，没有 `reject`。这说明 v26 不是整体质量崩坏，而是存在几个明确的可修问题。更重要的是，它暴露出机器预审口径本身仍然偏严、偏旧。
+
+#### 字段统计
+
+| 字段 | 标注数 | accept | fixable | 主要结论 |
+| --- | ---: | ---: | ---: | --- |
+| 常见误区 | 18 | 17 | 1 | 机器几乎全部判 `fixable`，但人工多数接受。说明“误区必须明显被错误选项承载”这个预审标准太硬，不符合刚讨论的新标准。常见误区可以帮助解释用户容易误解的方向，不必每次都和某个干扰项一一绑定。 |
+| 来源片段 | 9 | 7 | 2 | 机器认为来源覆盖不足，但人工多数接受。说明来源片段更应该作为准确锚点，而不是承担完整解释。下一轮不要继续强迫来源覆盖解释页全部判断。 |
+| 解释 | 5 | 5 | 0 | 机器判 `fixable` 的解释全部被人工接受。说明解释评分仍过度追求“和来源逐句扣紧”，应该回到“是否帮助理解正确答案”。 |
+| 整题体验 | 10 | 8 | 2 | 大多数题可用，但个别题因为题干或正确选项问题影响轻量体验。 |
+| 题干 | 5 | 1 | 4 | 真问题集中在阅读负担。q3、q13、q14、q16 被标为偏长或略重。 |
+| 正确选项 | 8 | 3 | 5 | 真问题集中在正确选项太长、太详细、比干扰项更像“正确答案”。q6、q7、q10、q11、q14 都被标为可修。 |
+
+#### 关键分歧
+
+这次人工标注最有价值的地方，是校准了“机器预审”和“真实产品标准”的差异：
+
+- **常见误区不应被硬性要求映射到干扰项。** 之前机器把 18 条常见误区里的 17 条判成 `fixable`，但人工全部接受。新的标准应该是：误区要帮助用户理解哪里容易想错；只有明显胡编、写反、语义不清时才需要修。
+- **来源片段是锚点，不是完整解释。** 人工接受了大多数来源片段，说明只要位置准确、长度适中、能把用户带回原文关键位置，就不必要求它覆盖解释里的每个判断。
+- **解释字段当前不能按“来源覆盖”过严扣分。** 解释页已经有正确理解和误区，解释的职责是把答案讲明白，不是逐字证明所有推理。
+- **真正影响产品体验的是题卡正面。** 题干偏长、正确选项信息量明显高于干扰项，会直接破坏“轻、快、随手复习”的体验。
+
+#### 下一轮应修什么
+
+下一轮不应该继续强化误区、解释、来源三者的绑定，也不应该让来源片段变长。应只做两个小方向：
+
+1. **题干轻量化。** 压缩长场景题，让题干更快进入判断；避免为了交代背景把题卡变成阅读理解。
+2. **正确选项去显眼化。** 正确项要准确唯一，但长度、抽象程度、专业感不能明显高于其它选项；必要时要同步提升干扰项的同层级表达，而不是只压短正确项。
+
+这次标注也说明 v26 的字段标准方向基本有效：题量不是主要矛盾，机器低置信不是主要矛盾，后续应该围绕“题卡正面轻量判断体验”继续小步迭代。
+
+## 2026-06-04 第二十七轮：题干轻量化与正确项去显眼化小修
+
+实验标签：`v27-light-stem-balanced-answer`
+
+本轮只按 v26 人工字段审查暴露出的两个真问题做小修：题干阅读负担偏重、正确选项因为更长或更完整而显眼。没有改知识点提取、题量策略、来源、误区和解释规则。
+
+### 产物
+
+- JSON：`runs/20260604-071204-v27-light-stem-balanced-answer.json`
+- CSV：`reviews/20260604-071204-v27-light-stem-balanced-answer.csv`
+- 分析：`analysis/20260604-071204-v27-light-stem-balanced-answer.md`
+- 字段审查页：`reviews/20260604-071204-v27-light-stem-balanced-answer-field-review.html`
+
+> `20260604-071120` 是一次 OpenAI provider key 误用的失败记录，不参与本轮结论。有效结果为 `20260604-071204`。
+
+### Prompt 改动
+
+- 题干：把“进入快”具体化为“场景题只保留一个关键冲突或决策点，不铺完整背景”。
+- 正确选项：强调不要因为更长、更专业、更完整而暴露答案；解释性细节移到 `correctUnderstanding`。
+- 干扰项组：补充“和正确答案保持相近的长度、语气和抽象层级”，但不要求每个干扰项都高度迷惑。
+- 动态 user prompt：只加一句题卡正面自检，避免重新堆复杂规则。
+
+### 指标对比
+
+| 指标 | v26 | v27 |
+| --- | ---: | ---: |
+| 保留知识点 | 8 | 6 |
+| 入池题数 | 20 | 7 |
+| 覆盖知识点比例 | 100% | 83.3% |
+| 动态覆盖率 | 95.2% | 43.8% |
+| 平均每知识点题数 | 2.5 | 1.2 |
+| 平均低摩擦题卡分 | 5.0 | 5.0 |
+| 平均可见阅读量 | 109.8 | 117.0 |
+| 高摩擦题数 | 0 | 0 |
+| 重复练习风险题 | 0 | 0 |
+| 低置信比例 | 95.0% | 57.1% |
+| 平均来源精准度 | 5.0 | 5.0 |
+| 平均来源覆盖 | 3.4 | 3.9 |
+| 严重机器问题 | 0 | 3 |
+
+### 初步结论
+
+v27 不应视为成功方向。虽然低置信比例从 95.0% 降到 57.1%，但这是因为系统大幅少出题、少覆盖，而不是题卡质量真正提升。更关键的是，平均可见阅读量从 109.8 升到 117.0，说明这次 prompt 小修没有稳定改善“轻”的体验。
+
+这轮的反向价值很明确：
+
+- 继续在 prompt 里强调“删背景 / 正确项别显眼”，可能会让模型更保守，导致覆盖下降。
+- 题干和正确选项问题可能不能只靠生成 prompt 解决，应该用后处理或 rewrite 只针对已经生成的重题卡进行局部修，而不是影响初始生成的覆盖。
+- 低置信下降不能作为成功信号。本轮低置信下降伴随覆盖和题量塌缩，属于负向收缩。
+
+### 下一步建议
+
+不要在 v27 基础上继续加 prompt。更稳的方向是回到 v26 的生成 prompt，只把“题干偏重 / 正确项显眼”放进字段审查和定向 rewrite：
+
+1. 初始生成保持 v26，不让模型过早保守。
+2. 评估后只对 `stem` 偏重或 `correct_option` 显眼的题做 rewrite。
+3. rewrite 只改题干和选项表述，不改知识点、来源、解释和题量策略。
+4. 用同一 HTML 字段审查页人工确认 rewrite 是否真的改善。
+
+## 2026-06-04 第二十八轮：题干字数与选项长度平衡的最小提示
+
+实验标签：`v28-light-stem-option-balance-retry`
+
+本轮按人工反馈回到 v26 基础，只尝试两句最小 prompt 修改：题干能短就短，复杂场景尽量控制在约 60 字以内；正确项和干扰项字数尽量保持在相近范围，避免正确项因为明显更长而暴露。没有加入题干下限，没有加入“输出前自检”，也没有改题量、知识点、来源、误区或解释规则。
+
+### 产物
+
+- JSON：`runs/20260604-073513-v28-light-stem-option-balance-retry.json`
+- CSV：`reviews/20260604-073513-v28-light-stem-option-balance-retry.csv`
+- 分析：`analysis/20260604-073513-v28-light-stem-option-balance-retry.md`
+
+> `20260604-073430` 是一次 provider `fetch failed` 失败记录，已移除；一次带题干下限的无效 v28 运行也已移除，不进入结论。
+
+### Prompt 改动
+
+- `stem` 字段增加轻量范围感：能短就短，复杂场景也尽量控制在约 60 字以内。
+- 新增 `options` 字段职责：正确项和干扰项字数尽量保持在相近范围，不要让正确项因为明显更长而暴露。
+
+### 指标对比
+
+| 指标 | v26 | v28 |
+| --- | ---: | ---: |
+| 保留知识点 | 8 | 7 |
+| 入池题数 | 20 | 6 |
+| 覆盖知识点比例 | 100% | 71.4% |
+| 动态覆盖率 | 95.2% | 60.0% |
+| 平均每知识点题数 | 2.5 | 0.9 |
+| 平均低摩擦题卡分 | 5.0 | 5.0 |
+| 平均可见阅读量 | 109.8 | 88.2 |
+| 高摩擦题数 | 0 | 0 |
+| 平均质量分 | 4.6 | 4.3 |
+| 低置信比例 | 95.0% | 83.3% |
+| `answer_not_unique` 阻断 | 2 | 2 |
+
+### 初步结论
+
+v28 也不应直接采用。它确实把平均可见阅读量从 109.8 降到 88.2，但入池题数从 20 降到 6，覆盖知识点比例从 100% 降到 71.4%。这说明哪怕只加非常轻的长度提示，只要放进初始生成 prompt，也可能让模型整体变保守，导致覆盖和题量收缩。
+
+这轮验证了一个关键判断：题干长度和正确项显眼问题是真问题，但不适合继续放进初始生成 prompt 里扩大影响面。更稳的做法仍然是：
+
+1. 初始生成继续使用 v26，不让模型过早收缩。
+2. 生成后用字段审查识别“题干偏重 / 正确项显眼”的题。
+3. 只对这些题做局部 rewrite，rewrite 不改变知识点、题量、来源和解释，只压缩题干或平衡选项表达。
+4. 用 HTML 字段审查页人工确认 rewrite 是否改善。
+
+## 2026-06-04 A/A Control：v26 当前完整链路自然波动
+
+实验标签：
+
+- `v26-aa-control-r1`
+- `v26-aa-control-r2`
+- `v26-aa-control-r3`
+
+本轮不设置 `QUESTION_PROMPT_VARIANT`，连续用当前默认题目 prompt 跑同一篇 Hook 文章三次。目的不是优化，而是估计当前完整链路自身波动范围，避免把模型偶发波动误判为某句 prompt 的效果。
+
+### 严格性校正
+
+这三次不能视为“原始 v26 的严格 A/A 复现”。复查后确认：
+
+- 原始 v26 产物 `20260604-022023-v26-prd-field-standard-lean-prompt.json` 没有保存 prompt hash、代码 commit、模型配置快照。
+- 当前 `backend/src/generation/prompts/questions.js` 和 `backend/src/generation/generateQuestions.js` 在原始 v26 产物生成之后又被修改过。
+- 当前 control 的 `questionSystemPromptForVariant("v26_control")` 与当前 `questionSystemPrompt` 相同，但无法证明它与 02:20 原始 v26 运行时的完整 system/user prompt 完全相同。
+
+因此，本节结论只能用于判断“当前默认系统”的自然波动，不能用于证明“原始 v26 本身”的自然波动。
+
+### 产物
+
+- JSON：`runs/20260604-082527-v26-aa-control-r1.json`
+- CSV：`reviews/20260604-082527-v26-aa-control-r1.csv`
+- 分析：`analysis/20260604-082527-v26-aa-control-r1.md`
+- JSON：`runs/20260604-082927-v26-aa-control-r2.json`
+- CSV：`reviews/20260604-082927-v26-aa-control-r2.csv`
+- 分析：`analysis/20260604-082927-v26-aa-control-r2.md`
+- JSON：`runs/20260604-083038-v26-aa-control-r3.json`
+- CSV：`reviews/20260604-083038-v26-aa-control-r3.csv`
+- 分析：`analysis/20260604-083038-v26-aa-control-r3.md`
+
+### 分层指标
+
+| 指标 | 原始 v26 | A/A r1 | A/A r2 | A/A r3 |
+| --- | ---: | ---: | ---: | ---: |
+| 保留知识点 | 8 | 6 | 7 | 8 |
+| 目标题数总和 | 21 | 15 | 15 | 23 |
+| 入池题数 | 20 | 9 | 5 | 10 |
+| 覆盖知识点 | 8 | 6 | 5 | 7 |
+| 未覆盖知识点 | 0 | 0 | 2 | 1 |
+| 平均每知识点题数 | 2.5 | 1.5 | 0.7 | 1.3 |
+| 题数分布 | 2题:4 / 3题:4 | 1题:4 / 2题:1 / 3题:1 | 0题:2 / 1题:5 | 0题:1 / 1题:4 / 2题:3 |
+| `answer_not_unique` 阻断 | 2 | 7 | 0 | 4 |
+| 低置信比例 | 95.0% | 66.7% | 60.0% | 70.0% |
+| 平均低摩擦题卡分 | 5.0 | 5.0 | 5.0 | 5.0 |
+
+### 结论
+
+这轮 control 说明：当前默认完整链路在同一 prompt、同一文章下出现明显波动。三次当前 control 的入池题数为 9 / 5 / 10，且波动并不只发生在最终筛选层：
+
+- 知识点数从 6 到 8 波动。
+- 目标题数总和从 15 到 23 波动。
+- 覆盖知识点从 5 到 7 波动。
+- 阻断原因也不稳定，`answer_not_unique` 从 0 到 7 波动。
+
+因此，v28 的 6 题结果不能直接归因于那两句长度提示。它和当前 control r2 处于同一量级，可能包含完整链路自然波动、上游知识点变化、题目生成变化和筛选变化的叠加。
+
+### 下一步
+
+不要立刻跑 v28 三次并据此改 prompt。下一步应先补完整链路 trace 和版本指纹，把每轮明确拆成：
+
+1. 知识点提取结果。
+2. 每个知识点的目标题数。
+3. 模型实际返回候选题数。
+4. 评估后可入池题数。
+5. 阻断 / rewrite / 低置信原因。
+6. 代码 commit、dirty diff hash、system prompt hash、user prompt hash、模型 provider / model。
+
+只有当 trace 能说明“少题发生在哪一层”，并且版本指纹能证明 control 与 variant 只有预期差异后，再跑 v28 或其它 prompt 变体的 A/A 测试。否则继续比较最终题数，会把自然波动、代码漂移和 prompt 效果混在一起。
+
+## 2026-06-04 A/A/A Control：v26 字段标准 Prompt 回滚后复测
+
+实验标签：
+
+- `v26-restored-aa-control-r1`
+- `v26-restored-aa-control-r2`
+- `v26-restored-aa-control-r3`
+
+本轮先把默认题目生成路径收回到 v26 字段标准 prompt：移除 `QUESTION_PROMPT_VARIANT` 入口，删除 `stem_soft_cap / option_length_balance / combined_soft` 实验提示，确保默认出题不再受 v27 / v28 两句长度提示影响。同时在 `quality:single` 报告中新增版本指纹，后续每轮都记录 prompt hash、git commit、dirty diff hash 和模型配置。
+
+### 版本指纹
+
+三轮复测的关键指纹一致：
+
+- `questionSystemPromptHash`: `2734e0e1ddbb...`
+- `gitDiffHash`: `58e9f9278b53...`
+- `gitCommit`: `ace671c7...`
+- `model`: `deepseek-v4-flash`
+
+`gitStatusShortHash` 每轮不同，是因为每次运行都会新增 JSON / CSV / analysis 产物；`gitDiffHash` 稳定，说明代码 diff 没变。
+
+### 产物
+
+- JSON：`runs/20260604-084632-v26-restored-aa-control-r1.json`
+- CSV：`reviews/20260604-084632-v26-restored-aa-control-r1.csv`
+- 分析：`analysis/20260604-084632-v26-restored-aa-control-r1.md`
+- JSON：`runs/20260604-084840-v26-restored-aa-control-r2.json`
+- CSV：`reviews/20260604-084840-v26-restored-aa-control-r2.csv`
+- 分析：`analysis/20260604-084840-v26-restored-aa-control-r2.md`
+- JSON：`runs/20260604-085033-v26-restored-aa-control-r3.json`
+- CSV：`reviews/20260604-085033-v26-restored-aa-control-r3.csv`
+- 分析：`analysis/20260604-085033-v26-restored-aa-control-r3.md`
+
+### 分层指标
+
+| 指标 | 原始 v26 | restored r1 | restored r2 | restored r3 |
+| --- | ---: | ---: | ---: | ---: |
+| 保留知识点 | 8 | 8 | 6 | 9 |
+| 目标题数总和 | 21 | 20 | 14 | 24 |
+| 入池题数 | 20 | 6 | 7 | 8 |
+| 覆盖知识点 | 8 | 6 | 5 | 8 |
+| 未覆盖知识点 | 0 | 2 | 1 | 1 |
+| 平均每知识点题数 | 2.5 | 0.8 | 1.2 | 0.9 |
+| 题数分布 | 2题:4 / 3题:4 | 0题:2 / 1题:6 | 0题:1 / 1题:3 / 2题:2 | 0题:1 / 1题:8 |
+| `answer_not_unique` 阻断 | 2 | 1 | 3 | 4 |
+| 低置信比例 | 95.0% | 83.3% | 71.4% | 50.0% |
+| 平均低摩擦题卡分 | 5.0 | 5.0 | 5.0 | 4.8 |
+| 平均可见阅读负担 | 109.8 | 74.5 | 89.0 | 125.5 |
+
+### 结论
+
+这次回滚后复测确认了两件事：
+
+1. **v27 / v28 两句长度提示已经退出默认生成路径。** 三轮复测使用同一 prompt hash，且默认 prompt 不包含“约 60 字以内”或“选项长度接近”等实验句。
+2. **回滚到 v26 字段标准 prompt 后，结果仍没有回到原始 v26 的 20 题效果。** 三轮入池题数稳定在 6 / 7 / 8，和原始 v26 的 20 题差距很大。
+
+因此，当前问题不能再简单归因于 v27 / v28 的两句 prompt。更可能的原因在题目 prompt 之外的链路差异或不可追溯因素：
+
+- 原始 v26 没有保存版本指纹，无法证明当时的完整 user prompt、代码 diff、模型行为和当前完全一致。
+- 当前三轮中知识点数和目标题数仍在波动，说明上游知识点提取 / target 计算本身会影响最终题量。
+- 每个知识点最终几乎只保留 1 道题，说明问题主要发生在“生成候选数量不足”或“选择器只保留少量题”的组合上，而不是题卡长度提示。
+
+### 下一步
+
+下一步不应继续改题干长度 prompt。应先补更细的 full-chain trace，明确每个知识点：
+
+- `targetQuestionCount`
+- 初始模型返回候选题数
+- rewrite 后候选题数
+- 最终入池题数
+- 被丢弃 / 阻断 / 合并去重原因
+
+只有知道“每个知识点为什么从目标 2-3 题变成 1 题或 0 题”，才能决定是修初始出题 prompt、修 rewrite、修选择器，还是修知识点 target。
+
+## 2026-06-04 Tagged V26 A/A/A Control：固定版本锚点后复测
+
+本轮先把当前 v26 字段标准 prompt 版本固定为 Git commit 和 tag：
+
+- commit：`a28ab87c1aec8d4c37c11339fabbcfeb9d324725`
+- tag：`question-v26-prd-field-standard-lean-prompt`
+- 固定版本规范：`docs/prompt-experiment-versioning-zh.md`
+
+固定版本之后，再用同一篇 Hook 样本跑三次 A/A/A control。三轮报告里的关键指纹一致：
+
+- `gitCommit`: `a28ab87c...`
+- `gitDiffHash`: `e3b0c44298fc...`
+- `questionSystemPromptHash`: `2734e0e1ddbb...`
+- `model`: `deepseek-v4-flash`
+
+其中 `gitDiffHash = e3b0c44298fc...` 是空 diff hash，说明这三轮是在干净代码状态下运行的，不再混入未提交 prompt diff。
+
+### 产物
+
+- JSON：`runs/20260604-093452-v26-tagged-aa-control-r1.json`
+- CSV：`reviews/20260604-093452-v26-tagged-aa-control-r1.csv`
+- 分析：`analysis/20260604-093452-v26-tagged-aa-control-r1.md`
+- JSON：`runs/20260604-093616-v26-tagged-aa-control-r2.json`
+- CSV：`reviews/20260604-093616-v26-tagged-aa-control-r2.csv`
+- 分析：`analysis/20260604-093616-v26-tagged-aa-control-r2.md`
+- JSON：`runs/20260604-093811-v26-tagged-aa-control-r3.json`
+- CSV：`reviews/20260604-093811-v26-tagged-aa-control-r3.csv`
+- 分析：`analysis/20260604-093811-v26-tagged-aa-control-r3.md`
+
+### 对比指标
+
+| 指标 | 原始 v26 | tagged r1 | tagged r2 | tagged r3 |
+| --- | ---: | ---: | ---: | ---: |
+| 保留知识点 | 8 | 7 | 7 | 8 |
+| 目标题数总和 | 21 | 18 | 18 | 21 |
+| 入池题数 | 20 | 6 | 6 | 9 |
+| 覆盖知识点 | 8 | 6 | 6 | 8 |
+| 未覆盖知识点 | 0 | 1 | 1 | 0 |
+| 平均每知识点题数 | 2.5 | 0.9 | 0.9 | 1.1 |
+| 题数分布 | 2题:4 / 3题:4 | 0题:1 / 1题:6 | 0题:1 / 1题:6 | 1题:7 / 2题:1 |
+| `answer_not_unique` 阻断 | 2 | 2 | 2 | 0 |
+| 低置信比例 | 95.0% | 66.7% | 66.7% | 66.7% |
+| 平均低摩擦题卡分 | 5.0 | 4.8 | 5.0 | 5.0 |
+| 平均可见阅读负担 | 109.8 | 124.3 | 86.2 | 115.3 |
+| 平均来源覆盖 | 3.4 | 3.2 | 4.0 | 4.3 |
+
+### 结论
+
+这次 tagged control 进一步确认：
+
+1. 当前代码已经固定为可回滚版本，之后可以用 `git switch -c restore-v26 question-v26-prd-field-standard-lean-prompt` 回到这一版。
+2. V27 / V28 的长度限制 prompt 不在当前运行链路里；三轮是干净 diff 运行。
+3. 但三轮结果仍然稳定低于原始 v26 的 20 道题，说明“题目突然变少”不能继续归因于 V27 / V28 那两句 prompt 残留。
+
+更准确的判断是：**原始 v26 结果缺少完整版本指纹，当前只能证明 tagged v26 代码状态稳定产出 6 / 6 / 9 道，而不能证明原始 v26 的 20 道与当前 tagged v26 是完全同一条链路。**
+
+下一步应做 full-chain trace，而不是继续改 prompt：
+
+- 记录每个知识点的 `targetQuestionCount`。
+- 记录模型每次初始生成实际返回几道题。
+- 记录 rewrite 是否触发、触发原因和返回题数。
+- 记录选择器对每道候选题的保留 / 丢弃 / 去重原因。
+- 将“目标 2-3 题为何最终只剩 0-1 题”的原因定位到生成、评估、rewrite 或选择器中的具体环节。
+
+## 2026-06-04 Prompt Ablation：删除“宁可少出可靠题”一句
+
+### 实验假设
+
+当前 prompt 中的“宁可少出可靠题，也不要为了数量生成重复、含糊、无来源或多答案题”可能让模型过度保守，导致每个知识点只生成或保留很少题目。本轮只删除这一句，观察题量是否回升。
+
+### 改动
+
+- 删除 `questionSystemPrompt` 产品目标中的一行：
+  - `宁可少出可靠题，也不要为了数量生成重复、含糊、无来源或多答案题。`
+- 不改知识点提取、不改题量策略、不改 rewrite / supplement、不改选择器、不改评分规则。
+
+### 产物
+
+- JSON：`runs/20260604-100240-v26-remove-less-is-better-line.json`
+- CSV：`reviews/20260604-100240-v26-remove-less-is-better-line.csv`
+- 分析：`analysis/20260604-100240-v26-remove-less-is-better-line.md`
+
+### 对比指标
+
+| 指标 | tagged r3 | 删除该句 |
+| --- | ---: | ---: |
+| 保留知识点 | 8 | 6 |
+| 目标题数总和 | 21 | 14 |
+| 入池题数 | 9 | 6 |
+| 覆盖知识点 | 8 | 5 |
+| 未覆盖知识点 | 0 | 1 |
+| 平均每知识点题数 | 1.1 | 1.0 |
+| 题数分布 | 1题:7 / 2题:1 | 0题:1 / 1题:4 / 2题:1 |
+| `answer_not_unique` 阻断 | 0 | 2 |
+| 低置信比例 | 66.7% | 83.3% |
+| 平均质量分 | 4.5 | 4.4 |
+| 平均低摩擦题卡分 | 5.0 | 5.0 |
+| 平均来源覆盖 | 4.3 | 3.5 |
+
+### 结论
+
+删除这句没有让题量回升，反而本轮保留知识点从 8 降到 6，入池题从 9 降到 6，`answer_not_unique` 阻断从 0 增到 2。
+
+这说明“宁可少出可靠题”这句不是当前题量偏低的直接主因。更重要的是，本轮知识点数量和目标题数总和也同步下降，说明完整链路里上游知识点提取 / target 计算的随机波动会直接影响最终题量。单独删一句出题 prompt 不能解释全部变化。
+
+下一步仍应做 full-chain trace，而不是继续靠单句 prompt 猜测：
+
+- 每个知识点模型初始返回几道题。
+- rewrite 实际返回几道题。
+- 每道候选题为什么保留、低置信、阻断或被去重。
+- 上游知识点数量为什么在同一文章上从 8 波动到 6。
+
+## 2026-06-04 Judge / Selection 新字段标准对齐 AAA Control
+
+### 实验假设
+
+把后半段 judge / selection 从旧的“解释充分、来源覆盖、干扰项逐项偏严”口径，调整为新字段标准口径：
+
+- 来源片段优先作为准确原文锚点，不要求承担完整解释页职责。
+- 干扰项按三个选项的整体判断空间评估，允许一个较明显但仍有边界提示价值的干扰项。
+- 常见误区不强行要求被来源片段逐字支撑，只要能对应题干、正确理解、错误选项或知识点边界。
+- 高摩擦题卡只在明显重时触发 rewrite，不再把轻微偏长当成强改写。
+
+本轮用同一代码状态连续跑三次 AAA control，和 tagged v26 三轮对比。
+
+### 产物
+
+- JSON：`runs/20260604-103013-v29-judge-selection-standard-aa-valid-r1.json`
+- CSV：`reviews/20260604-103013-v29-judge-selection-standard-aa-valid-r1.csv`
+- 分析：`analysis/20260604-103013-v29-judge-selection-standard-aa-valid-r1.md`
+- JSON：`runs/20260604-103331-v29-judge-selection-standard-aa-valid-r2.json`
+- CSV：`reviews/20260604-103331-v29-judge-selection-standard-aa-valid-r2.csv`
+- 分析：`analysis/20260604-103331-v29-judge-selection-standard-aa-valid-r2.md`
+- JSON：`runs/20260604-103440-v29-judge-selection-standard-aa-valid-r3.json`
+- CSV：`reviews/20260604-103440-v29-judge-selection-standard-aa-valid-r3.csv`
+- 分析：`analysis/20260604-103440-v29-judge-selection-standard-aa-valid-r3.md`
+
+### 指标对比
+
+| 版本 | 入池题数 | 覆盖知识点 | 覆盖率 | 低置信比例 | high | needs_rewrite | 平均质量 | 低摩擦分 | 平均阅读负担 | 来源精准 | 来源覆盖 | 严重问题 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v26 tagged r1 | 6 | 6 / 7 | 85.7% | 66.7% | 2 | 4 | 4.5 | 4.8 | 124.3 | 5.0 | 3.2 | 2 |
+| v26 tagged r2 | 6 | 6 / 7 | 85.7% | 66.7% | 2 | 3 | 4.6 | 5.0 | 86.2 | 5.0 | 4.0 | 1 |
+| v26 tagged r3 | 9 | 8 / 8 | 100.0% | 66.7% | 3 | 5 | 4.5 | 5.0 | 115.3 | 5.0 | 4.3 | 1 |
+| 新标准 r1 | 6 | 6 / 7 | 85.7% | 66.7% | 2 | 2 | 4.6 | 5.0 | 122.3 | 5.0 | 3.0 | 0 |
+| 新标准 r2 | 7 | 7 / 7 | 100.0% | 71.4% | 2 | 2 | 4.4 | 5.0 | 101.6 | 5.0 | 3.3 | 1 |
+| 新标准 r3 | 6 | 6 / 7 | 85.7% | 50.0% | 3 | 3 | 4.5 | 5.0 | 114.2 | 5.0 | 2.8 | 0 |
+| v26 tagged 平均 | 7.0 | 6.7 | 90.5% | 66.7% | 2.3 | 4.0 | 4.5 | 4.9 | 108.6 | 5.0 | 3.8 | 1.3 |
+| 新标准平均 | 6.3 | 6.3 | 90.5% | 62.7% | 2.3 | 2.3 | 4.5 | 5.0 | 112.7 | 5.0 | 3.0 | 0.3 |
+
+### 结论
+
+这轮新标准对齐有局部正向作用，但不是决定性改善：
+
+1. `needs_rewrite` 从平均 4.0 降到 2.3，严重问题从 1.3 降到 0.3，说明后半段 judge / selection 的确不再像旧标准那样频繁把题打成重写。
+2. 低摩擦分稳定为 5.0，高摩擦题仍为 0，说明新标准没有把题卡体验做重。
+3. 入池题数没有恢复，反而从 v26 tagged 平均 7.0 略降到 6.3；这说明当前题量偏低的主因不只是后半段 judge / selection 过严。
+4. 来源精准稳定为 5.0，但来源覆盖均分从 3.8 降到 3.0。这个变化符合“来源片段作为锚点”的新口径，但也提示后续不能只看旧的来源覆盖分来判断质量。
+
+因此，本轮可以保留为一个更符合新字段标准的 judge / selection 方向，但它没有解决“为什么每个知识点最终只剩 0-1 道题”的核心问题。下一步应做 full-chain trace，把每个知识点从目标题数到候选题、rewrite、选择器的流失位置完整记录出来。
