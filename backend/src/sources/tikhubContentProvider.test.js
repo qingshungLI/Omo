@@ -83,6 +83,38 @@ test("normalizes WeChat article text and sends the required POST payload", async
   });
 });
 
+test("normalizes the live WeChat V2 data.content response shape", () => {
+  const result = normalizeTikHubContent("wechat", {
+    url: "https://mp.weixin.qq.com/s/demo",
+    content: {
+      title: "一次练习只选择一个记忆点",
+      desc: "文章摘要",
+      author: "作者",
+      nick_name: "公众号",
+      mid: 12345,
+      create_time: "2026-07-23 08:00",
+      cdn_url: "https://mmbiz.qpic.cn/cover.jpg",
+      content_text: "主动回忆比重复阅读更能暴露知识缺口。",
+      picture_page_info_list: [
+        { cdn_url: "https://mmbiz.qpic.cn/one.jpg" },
+        { cdn_url: "https://mmbiz.qpic.cn/two.jpg" }
+      ]
+    }
+  }, "https://mp.weixin.qq.com/s/demo");
+
+  assert.equal(result.title, "一次练习只选择一个记忆点");
+  assert.equal(result.description, "文章摘要");
+  assert.equal(result.author, "作者");
+  assert.equal(result.providerContentId, "12345");
+  assert.equal(result.publishedAt, "2026-07-23 08:00");
+  assert.equal(result.text, "主动回忆比重复阅读更能暴露知识缺口。");
+  assert.equal(result.coverUrl, "https://mmbiz.qpic.cn/cover.jpg");
+  assert.deepEqual(result.images, [
+    "https://mmbiz.qpic.cn/one.jpg",
+    "https://mmbiz.qpic.cn/two.jpg"
+  ]);
+});
+
 test("normalizes Zhihu answers without leaking HTML into the learning source", async () => {
   const result = await fetchTikHubContentSource({
     sourceUrl: "https://www.zhihu.com/question/1/answer/2",

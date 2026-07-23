@@ -317,35 +317,61 @@ function normalizeXiaohongshu(payload, sourceUrl) {
 
 function normalizeWechat(payload, sourceUrl) {
   const root = firstObject(payload?.data, payload);
-  const article = firstObject(root?.content?.article, root?.article, root);
+  const article = firstObject(
+    root?.content?.article,
+    root?.content,
+    root?.article,
+    root
+  );
   const images = uniqueUrls(
     Array.isArray(article?.images) ? article.images.map((image) => image?.src || image?.url) : [],
-    article?.image_urls
+    article?.image_urls,
+    Array.isArray(article?.picture_page_info_list)
+      ? article.picture_page_info_list.map((image) => image?.cdn_url || image?.url)
+      : []
   );
   const text = cleanText(
     article?.full_text
       || article?.text
+      || article?.content_text
       || root?.full_text
       || root?.content_text
       || root?.digest
   );
-  const account = cleanText(root?.author || root?.account_name || root?.nickname);
+  const account = cleanText(
+    article?.author
+      || article?.nick_name
+      || article?.nickname
+      || root?.author
+      || root?.account_name
+      || root?.nickname
+  );
   return {
     provider: "tikhub",
     platform: "wechat",
-    providerContentId: stringValue(root?.article_id || root?.id),
+    providerContentId: stringValue(
+      root?.article_id
+        || root?.id
+        || article?.mid
+        || article?.comment_id
+    ),
     kind: "article",
-    title: cleanText(root?.title || article?.title) || "公众号文章",
-    description: cleanText(root?.digest || root?.description),
+    title: cleanText(article?.title || root?.title) || "公众号文章",
+    description: cleanText(article?.desc || article?.digest || root?.digest || root?.description),
     text,
     account,
     author: account,
     sourceUrl,
-    publishedAt: stringValue(root?.datetime || root?.publish_time),
+    publishedAt: stringValue(
+      article?.create_time
+        || article?.create_timestamp
+        || root?.datetime
+        || root?.publish_time
+    ),
     images,
     mediaUrl: "",
     mediaUrls: [],
-    coverUrl: firstUrl(root?.cover, root?.cover_url, images),
+    coverUrl: firstUrl(article?.cdn_url, root?.cover, root?.cover_url, images),
     durationSeconds: null,
     subtitles: [],
     metadata: { stats: root?.statistics || {} }
