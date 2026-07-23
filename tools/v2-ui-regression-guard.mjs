@@ -7,7 +7,11 @@ const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const files = {
   questionComponents: resolve(repoRoot, "拾贝/拾贝/V2/Components/Flow/V2QuestionComponents.swift"),
-  reviewFlowScreens: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Review/V2ReviewFlowScreens.swift")
+  reviewFlowScreens: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Review/V2ReviewFlowScreens.swift"),
+  awakeningViews: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Home/V2AwakeningViews.swift"),
+  awakeningModels: resolve(repoRoot, "拾贝/拾贝/V2/Models/V2AwakeningModels.swift"),
+  v2Root: resolve(repoRoot, "拾贝/拾贝/V2/V2RootView.swift"),
+  apiClient: resolve(repoRoot, "拾贝/拾贝/Services/APIClient.swift")
 };
 
 const source = Object.fromEntries(
@@ -62,6 +66,36 @@ const checks = [
     "matching_screen_has_no_per_option_height",
     !/optionCardHeight\(for:\s*pair\.(left|right)\)|rowHeights|optionRowHeights/.test(matchingScreenSource),
     "Matching screen must keep all option cards in one question at the same height."
+  ),
+  check(
+    "awakening_home_is_single_card_and_low_pressure",
+    source.awakeningViews.includes("今天，唤醒一点记忆")
+      && source.awakeningViews.includes('return response?.hasActiveCard == true ? "继续这张" : "抽一张"')
+      && source.awakeningViews.includes("一张就好，随时可以停下"),
+    "Awakening home must present one resumable card without streak, rank, or social pressure."
+  ),
+  check(
+    "awakening_source_is_feedback_only",
+    /if let feedback = response\.feedback \{[\s\S]*V2AnswerFeedbackPanel\([\s\S]*onSource:\s*onSource/.test(source.awakeningViews)
+      && !/awakeningQuestionCard[\s\S]*Button\(action:\s*onSource\)/.test(source.awakeningViews),
+    "The source entry must appear with answer feedback, not leak evidence before recall."
+  ),
+  check(
+    "awakening_answer_is_server_backed",
+    /answerV2AwakeningSession\([\s\S]*selectedOptionId:[\s\S]*attemptId:/.test(source.apiClient)
+      && /api\/v2\/awakening-sessions\/.*\/answer/.test(source.apiClient)
+      && /apiClient\.answerV2AwakeningSession\(/.test(source.v2Root),
+    "Awakening answers must use the server-owned idempotent session endpoint."
+  ),
+  check(
+    "awakening_failed_answer_can_retry",
+    /\.onChange\(of:\s*isSubmitting\)[\s\S]*response\.feedback == nil[\s\S]*selectedOptionId = nil/.test(source.awakeningViews),
+    "A failed answer submission must unlock the local option state for retry."
+  ),
+  check(
+    "awakening_fixture_keeps_session_identity",
+    /answeredResponse\([\s\S]*from current:[\s\S]*sessionId:\s*current\?\.awakeningSession\?\.id/.test(source.awakeningModels),
+    "Fixture feedback must retain the current card session identity."
   )
 ];
 

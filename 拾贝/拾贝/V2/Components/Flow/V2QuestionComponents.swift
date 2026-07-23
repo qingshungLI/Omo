@@ -313,6 +313,7 @@ struct V2AnswerFeedbackPanel: View {
     let onContinue: () -> Void
     var onClose: () -> Void = {}
     var onSource: () -> Void = {}
+    var actionTitle: String = "继续"
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -371,7 +372,7 @@ struct V2AnswerFeedbackPanel: View {
                 .padding(.top, V2AnswerFeedbackPanelMetrics.panelBodyTopY + V2AnswerFeedbackPanelMetrics.contentTopInset)
 
             V2FeedbackActionButton(
-                title: "继续",
+                title: actionTitle,
                 tone: isCorrect ? .correct : .wrong,
                 action: onContinue
             )

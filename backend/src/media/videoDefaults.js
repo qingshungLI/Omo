@@ -16,7 +16,8 @@ export const VIDEO_DEFAULTS = Object.freeze({
   frameProvider: "crv_style_ffmpeg",
   visualProvider: "qwen-vl",
   visualModel: "qwen3-vl-flash",
-  mediaMaxBytes: 150 * 1024 * 1024,
+  mediaMaxBytes: 40 * 1024 * 1024,
+  audioMaxBytes: 20 * 1024 * 1024,
   mediaFetchTimeoutMs: 60_000,
   tikhubUnitCostUsd: 0.001
 });

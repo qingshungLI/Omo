@@ -13,15 +13,53 @@ const DEFAULT_TIMEOUT_MS = readPositiveInt(process.env.VIDEO_MEDIA_FETCH_TIMEOUT
 
 export async function downloadMediaToTempFile({
   mediaUrl,
+  mediaUrls = [],
+  headers = {},
   fetchImpl = fetch,
   maxBytes = DEFAULT_MAX_BYTES,
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  candidateTimeoutMs = readPositiveInt(process.env.VIDEO_MEDIA_CANDIDATE_TIMEOUT_MS, 45_000)
 } = {}) {
+  const candidates = normalizeMediaUrls(mediaUrls, mediaUrl);
+  let lastError = null;
+  for (const candidateUrl of candidates) {
+    try {
+      return await downloadSingleMediaToTempFile({
+        mediaUrl: candidateUrl,
+        headers,
+        fetchImpl,
+        maxBytes,
+        timeoutMs: candidates.length > 1 ? Math.min(timeoutMs, candidateTimeoutMs) : timeoutMs
+      });
+    } catch (error) {
+      lastError = error;
+      if (error?.mediaErrorType === "video_media_too_large" || error?.retryable === false) {
+        throw error;
+      }
+    }
+  }
+  if (lastError) throw lastError;
+  throw createMediaExtractionError("video_media_url_missing", "视频内容暂时无法读取，请稍后重试。", {
+    retryable: false
+  });
+}
+
+async function downloadSingleMediaToTempFile({
+  mediaUrl,
+  headers,
+  fetchImpl,
+  maxBytes,
+  timeoutMs
+}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let dir = null;
   try {
-    const response = await fetchImpl(mediaUrl, { signal: controller.signal, redirect: "follow" });
+    const response = await fetchImpl(mediaUrl, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: sanitizeDownloadHeaders(headers)
+    });
     if (!response.ok) {
       throw createMediaExtractionError("video_media_unavailable", "视频内容暂时无法读取，请稍后重试。", {
         retryable: response.status >= 500,
@@ -57,6 +95,24 @@ export async function downloadMediaToTempFile({
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizeMediaUrls(mediaUrls, mediaUrl) {
+  const values = [
+    ...(Array.isArray(mediaUrls) ? mediaUrls : []),
+    mediaUrl
+  ];
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function sanitizeDownloadHeaders(headers) {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) return {};
+  const allowed = new Set(["accept", "referer", "user-agent"]);
+  return Object.fromEntries(
+    Object.entries(headers)
+      .map(([key, value]) => [String(key).toLowerCase(), String(value || "").trim()])
+      .filter(([key, value]) => allowed.has(key) && value)
+  );
 }
 
 export async function cleanupMediaTempFiles(...files) {

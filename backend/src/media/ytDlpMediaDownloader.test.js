@@ -19,6 +19,8 @@ test("downloads merged media through yt-dlp into a temp file", async () => {
     });
 
     assert.equal(calls[0].args.includes("--merge-output-format"), true);
+    const maxFileSizeIndex = calls[0].args.indexOf("--max-filesize");
+    assert.equal(calls[0].args[maxFileSizeIndex + 1], String(40 * 1024 * 1024));
     assert.equal(file.contentType, "video/mp4");
     assert.equal(file.bytes, 10);
     assert.match(file.path, /source-video\.mp4$/);
@@ -48,6 +50,23 @@ test("rejects yt-dlp output larger than max bytes", async () => {
       spawnImpl: createDownloadMockSpawn({ output: "too-large" })
     }),
     (error) => error.mediaErrorType === "video_media_too_large" && error.retryable === false
+  );
+});
+
+test("classifies yt-dlp max-filesize rejection before a full download", async () => {
+  await assert.rejects(
+    () => downloadYtDlpMediaToTempFile({
+      sourceUrl: "https://www.youtube.com/watch?v=abc",
+      maxBytes: 20 * 1024 * 1024,
+      spawnImpl: createDownloadMockSpawn({
+        stderr: "File is larger than max-filesize",
+        exitCode: 1
+      })
+    }),
+    (error) => (
+      error.mediaErrorType === "video_media_too_large"
+      && error.retryable === false
+    )
   );
 });
 

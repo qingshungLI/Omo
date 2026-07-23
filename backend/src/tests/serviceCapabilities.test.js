@@ -16,7 +16,7 @@ test("service health exposes production-critical V2 capabilities", () => {
   assert.equal(capabilities.sources.sourceTypes.video_link.enabled, true);
   assert.equal(capabilities.sources.sourceTypes.video_link.maxDurationSeconds, 900);
   assert.equal(capabilities.sources.sourceTypes.video_link.platforms.douyin.provider, "tikhub");
-  assert.equal(capabilities.sources.sourceTypes.video_link.platforms.bilibili.provider, "yt-dlp");
+  assert.equal(capabilities.sources.sourceTypes.video_link.platforms.bilibili.provider, "bilibili-api");
   assert.equal(capabilities.sources.sourceEnrichment.enabled, false);
   assert.equal(capabilities.sources.sourceEnrichment.provider, "tikhub");
   assert.equal(capabilities.sources.sourceEnrichment.blocking, false);

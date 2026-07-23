@@ -428,6 +428,67 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertEqual(response.reviewSession?.id, active.reviewSession.id)
     }
 
+    func testDecodesUnansweredAwakeningCardWithoutLeakingAnswer() throws {
+        let data = Data(
+            """
+            {
+              "availableCount": 3,
+              "awakeningSession": {
+                "schemaVersion": "v2_awakening_session_1",
+                "id": "awakening-1",
+                "status": "revealed_unanswered",
+                "chapterId": "chapter-1",
+                "unitId": "unit-1",
+                "questionId": "question-1",
+                "dueReason": "time_decay",
+                "lifecycleState": "due",
+                "sourceType": "article_link",
+                "sourceAgeDays": 83,
+                "visualSeed": "seed",
+                "answer": null,
+                "revealedAt": "2026-07-24T10:00:00.000Z",
+                "answeredAt": null,
+                "completedAt": null,
+                "createdAt": "2026-07-24T10:00:00.000Z",
+                "updatedAt": "2026-07-24T10:00:00.000Z"
+              },
+              "card": {
+                "id": "card-1",
+                "sessionId": "awakening-1",
+                "chapterId": "chapter-1",
+                "chapterTitle": "共享上下文",
+                "unitId": "unit-1",
+                "unitTitle": "协作基础",
+                "questionId": "question-1",
+                "sourceType": "article_link",
+                "sourceAgeDays": 83,
+                "lifecycleState": "due",
+                "dueReason": "time_decay",
+                "visualSeed": "seed",
+                "question": {
+                  "id": "question-1",
+                  "type": "multiple_choice",
+                  "stem": "团队首先应该补足什么？",
+                  "options": [
+                    {"id": "a", "text": "共享上下文"},
+                    {"id": "b", "text": "减少沟通"}
+                  ]
+                }
+              },
+              "feedback": null,
+              "chapter": null
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(V2AwakeningSessionResponse.self, from: data)
+
+        XCTAssertTrue(response.hasActiveCard)
+        XCTAssertEqual(response.awakeningSession?.lifecycleTitle, "待唤醒")
+        XCTAssertEqual(response.card?.question.options.map(\.id), ["a", "b"])
+        XCTAssertNil(response.feedback)
+    }
+
     private func fixtureData(named name: String) throws -> Data {
         let url = try XCTUnwrap(
             Bundle.main.url(forResource: name, withExtension: "json")

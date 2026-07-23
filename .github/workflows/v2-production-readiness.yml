@@ -3,9 +3,11 @@ name: V2 Production Readiness
 on:
   pull_request:
     branches:
+      - main
       - master
   push:
     branches:
+      - main
       - master
       - codex/recallo-review-replay-mode
 

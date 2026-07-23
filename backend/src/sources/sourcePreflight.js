@@ -1,3 +1,4 @@
+import { fetchBilibiliVideoSource } from "../media/bilibiliVideoProvider.js";
 import { fetchYtDlpVideoSource } from "../media/ytDlpVideoProvider.js";
 import {
   detectVideoPlatform,
@@ -29,8 +30,8 @@ export function buildSourceCapabilities({ env = process.env } = {}) {
       {
         enabled: videoEnabled
           && (allowlist.size === 0 || allowlist.has(platform))
-          && (!isYtDlpPreferredPlatform(platform) || ytDlpEnabled),
-        provider: isTikHubPreferredPlatform(platform) ? "tikhub" : "yt-dlp",
+          && (!requiresYtDlp(platform) || ytDlpEnabled),
+        provider: providerForPlatform(platform),
         label: PLATFORM_LABELS[platform] || "视频"
       }
     ])
@@ -66,6 +67,7 @@ export async function preflightSourceInput({
   fetchMetadata = false,
   env = process.env,
   fetchTikHub = fetchTikHubContentSource,
+  fetchBilibili = fetchBilibiliVideoSource,
   fetchYtDlp = fetchYtDlpVideoSource
 } = {}) {
   const input = String(rawInput || "").trim();
@@ -161,7 +163,11 @@ export async function preflightSourceInput({
   if (!fetchMetadata) return base;
 
   try {
-    const content = await fetchSourceMetadata(parsedUrl.href, platform, { fetchTikHub, fetchYtDlp });
+    const content = await fetchSourceMetadata(parsedUrl.href, platform, {
+      fetchTikHub,
+      fetchBilibili,
+      fetchYtDlp
+    });
     if (isNonVideoContent(content)) {
       if (!readBooleanFlag(env.TIKHUB_CONTENT_ENABLED, false)) {
         return blockedPreflight({
@@ -217,9 +223,12 @@ export async function preflightSourceInput({
   }
 }
 
-function fetchSourceMetadata(sourceUrl, platform, { fetchTikHub, fetchYtDlp }) {
+function fetchSourceMetadata(sourceUrl, platform, { fetchTikHub, fetchBilibili, fetchYtDlp }) {
   if (isTikHubPreferredPlatform(platform)) {
     return fetchTikHub({ sourceUrl });
+  }
+  if (platform === "bilibili") {
+    return fetchBilibili({ sourceUrl });
   }
   if (isYtDlpPreferredPlatform(platform)) {
     return fetchYtDlp({ sourceUrl });
@@ -233,7 +242,7 @@ function isNonVideoContent(content) {
 }
 
 function evaluateVideoPlatformGate(platform, { env = process.env } = {}) {
-  const provider = isTikHubPreferredPlatform(platform) ? "tikhub" : "yt-dlp";
+  const provider = providerForPlatform(platform);
   if (!readBooleanFlag(env.VIDEO_LINK_ENABLED, true)) {
     return {
       enabled: false,
@@ -253,7 +262,7 @@ function evaluateVideoPlatformGate(platform, { env = process.env } = {}) {
     };
   }
 
-  if (isYtDlpPreferredPlatform(platform) && !readBooleanFlag(env.VIDEO_YTDLP_ENABLED, true)) {
+  if (requiresYtDlp(platform) && !readBooleanFlag(env.VIDEO_YTDLP_ENABLED, true)) {
     return {
       enabled: false,
       provider,
@@ -272,6 +281,16 @@ function evaluateVideoPlatformGate(platform, { env = process.env } = {}) {
   }
 
   return { enabled: true, provider, reasonCode: "", userMessage: "" };
+}
+
+function providerForPlatform(platform) {
+  if (isTikHubPreferredPlatform(platform)) return "tikhub";
+  if (platform === "bilibili") return "bilibili-api";
+  return "yt-dlp";
+}
+
+function requiresYtDlp(platform) {
+  return isYtDlpPreferredPlatform(platform) && platform !== "bilibili";
 }
 
 function readyPreflight({

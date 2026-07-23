@@ -1,6 +1,7 @@
 import Foundation
 
 enum V2AppRoute: Equatable {
+    case awakening
     case notifications
     case generationFailureDetail(chapterID: String)
     case profile

@@ -16,7 +16,7 @@ test("preflights valid Bilibili video without metadata", async () => {
   assert.equal(result.sourceType, "video_link");
   assert.equal(result.platform, "bilibili");
   assert.equal(result.platformLabel, "B站");
-  assert.equal(result.provider, "yt-dlp");
+  assert.equal(result.provider, "bilibili-api");
   assert.equal(result.canGenerate, true);
 });
 
@@ -122,7 +122,7 @@ test("preflights metadata and blocks overlong video", async () => {
     rawInput: "https://www.bilibili.com/video/BV1overlong/",
     fetchMetadata: true,
     env: { VIDEO_MAX_DURATION_SECONDS: "900" },
-    fetchYtDlp: async () => ({
+    fetchBilibili: async () => ({
       title: "长视频",
       durationSeconds: 901
     })
@@ -174,6 +174,18 @@ test("blocks yt-dlp platforms when universal video provider is disabled", async 
   assert.equal(result.ok, false);
   assert.equal(result.platform, "youtube");
   assert.equal(result.reasonCode, "video_ytdlp_disabled");
+});
+
+test("keeps Bilibili available through its metadata and audio provider when yt-dlp is disabled", async () => {
+  const result = await preflightSourceInput({
+    rawInput: "https://www.bilibili.com/video/BV1demo/",
+    env: { VIDEO_YTDLP_ENABLED: "off" }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.platform, "bilibili");
+  assert.equal(result.provider, "bilibili-api");
+  assert.equal(result.canGenerate, true);
 });
 
 test("blocks platforms outside allowlist", async () => {
@@ -239,7 +251,8 @@ test("source capabilities reflect video flags and duration limit", () => {
 
   assert.equal(capabilities.sourceTypes.video_link.maxDurationSeconds, 600);
   assert.equal(capabilities.sourceTypes.video_link.platforms.douyin.enabled, true);
-  assert.equal(capabilities.sourceTypes.video_link.platforms.bilibili.enabled, false);
+  assert.equal(capabilities.sourceTypes.video_link.platforms.bilibili.enabled, true);
+  assert.equal(capabilities.sourceTypes.video_link.platforms.bilibili.provider, "bilibili-api");
   assert.equal(capabilities.sourceTypes.video_link.platforms.xiaohongshu.enabled, false);
   assert.equal(capabilities.sourceEnrichment.enabled, false);
   assert.equal(capabilities.sourceEnrichment.provider, "tikhub");

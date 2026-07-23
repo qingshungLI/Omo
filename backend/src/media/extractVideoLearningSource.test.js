@@ -126,6 +126,80 @@ test("uses yt-dlp media downloader for universal video provider results", async 
   assert.match(learningSource.normalizedText, /消息协议/);
 });
 
+test("uses the audio-only cap and skips full-video frame extraction", async () => {
+  const calls = [];
+  const result = await extractVideoLearningSource({
+    sourceUrl: "https://www.bilibili.com/video/BV1audio/",
+    provider: {
+      name: "bilibili-api",
+      fetchVideoSource: async () => ({
+        provider: "bilibili-api",
+        platform: "bilibili",
+        providerContentId: "BV1audio",
+        title: "长视频",
+        description: "一段需要复习的知识内容",
+        account: "作者",
+        sourceUrl: "https://www.bilibili.com/video/BV1audio/",
+        mediaUrl: "https://media.example.com/audio.m4a",
+        mediaUrls: [
+          "https://backup.example.com/audio.m4a",
+          "https://media.example.com/audio.m4a"
+        ],
+        mediaKind: "audio",
+        mediaHeaders: { referer: "https://www.bilibili.com/" },
+        durationSeconds: 600,
+        subtitles: [],
+        estimatedMediaBytes: 5_000_000,
+        acquisition: { mode: "audio_only", fullVideoDownloaded: false }
+      })
+    },
+    mediaMaxBytes: 40 * 1024 * 1024,
+    audioMaxBytes: 20 * 1024 * 1024,
+    downloadMedia: async ({ headers, maxBytes, mediaUrls }) => {
+      calls.push({ stage: "download", headers, maxBytes, mediaUrls });
+      return {
+        path: "/tmp/video-dir/audio.m4a",
+        dir: "/tmp/video-dir",
+        bytes: 5_000_000,
+        contentType: "audio/mp4"
+      };
+    },
+    extractAudio: async () => {
+      calls.push({ stage: "audio" });
+      return { path: "/tmp/video-dir/audio.wav", dir: "/tmp/video-dir" };
+    },
+    transcribeAudio: async () => ({
+      provider: "local_whisper",
+      segments: [{
+        startSeconds: 0,
+        endSeconds: 30,
+        text: "这是足够长的完整音频转写内容，用于建立可复习的证据段落。音频优先能够保留整段叙述上下文，同时避免下载体积更大的视频画面。每个转写片段都带有时间信息，后续生成的记忆点和题目可以回到明确的原始证据位置。"
+      }]
+    }),
+    createFramePack: async ({ mediaFile }) => {
+      calls.push({ stage: "frames", mediaFile });
+      return { provider: "none", skipped: true, reason: "audio_only", frames: [], grids: [] };
+    },
+    understandVisuals: async () => ({
+      provider: "none",
+      skipped: true,
+      reason: "audio_only",
+      segments: []
+    }),
+    cleanup: async () => {},
+    videoSourceCache: null,
+    learningSourceCache: null
+  });
+
+  assert.equal(calls[0].maxBytes, 20 * 1024 * 1024);
+  assert.equal(calls[0].headers.referer, "https://www.bilibili.com/");
+  assert.equal(calls[0].mediaUrls[0], "https://backup.example.com/audio.m4a");
+  assert.equal(calls.find((call) => call.stage === "frames").mediaFile, null);
+  assert.equal(result.extractionMeta.acquisition.mode, "audio_only");
+  assert.equal(result.extractionMeta.acquisition.fullVideoDownloaded, false);
+  assert.equal(result.extractionMeta.acquisition.downloadedBytes, 5_000_000);
+});
+
 test("rejects video links when the backend feature flag is disabled", async () => {
   const restoreEnv = setEnvForTest({ VIDEO_LINK_ENABLED: "false" });
   try {
@@ -348,7 +422,11 @@ test("uses platform subtitles before falling back to ASR", async () => {
     }
   });
 
-  assert.deepEqual(calls, ["download", "subtitle:zh-CN", "cleanup:1"]);
+  assert.deepEqual(calls, ["subtitle:zh-CN", "cleanup:0"]);
+  assert.equal(learningSource.extractionMeta.acquisition.mode, "platform_subtitles");
+  assert.equal(learningSource.extractionMeta.acquisition.fullVideoDownloaded, false);
+  assert.equal(learningSource.extractionMeta.acquisition.downloadedBytes, 0);
+  assert.equal(learningSource.extractionMeta.userVisibleContentBasis.message, "本次主要基于视频字幕生成");
   assert.match(learningSource.normalizedText, /内容层级/);
 });
 
@@ -967,7 +1045,7 @@ test("falls back to transcript-only source when visual understanding output is i
   assert.equal(learningSource.extractionMeta.visualUnderstanding.failureCode, "visual_output_parse_failed");
   assert.equal(learningSource.extractionMeta.visualUnderstanding.retryable, true);
   assert.equal(learningSource.extractionMeta.userVisibleContentBasis.basis, "audio_transcript");
-  assert.equal(learningSource.extractionMeta.userVisibleContentBasis.message, "本次主要基于视频字幕生成");
+  assert.equal(learningSource.extractionMeta.userVisibleContentBasis.message, "本次主要基于视频音频转写生成");
   assert.equal(
     learningSource.extractionMeta.mediaUsage.byStage.visual_understanding.metadata.status,
     "failed"

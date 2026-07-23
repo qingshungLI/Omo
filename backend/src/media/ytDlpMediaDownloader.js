@@ -33,6 +33,7 @@ export async function downloadYtDlpMediaToTempFile({
       sourceUrl,
       pythonPath,
       formatSelector,
+      maxBytes,
       timeoutMs,
       outputTemplate: join(dir, "source-video.%(ext)s"),
       spawnImpl
@@ -61,6 +62,7 @@ function runYtDlpDownload({
   sourceUrl,
   pythonPath,
   formatSelector,
+  maxBytes,
   timeoutMs,
   outputTemplate,
   spawnImpl
@@ -74,6 +76,8 @@ function runYtDlpDownload({
       "--no-progress",
       "--format",
       formatSelector,
+      "--max-filesize",
+      String(maxBytes),
       "--merge-output-format",
       "mp4",
       "-o",
@@ -152,6 +156,13 @@ function classifyYtDlpDownloadFailure(error, stderr = "", code = null) {
   }
   if (/Unsupported URL|No video formats|Private video|login|Sign in|This video is unavailable/i.test(message)) {
     return createMediaExtractionError("video_media_unavailable", "这个视频链接暂时无法公开下载。可以换一个公开视频链接。", {
+      retryable: false,
+      provider: "yt-dlp",
+      status: code
+    });
+  }
+  if (/max-filesize|larger than max|file is larger/i.test(message)) {
+    return createMediaExtractionError("video_media_too_large", "视频文件超过处理阈值，未下载完整媒体。", {
       retryable: false,
       provider: "yt-dlp",
       status: code

@@ -1,5 +1,6 @@
 import { dirname } from "node:path";
 
+import { fetchBilibiliVideoSource } from "./bilibiliVideoProvider.js";
 import { cleanupMediaTempFiles, downloadMediaToTempFile } from "./mediaFiles.js";
 import { extractAudioWithFfmpeg } from "./ffmpegAudio.js";
 import { createMediaExtractionError } from "./mediaErrors.js";
@@ -45,6 +46,7 @@ export async function extractVideoLearningSource({
   downloadYtDlpMedia = downloadYtDlpMediaToTempFile,
   maxDurationSeconds = readPositiveInt(process.env.VIDEO_MAX_DURATION_SECONDS, VIDEO_DEFAULTS.maxDurationSeconds),
   mediaMaxBytes = readPositiveInt(process.env.VIDEO_MEDIA_MAX_BYTES, VIDEO_DEFAULTS.mediaMaxBytes),
+  audioMaxBytes = readPositiveInt(process.env.VIDEO_AUDIO_MAX_BYTES, VIDEO_DEFAULTS.audioMaxBytes),
   extractAudio = extractAudioWithFfmpeg,
   speechToTextProvider = createSpeechToTextProvider(),
   transcribeAudio = null,
@@ -65,7 +67,7 @@ export async function extractVideoLearningSource({
   const resolvedVideoSourceCache = resolveDefaultCache({
     providedCache: videoSourceCache,
     defaultCache: getSharedVideoSourceCache,
-    enabled: activeProvider?.fetchVideoSource === fetchTikHubVideoSource
+    enabled: [fetchTikHubVideoSource, fetchBilibiliVideoSource].includes(activeProvider?.fetchVideoSource)
   });
   const resolvedLearningSourceCache = resolveDefaultCache({
     providedCache: learningSourceCache,
@@ -129,53 +131,63 @@ export async function extractVideoLearningSource({
   const tempFiles = [];
   try {
     let staleVideoSourceCache = false;
-    let mediaFile;
-    try {
-      mediaFile = await downloadVideoMedia({
-        video,
-        downloadMedia,
-        downloadYtDlpMedia,
-        mediaMaxBytes
-      });
-    } catch (error) {
-      if (!shouldRefreshCachedVideoSource({ error, videoSourceCacheHit })) throw error;
-      staleVideoSourceCache = true;
-      await deleteCache(resolvedVideoSourceCache, videoSourceCacheKey);
-      video = await activeProvider.fetchVideoSource({ sourceUrl: sourceInput });
-      enforceVideoDurationLimit(video, { maxDurationSeconds });
-      videoSourceCacheHit = false;
-      await writeCache(resolvedVideoSourceCache, videoSourceCacheKey, video);
-      recordVideoSourceUsage(mediaUsageRecorder, {
-        video,
-        videoSourceCacheHit,
-        videoSourceCacheKey,
+    let transcript = await fetchPlatformTranscript({ subtitles: video.subtitles });
+    let mediaFile = null;
+    if (!transcript) {
+      try {
+        mediaFile = await downloadVideoMedia({
+          video,
+          downloadMedia,
+          downloadYtDlpMedia,
+          mediaMaxBytes,
+          audioMaxBytes
+        });
+      } catch (error) {
+        if (!shouldRefreshCachedVideoSource({ error, videoSourceCacheHit })) throw error;
+        staleVideoSourceCache = true;
+        await deleteCache(resolvedVideoSourceCache, videoSourceCacheKey);
+        video = await activeProvider.fetchVideoSource({ sourceUrl: sourceInput });
+        enforceVideoDurationLimit(video, { maxDurationSeconds });
+        videoSourceCacheHit = false;
+        await writeCache(resolvedVideoSourceCache, videoSourceCacheKey, video);
+        recordVideoSourceUsage(mediaUsageRecorder, {
+          video,
+          videoSourceCacheHit,
+          videoSourceCacheKey,
+          metadata: {
+            staleVideoSourceCache: true,
+            refetchedProviderSource: true
+          }
+        });
+        transcript = await fetchPlatformTranscript({ subtitles: video.subtitles });
+        if (!transcript) {
+          mediaFile = await downloadVideoMedia({
+            video,
+            downloadMedia,
+            downloadYtDlpMedia,
+            mediaMaxBytes,
+            audioMaxBytes
+          });
+        }
+      }
+    }
+    if (mediaFile) {
+      recordMediaUsage(mediaUsageRecorder, {
+        stage: video.mediaKind === "audio" ? "video_audio_fetch" : "video_media_fetch",
+        provider: video.mediaDownload?.provider || video.provider || "unknown",
+        cost: 0,
         metadata: {
-          staleVideoSourceCache: true,
-          refetchedProviderSource: true
+          bytes: mediaFile.bytes || 0,
+          contentType: mediaFile.contentType || "",
+          mediaKind: video.mediaKind || "video",
+          ...(staleVideoSourceCache ? {
+            staleVideoSourceCache: true,
+            refetchedProviderSource: true
+          } : {})
         }
       });
-      mediaFile = await downloadVideoMedia({
-        video,
-        downloadMedia,
-        downloadYtDlpMedia,
-        mediaMaxBytes
-      });
+      tempFiles.push(mediaFile);
     }
-    recordMediaUsage(mediaUsageRecorder, {
-      stage: "video_media_fetch",
-      provider: video.mediaDownload?.provider || video.provider || "unknown",
-      cost: 0,
-      metadata: {
-        bytes: mediaFile.bytes || 0,
-        contentType: mediaFile.contentType || "",
-        ...(staleVideoSourceCache ? {
-          staleVideoSourceCache: true,
-          refetchedProviderSource: true
-        } : {})
-      }
-    });
-    tempFiles.push(mediaFile);
-    let transcript = await fetchPlatformTranscript({ subtitles: video.subtitles });
     if (!transcript) {
       const audio = await extractAudio({
         inputPath: mediaFile.path,
@@ -201,10 +213,11 @@ export async function extractVideoLearningSource({
         source: transcriptProvider.startsWith("platform_subtitle:") ? "platform_subtitle" : "asr"
       }
     });
+    const visualMediaFile = video.mediaKind === "audio" ? null : mediaFile;
     const framePack = await createFramePack({
       provider: framePackProvider,
       video,
-      mediaFile,
+      mediaFile: visualMediaFile,
       transcriptSegments: transcript.segments
     });
     recordMediaUsage(mediaUsageRecorder, {
@@ -228,7 +241,7 @@ export async function extractVideoLearningSource({
       understandVisuals,
       provider: visualUnderstandingProvider,
       video,
-      mediaFile,
+      mediaFile: visualMediaFile,
       transcriptSegments: transcript.segments,
       framePack
     });
@@ -267,7 +280,20 @@ export async function extractVideoLearningSource({
       now
     });
     learningSource.extractionMeta.visualUnderstanding = buildVisualUnderstandingMeta(visualUnderstanding);
-    learningSource.extractionMeta.userVisibleContentBasis = buildUserVisibleContentBasis(visualUnderstanding);
+    learningSource.extractionMeta.userVisibleContentBasis = buildUserVisibleContentBasis(
+      visualUnderstanding,
+      { transcriptProvider }
+    );
+    learningSource.extractionMeta.acquisition = {
+      mode: transcriptProvider.startsWith("platform_subtitle:")
+        ? "platform_subtitles"
+        : video.acquisition?.mode || (video.mediaKind === "audio" ? "audio_only" : "full_video"),
+      fullVideoDownloaded: Boolean(mediaFile && video.mediaKind !== "audio"),
+      downloadedBytes: mediaFile?.bytes || 0,
+      estimatedMediaBytes: video.estimatedMediaBytes || null,
+      mediaMaxBytes,
+      audioMaxBytes
+    };
     if (mediaUsageRecorder?.calls) {
       learningSource.extractionMeta.mediaUsage = summarizeMediaUsage(mediaUsageRecorder.calls);
     }
@@ -340,19 +366,22 @@ function buildVisualUnderstandingMeta(visualUnderstanding = {}) {
   };
 }
 
-function buildUserVisibleContentBasis(visualUnderstanding = {}) {
+function buildUserVisibleContentBasis(visualUnderstanding = {}, { transcriptProvider = "" } = {}) {
   const hasVisualEvidence = visualUnderstanding.status === "succeeded"
     && Array.isArray(visualUnderstanding.segments)
     && visualUnderstanding.segments.length > 0;
+  const transcriptLabel = String(transcriptProvider).startsWith("platform_subtitle:")
+    ? "视频字幕"
+    : "视频音频转写";
 
   return hasVisualEvidence
     ? {
       basis: "audio_visual",
-      message: "已结合视频字幕和画面信息生成"
+      message: `已结合${transcriptLabel}和画面信息生成`
     }
     : {
       basis: "audio_transcript",
-      message: "本次主要基于视频字幕生成"
+      message: `本次主要基于${transcriptLabel}生成`
     };
 }
 
@@ -444,7 +473,7 @@ function isDefaultExtractionChain({
   cleanup
 }) {
   return (
-    [fetchTikHubVideoSource, fetchYtDlpVideoSource].includes(provider?.fetchVideoSource)
+    [fetchTikHubVideoSource, fetchBilibiliVideoSource, fetchYtDlpVideoSource].includes(provider?.fetchVideoSource)
     && downloadMedia === downloadMediaToTempFile
     && downloadYtDlpMedia === downloadYtDlpMediaToTempFile
     && extractAudio === extractAudioWithFfmpeg
@@ -463,6 +492,12 @@ function createVideoSourceProvider(sourceInput) {
     return {
       name: "tikhub",
       fetchVideoSource: fetchTikHubVideoSource
+    };
+  }
+  if (platform === "bilibili") {
+    return {
+      name: "bilibili-api",
+      fetchVideoSource: fetchBilibiliVideoSource
     };
   }
   if (isYtDlpPreferredPlatform(platform)) {
@@ -495,7 +530,11 @@ function enforceVideoPlatformGate(platform) {
     );
   }
 
-  if (isYtDlpPreferredPlatform(platform) && !readBooleanFlag(process.env.VIDEO_YTDLP_ENABLED, true)) {
+  if (
+    isYtDlpPreferredPlatform(platform)
+    && platform !== "bilibili"
+    && !readBooleanFlag(process.env.VIDEO_YTDLP_ENABLED, true)
+  ) {
     throw createMediaExtractionError(
       "video_ytdlp_disabled",
       "YouTube、B站和网页视频链接暂未开放。",
@@ -508,7 +547,8 @@ async function downloadVideoMedia({
   video,
   downloadMedia,
   downloadYtDlpMedia,
-  mediaMaxBytes
+  mediaMaxBytes,
+  audioMaxBytes
 }) {
   if (video?.mediaDownload?.provider === "yt-dlp") {
     return downloadYtDlpMedia({
@@ -517,7 +557,12 @@ async function downloadVideoMedia({
       maxBytes: mediaMaxBytes
     });
   }
-  return downloadMedia({ mediaUrl: video.mediaUrl, maxBytes: mediaMaxBytes });
+  return downloadMedia({
+    mediaUrl: video.mediaUrl,
+    mediaUrls: video.mediaUrls,
+    headers: video.mediaHeaders,
+    maxBytes: video.mediaKind === "audio" ? audioMaxBytes : mediaMaxBytes
+  });
 }
 
 function withCacheMeta(learningSource, cache) {

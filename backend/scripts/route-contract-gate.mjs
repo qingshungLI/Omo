@@ -74,6 +74,21 @@ const requiredRoutes = [
     detail: "V2 source-return mutation"
   },
   {
+    name: "v2_awakening_session_get_post",
+    pattern: /req\.url === "\/api\/v2\/awakening-session"[\s\S]*req\.method === "GET" \|\| req\.method === "POST"/,
+    detail: "GET/POST /api/v2/awakening-session"
+  },
+  {
+    name: "v2_awakening_session_actions",
+    pattern: /awakeningActionMatch[\s\S]*\/api\\\/v2\\\/awakening-sessions\\\/\(\[\^\/\]\+\)\\\/\(answer\|complete\)[\s\S]*req\.method === "POST"/,
+    detail: "POST /api/v2/awakening-sessions/:id/(answer|complete)"
+  },
+  {
+    name: "v2_awakening_session_persistence",
+    pattern: /v2AwakeningSession:\s*chapter\.v2AwakeningSession\s*\|\|\s*chapter\.v2_awakening_session\s*\|\|\s*null/,
+    detail: "chapter normalization preserves the server-owned awakening session"
+  },
+  {
     name: "list_favorites",
     pattern: /req\.method === "GET" && req\.url === "\/api\/favorites\/questions"/,
     detail: "GET /api/favorites/questions"

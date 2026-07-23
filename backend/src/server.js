@@ -82,6 +82,14 @@ import {
   startReplayFromUnitV2
 } from "./v2/state/reviewSessionV2.js";
 import {
+  answerAwakeningSessionV2,
+  completeAwakeningSessionV2,
+  createAwakeningSessionV2,
+  isActiveAwakeningSessionV2,
+  listAwakeningCandidatesV2,
+  serializeAwakeningResponseV2
+} from "./v2/state/awakeningSessionV2.js";
+import {
   corsHeadersForRequest,
   corsPreflightHeaders,
   evaluateRequestGuards,
@@ -1268,6 +1276,7 @@ function ensureChapterRecord(chapter) {
     ),
     reviewSession: chapter.reviewSession ? normalizeReviewSession(chapter.reviewSession, baseChapter) : null,
     v2ReviewSession: chapter.v2ReviewSession || chapter.v2_review_session || null,
+    v2AwakeningSession: chapter.v2AwakeningSession || chapter.v2_awakening_session || null,
     v2ReviewCompletedAt: toStringValue(
       chapter.v2ReviewCompletedAt ||
       chapter.v2_review_completed_at ||
@@ -2051,6 +2060,42 @@ function serializeV2ReviewSessionResponse(chapter, reviewSession) {
   };
 }
 
+function activeAwakeningChapter(chapters = []) {
+  return [...chapters]
+    .filter((chapter) => isActiveAwakeningSessionV2(chapter.v2AwakeningSession))
+    .sort((left, right) => {
+      const leftUpdatedAt = Date.parse(left.v2AwakeningSession?.updatedAt || left.updatedAt || "") || 0;
+      const rightUpdatedAt = Date.parse(right.v2AwakeningSession?.updatedAt || right.updatedAt || "") || 0;
+      return rightUpdatedAt - leftUpdatedAt;
+    })[0] || null;
+}
+
+function latestCompletedAwakeningQuestionId(chapters = []) {
+  const latest = [...chapters]
+    .filter((chapter) => chapter.v2AwakeningSession?.status === "completed")
+    .sort((left, right) => {
+      const leftCompletedAt = Date.parse(left.v2AwakeningSession?.completedAt || "") || 0;
+      const rightCompletedAt = Date.parse(right.v2AwakeningSession?.completedAt || "") || 0;
+      return rightCompletedAt - leftCompletedAt;
+    })[0];
+  return toStringValue(latest?.v2AwakeningSession?.questionId || "");
+}
+
+function serializeStoredAwakeningResponse(deviceId, chapters, chapter, session) {
+  const availableCount = listAwakeningCandidatesV2(chapters, {
+    deviceId,
+    excludeQuestionId: session?.status === "completed" ? session.questionId : ""
+  }).length;
+  return {
+    ...serializeAwakeningResponseV2({
+      chapter,
+      session,
+      availableCount
+    }),
+    chapter: chapter ? serializeChapterForClient(chapter) : null
+  };
+}
+
 function normalizeFeedbackType(type) {
   if (type === "wrong_answer") return "answer_wrong";
   if (type === "unrelated_source") return "unrelated_to_source";
@@ -2412,6 +2457,114 @@ const server = createServer(async (req, res) => {
         .slice(0, 10)
         .map(serializeNotificationPushDiagnostics)
     });
+    return;
+  }
+
+  if (req.url === "/api/v2/awakening-session" && (req.method === "GET" || req.method === "POST")) {
+    const chapters = await listStoredChapters(deviceId);
+    const activeChapter = activeAwakeningChapter(chapters);
+    if (activeChapter) {
+      sendJson(
+        res,
+        200,
+        serializeStoredAwakeningResponse(
+          deviceId,
+          chapters,
+          activeChapter,
+          activeChapter.v2AwakeningSession
+        )
+      );
+      return;
+    }
+
+    if (req.method === "GET") {
+      sendJson(
+        res,
+        200,
+        serializeStoredAwakeningResponse(deviceId, chapters, null, null)
+      );
+      return;
+    }
+
+    try {
+      const created = createAwakeningSessionV2(chapters, {
+        deviceId,
+        excludeQuestionId: latestCompletedAwakeningQuestionId(chapters)
+      });
+      if (!created.session || !created.chapter) {
+        sendJson(
+          res,
+          200,
+          serializeStoredAwakeningResponse(deviceId, chapters, null, null)
+        );
+        return;
+      }
+
+      created.chapter.v2AwakeningSession = created.session;
+      created.chapter.updatedAt = new Date().toISOString();
+      await upsertStoredChapter(deviceId, created.chapter);
+      sendJson(
+        res,
+        200,
+        serializeStoredAwakeningResponse(
+          deviceId,
+          chapters,
+          created.chapter,
+          created.session
+        )
+      );
+    } catch (error) {
+      sendJson(res, error.statusCode || 422, {
+        errorCode: error.code || "v2_awakening_session_unavailable",
+        message: error.message || "暂时无法唤醒这段记忆。"
+      });
+    }
+    return;
+  }
+
+  const awakeningActionMatch = req.url?.match(/^\/api\/v2\/awakening-sessions\/([^/]+)\/(answer|complete)$/);
+  if (awakeningActionMatch && req.method === "POST") {
+    const sessionId = decodeURIComponent(awakeningActionMatch[1]);
+    const action = awakeningActionMatch[2];
+    const chapters = await listStoredChapters(deviceId);
+    const chapter = chapters.find((item) => item.v2AwakeningSession?.id === sessionId);
+    if (!chapter) {
+      sendJson(res, 404, {
+        errorCode: "v2_awakening_session_not_found",
+        message: "这张记忆卡已经不存在。"
+      });
+      return;
+    }
+
+    try {
+      if (action === "answer") {
+        const body = await readBody(req);
+        const result = answerAwakeningSessionV2(chapter, chapter.v2AwakeningSession, body);
+        chapter.v2AwakeningSession = result.session;
+        if (result.reviewSession) {
+          chapter.v2ReviewSession = result.reviewSession;
+        }
+      } else {
+        chapter.v2AwakeningSession = completeAwakeningSessionV2(chapter.v2AwakeningSession);
+      }
+      chapter.updatedAt = new Date().toISOString();
+      await upsertStoredChapter(deviceId, chapter);
+      sendJson(
+        res,
+        200,
+        serializeStoredAwakeningResponse(
+          deviceId,
+          chapters,
+          chapter,
+          chapter.v2AwakeningSession
+        )
+      );
+    } catch (error) {
+      sendJson(res, error.statusCode || 422, {
+        errorCode: error.code || "v2_awakening_session_update_failed",
+        message: error.message || "这张记忆卡的状态保存失败。"
+      });
+    }
     return;
   }
 

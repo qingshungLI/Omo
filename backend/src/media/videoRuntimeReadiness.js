@@ -19,7 +19,12 @@ export async function buildVideoRuntimeReadiness({
   const asrProvider = resolveSpeechToTextProviderName(env);
   const frameProvider = resolveVideoFramePackProviderName(env);
   const visualProvider = resolveVisualUnderstandingProviderName(env);
-  const ytDlpEnabled = Boolean(videoLink.platforms.youtube?.enabled || videoLink.platforms.bilibili?.enabled || videoLink.platforms.generic_web?.enabled);
+  const ytDlpEnabled = Boolean(
+    videoLink.platforms.youtube?.enabled
+    || videoLink.platforms.direct_video_file?.enabled
+    || videoLink.platforms.generic_web?.enabled
+  );
+  const bilibiliEnabled = Boolean(videoLink.platforms.bilibili?.enabled);
   const tikhubEnabled = Boolean(videoLink.platforms.douyin?.enabled || videoLink.platforms.xiaohongshu?.enabled);
   const needsFfmpeg = videoLink.enabled && (asrProvider === "local_whisper" || frameProvider === "crv_style_ffmpeg");
   const needsFfprobe = videoLink.enabled && frameProvider === "crv_style_ffmpeg";
@@ -62,7 +67,11 @@ export async function buildVideoRuntimeReadiness({
 
   return {
     ok: Object.values(checks).every((item) => item.ok || item.skipped),
-    source: ytDlpEnabled ? "tikhub+yt-dlp" : "tikhub",
+    source: [
+      tikhubEnabled ? "tikhub" : "",
+      bilibiliEnabled ? "bilibili-api" : "",
+      ytDlpEnabled ? "yt-dlp" : ""
+    ].filter(Boolean).join("+") || "none",
     defaults: {
       maxDurationSeconds: VIDEO_DEFAULTS.maxDurationSeconds,
       asrProvider: VIDEO_DEFAULTS.asrProvider,
@@ -77,6 +86,7 @@ export async function buildVideoRuntimeReadiness({
       visualProvider,
       visualModel: env.VIDEO_VISUAL_MODEL || env.QWEN_VL_MODEL || VIDEO_DEFAULTS.visualModel,
       ytDlpEnabled,
+      bilibiliEnabled,
       tikhubEnabled
     },
     checks

@@ -136,6 +136,40 @@ struct APIClient {
         try await get("/api/v2/recommended-articles/\(encodedPathComponent(id))")
     }
 
+    func fetchV2AwakeningSession() async throws -> V2AwakeningSessionResponse {
+        try await get("/api/v2/awakening-session")
+    }
+
+    func startOrResumeV2AwakeningSession() async throws -> V2AwakeningSessionResponse {
+        try await send("/api/v2/awakening-session", method: "POST", body: EmptyRequest(), acceptsFailureBody: false)
+    }
+
+    func answerV2AwakeningSession(
+        sessionId: String,
+        selectedOptionId: String,
+        attemptId: String
+    ) async throws -> V2AwakeningSessionResponse {
+        let request = V2AwakeningAnswerRequest(
+            selectedOptionId: selectedOptionId,
+            attemptId: attemptId
+        )
+        return try await send(
+            "/api/v2/awakening-sessions/\(encodedPathComponent(sessionId))/answer",
+            method: "POST",
+            body: request,
+            acceptsFailureBody: false
+        )
+    }
+
+    func completeV2AwakeningSession(sessionId: String) async throws -> V2AwakeningSessionResponse {
+        try await send(
+            "/api/v2/awakening-sessions/\(encodedPathComponent(sessionId))/complete",
+            method: "POST",
+            body: EmptyRequest(),
+            acceptsFailureBody: false
+        )
+    }
+
     func importRecommendedArticle(id: String) async throws -> V2RecommendedArticleDetailResponse {
         try await send("/api/v2/recommended-articles/\(encodedPathComponent(id))/import", method: "POST", body: EmptyRequest(), acceptsFailureBody: false)
     }

@@ -44,6 +44,9 @@ struct V2RootView: View {
     @State private var selectedBackendChapterID = ""
     @State private var backendReviewChapter: V2ReviewChapterData?
     @State private var v2ReviewSession: V2BackendReviewSession?
+    @State private var awakeningResponse: V2AwakeningSessionResponse?
+    @State private var isAwakeningLoading = false
+    @State private var shouldAnimateAwakeningReveal = false
     @State private var backendNotifications: [NotificationItem] = []
     @State private var backendFavoriteQuestions: [FavoriteQuestionRecord] = []
     @State private var recommendedArticleFilters = V2DemoContentProvider.recommendedArticleFilters
@@ -172,14 +175,19 @@ struct V2RootView: View {
     private var tabView: some View {
         switch selectedTab {
         case .learning:
-            V2HomeView(
-                data: activeHomeData,
+            V2AwakeningHomeView(
+                response: awakeningResponse,
+                hasReviewableContent: usesFixtures || backendChapters.contains(where: isHomeLearningCandidate),
+                isLoading: isAwakeningLoading,
                 selectedTab: $selectedTab,
                 showsUnreadNotificationBadge: hasUnreadNotifications,
                 onOpenNotifications: { pushRoute(.notifications) },
                 onOpenProfile: { pushRoute(.profile) },
-                onOpenChapterDetail: openActiveLearningChapterDetail,
-                onOpenNode: openNode
+                onDraw: {
+                    Task {
+                        await openAwakeningCard()
+                    }
+                }
             )
         case .materials:
             V2MaterialsView(
@@ -229,6 +237,47 @@ struct V2RootView: View {
     @ViewBuilder
     private func routeView(_ route: V2AppRoute) -> some View {
         switch route {
+        case .awakening:
+            if let response = awakeningResponse,
+               response.awakeningSession?.status == "completed" {
+                V2AwakeningCompletionView(
+                    response: response,
+                    isLoading: isAwakeningLoading,
+                    onNext: {
+                        Task {
+                            await drawNextAwakeningCard()
+                        }
+                    },
+                    onExit: {
+                        resetToHome(tab: .learning)
+                    }
+                )
+                .id("awakening-complete-\(response.awakeningSession?.id ?? "")")
+            } else if let response = awakeningResponse,
+                      response.hasActiveCard {
+                V2AwakeningFlowView(
+                    response: response,
+                    shouldAnimateReveal: shouldAnimateAwakeningReveal,
+                    isSubmitting: isAwakeningLoading,
+                    onBack: {
+                        resetToHome(tab: .learning)
+                    },
+                    onAnswer: { optionID in
+                        Task {
+                            await answerAwakeningCard(optionID: optionID)
+                        }
+                    },
+                    onComplete: {
+                        Task {
+                            await completeAwakeningCard()
+                        }
+                    },
+                    onSource: openAwakeningSource
+                )
+                .id("awakening-card-\(response.awakeningSession?.id ?? "")")
+            } else {
+                V2MissingRouteView(onBack: goBack)
+            }
         case .notifications:
             V2NotificationView(
                 usesMockData: usesFixtures,
@@ -484,6 +533,8 @@ struct V2RootView: View {
             return nil
         }
         switch sourceRoute {
+        case .awakening:
+            return awakeningResponse?.card?.reviewQuestion(feedback: awakeningResponse?.feedback)
         case .question(let chapterID, let unitID, let questionID):
             return activeQuestion(chapterID: chapterID, unitID: unitID, questionID: questionID)
         case .savedQuestion(let index):
@@ -1560,6 +1611,7 @@ struct V2RootView: View {
         async let minimumDisplayDuration: Void = sleepStartupSplashMinimumDuration()
         await refreshAccount()
         await loadLatestBackendChapterIfNeeded()
+        await refreshAwakeningSession()
         await minimumDisplayDuration
 
         guard showsStartupSplash else {
@@ -1631,6 +1683,35 @@ struct V2RootView: View {
     private func refreshBackendContentAfterAccountChange() async {
         hasLoadedInitialBackendChapter = false
         await loadLatestBackendChapterIfNeeded()
+        await refreshAwakeningSession()
+    }
+
+    @MainActor
+    private func refreshAwakeningSession() async {
+        if usesFixtures {
+            awakeningResponse = V2AwakeningFixture.homeResponse
+            return
+        }
+
+        do {
+            let response = try await apiClient.fetchV2AwakeningSession()
+            awakeningResponse = response
+            if let chapter = response.chapter {
+                applyBackendChapter(chapter)
+            }
+        } catch {
+            awakeningResponse = V2AwakeningSessionResponse(
+                availableCount: 0,
+                awakeningSession: nil,
+                card: nil,
+                feedback: nil,
+                chapter: nil
+            )
+            generationState.errorText = userFacingErrorMessage(
+                error,
+                fallback: "暂时无法读取待唤醒记忆。"
+            )
+        }
     }
 
     private func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
@@ -2057,6 +2138,152 @@ struct V2RootView: View {
         }
     }
 
+    @MainActor
+    private func openAwakeningCard() async {
+        guard !isAwakeningLoading else { return }
+        let wasActive = awakeningResponse?.hasActiveCard == true
+        isAwakeningLoading = true
+        defer { isAwakeningLoading = false }
+
+        if usesFixtures {
+            if !wasActive {
+                awakeningResponse = V2AwakeningFixture.initialResponse
+            }
+            shouldAnimateAwakeningReveal = !wasActive
+            selectedTab = .learning
+            routeStore.reset(to: .awakening)
+            return
+        }
+
+        do {
+            let response: V2AwakeningSessionResponse
+            if wasActive, let current = awakeningResponse {
+                response = current
+            } else {
+                response = try await apiClient.startOrResumeV2AwakeningSession()
+            }
+            awakeningResponse = response
+            if let chapter = response.chapter {
+                applyBackendChapter(chapter)
+            }
+            guard response.hasActiveCard else { return }
+            shouldAnimateAwakeningReveal = !wasActive
+            selectedTab = .learning
+            routeStore.reset(to: .awakening)
+        } catch {
+            generationState.errorText = userFacingErrorMessage(
+                error,
+                fallback: "暂时无法抽取记忆卡。"
+            )
+        }
+    }
+
+    @MainActor
+    private func answerAwakeningCard(optionID: String) async {
+        guard !isAwakeningLoading,
+              let session = awakeningResponse?.awakeningSession else {
+            return
+        }
+        isAwakeningLoading = true
+        defer { isAwakeningLoading = false }
+
+        if usesFixtures {
+            awakeningResponse = V2AwakeningFixture.answeredResponse(
+                selectedOptionId: optionID,
+                from: awakeningResponse
+            )
+            return
+        }
+
+        do {
+            let response = try await apiClient.answerV2AwakeningSession(
+                sessionId: session.id,
+                selectedOptionId: optionID,
+                attemptId: "ios-awakening-\(UUID().uuidString)"
+            )
+            awakeningResponse = response
+            if let chapter = response.chapter {
+                applyBackendChapter(chapter)
+            }
+        } catch {
+            generationState.errorText = userFacingErrorMessage(
+                error,
+                fallback: "答案没有保存，请重试。"
+            )
+        }
+    }
+
+    @MainActor
+    private func completeAwakeningCard() async {
+        guard !isAwakeningLoading,
+              let session = awakeningResponse?.awakeningSession else {
+            return
+        }
+        isAwakeningLoading = true
+        defer { isAwakeningLoading = false }
+
+        if usesFixtures {
+            awakeningResponse = V2AwakeningFixture.completedResponse(from: awakeningResponse)
+            return
+        }
+
+        do {
+            let response = try await apiClient.completeV2AwakeningSession(sessionId: session.id)
+            awakeningResponse = response
+            if let chapter = response.chapter {
+                applyBackendChapter(chapter)
+            }
+        } catch {
+            generationState.errorText = userFacingErrorMessage(
+                error,
+                fallback: "这张记忆卡暂时无法完成。"
+            )
+        }
+    }
+
+    @MainActor
+    private func drawNextAwakeningCard() async {
+        guard !isAwakeningLoading else { return }
+        isAwakeningLoading = true
+        defer { isAwakeningLoading = false }
+
+        if usesFixtures {
+            awakeningResponse = V2AwakeningFixture.initialResponse
+            shouldAnimateAwakeningReveal = true
+            routeStore.reset(to: .awakening)
+            return
+        }
+
+        do {
+            let response = try await apiClient.startOrResumeV2AwakeningSession()
+            awakeningResponse = response
+            if let chapter = response.chapter {
+                applyBackendChapter(chapter)
+            }
+            if response.hasActiveCard {
+                shouldAnimateAwakeningReveal = true
+                routeStore.reset(to: .awakening)
+            } else {
+                resetToHome(tab: .learning)
+            }
+        } catch {
+            generationState.errorText = userFacingErrorMessage(
+                error,
+                fallback: "暂时没有抽到下一张记忆卡。"
+            )
+        }
+    }
+
+    private func openAwakeningSource() {
+        guard let chapterID = awakeningResponse?.awakeningSession?.chapterId else {
+            return
+        }
+        if !usesFixtures {
+            _ = selectBackendChapter(id: chapterID)
+        }
+        pushRoute(sourceArticleRoute(chapterID: chapterID))
+    }
+
     private func openSource() {
         if case .generatingChapterDetail = routeStore.current,
            !canOpenGeneratedChapterFromGenerationDetail {
@@ -2110,6 +2337,8 @@ struct V2RootView: View {
 
     private func routeChapterID(_ route: V2AppRoute?) -> String? {
         switch route {
+        case .awakening:
+            awakeningResponse?.awakeningSession?.chapterId
         case .generationFailureDetail(let chapterID),
              .chapterDetail(let chapterID),
              .sourceArticle(let chapterID),
@@ -2166,6 +2395,11 @@ struct V2RootView: View {
         }
 
         if case .question = route {
+            resetToHome(tab: .learning)
+            return
+        }
+
+        if case .awakening = route {
             resetToHome(tab: .learning)
             return
         }

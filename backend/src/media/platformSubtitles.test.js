@@ -51,3 +51,42 @@ test("returns null when subtitles are unavailable or invalid", async () => {
     fetchImpl: async () => ({ ok: false, text: async () => "" })
   }), null);
 });
+
+test("parses Bilibili JSON subtitles and prefers ai-zh over unrelated tracks", async () => {
+  const calls = [];
+  const transcript = await fetchPlatformSubtitleTranscript({
+    subtitles: [
+      { language: "en-US", url: "https://media.example.com/en.srt", format: "srt" },
+      { language: "ai-zh", url: "https://media.example.com/ai-zh.json", format: "bilibili-json" }
+    ],
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      return {
+        ok: true,
+        text: async () => JSON.stringify({
+          body: [
+            { from: 1.25, to: 3.5, content: "第一句字幕" },
+            { from: 3.5, to: 7, content: "第二句字幕" }
+          ]
+        })
+      };
+    }
+  });
+
+  assert.deepEqual(calls, ["https://media.example.com/ai-zh.json"]);
+  assert.equal(transcript.provider, "platform_subtitle:ai-zh");
+  assert.deepEqual(transcript.segments, [
+    {
+      id: "subtitle-001",
+      startSeconds: 1.25,
+      endSeconds: 3.5,
+      text: "第一句字幕"
+    },
+    {
+      id: "subtitle-002",
+      startSeconds: 3.5,
+      endSeconds: 7,
+      text: "第二句字幕"
+    }
+  ]);
+});
