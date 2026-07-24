@@ -2,15 +2,6 @@ import SwiftUI
 import UIKit
 import Pow
 
-private enum V2ScreenshotSummonPhase: Equatable {
-    case summoning
-    case recall
-    case feedback
-    case submitting
-    case archived
-    case failure
-}
-
 private enum V2ScreenshotSummonVisualStage: Equatable {
     case compress
     case rise
@@ -24,6 +15,128 @@ private struct V2PendingScreenshotAssessment: Equatable {
     let attemptId: String
 }
 
+
+private struct V2ScratchRevealCanvas: View {
+    let hiddenText: String
+    let reduceMotion: Bool
+    @Binding var paths: [[CGPoint]]
+    @Binding var coveredCells: Set<String>
+    @Binding var coverage: CGFloat
+    @Binding var isDrawing: Bool
+    let onScratchStart: () -> Void
+    let onReveal: () -> Void
+
+    private let gridColumns = 12
+    private let gridRows = 7
+    private let brushDiameter: CGFloat = 26
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Text(hiddenText)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(V2Color.primary)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 17)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+
+                Canvas { context, size in
+                    let layer = Path(
+                        roundedRect: CGRect(origin: .zero, size: size),
+                        cornerRadius: 16
+                    )
+                    context.fill(layer, with: .color(V2Color.uploadButtonFill))
+                    context.blendMode = .destinationOut
+                    for points in paths where points.count > 1 {
+                        var stroke = Path()
+                        stroke.move(to: points[0])
+                        for point in points.dropFirst() {
+                            stroke.addLine(to: point)
+                        }
+                        context.stroke(
+                            stroke,
+                            with: .color(.black),
+                            style: StrokeStyle(
+                                lineWidth: brushDiameter,
+                                lineCap: .round,
+                                lineJoin: .round
+                            )
+                        )
+                    }
+                }
+                .drawingGroup()
+
+                if coverage < 0.18 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "hand.draw.fill")
+                        Text("像刮开旧照片一样，找回这句话")
+                            .font(V2Typography.bodySmallEmphasis)
+                    }
+                    .foregroundStyle(V2Color.textSecondary)
+                    .padding(.horizontal, 18)
+                    .allowsHitTesting(false)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        if !isDrawing {
+                            isDrawing = true
+                            paths.append([])
+                            onScratchStart()
+                        }
+                        paths[paths.count - 1].append(value.location)
+                        markCoveredCells(at: value.location, size: geometry.size)
+                    }
+                    .onEnded { _ in
+                        isDrawing = false
+                        if coverage >= 0.45 {
+                            onReveal()
+                        }
+                    }
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("被铅笔涂层遮住的语义")
+            .accessibilityValue("\(Int(coverage * 100))% 已刮开")
+            .accessibilityHint("上下滑动调整揭示进度，或使用完整揭示操作")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment:
+                    coverage = min(1, coverage + 0.15)
+                    onScratchStart()
+                    if coverage >= 0.45 { onReveal() }
+                case .decrement:
+                    coverage = max(0, coverage - 0.15)
+                @unknown default:
+                    break
+                }
+            }
+            .accessibilityAction(named: "完整揭示") {
+                onReveal()
+            }
+        }
+        .frame(minHeight: 86)
+    }
+
+    private func markCoveredCells(at point: CGPoint, size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let column = min(gridColumns - 1, max(0, Int(point.x / size.width * CGFloat(gridColumns))))
+        let row = min(gridRows - 1, max(0, Int(point.y / size.height * CGFloat(gridRows))))
+        let radiusColumns = max(1, Int(brushDiameter / max(1, size.width / CGFloat(gridColumns))))
+        let radiusRows = max(1, Int(brushDiameter / max(1, size.height / CGFloat(gridRows))))
+        for x in max(0, column - radiusColumns)...min(gridColumns - 1, column + radiusColumns) {
+            for y in max(0, row - radiusRows)...min(gridRows - 1, row + radiusRows) {
+                coveredCells.insert("\(x):\(y)")
+            }
+        }
+        coverage = min(1, CGFloat(coveredCells.count) / CGFloat(gridColumns * gridRows))
+        if coverage >= 0.45 {
+            onReveal()
+        }
+    }
+}
+
 struct V2ScreenshotAwakeningFlowView: View {
     let session: V2ScreenshotDrawSession
     let onAssessment: (String, V2MemoryAssessment, String) async throws -> ImageFlowReviewSchedule
@@ -31,8 +144,13 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @Environment(\.scenePhase)
+    private var scenePhase
+    @Environment(\.colorScheme)
+    private var colorScheme
     @State private var currentIndex = 0
-    @State private var phase = V2ScreenshotSummonPhase.summoning
+    @State private var phase = V2RecallPresentationPhase.summoning
+    @State private var phaseBeforePause = V2RecallPresentationPhase.recall
     @State private var summonStage = V2ScreenshotSummonVisualStage.compress
     @State private var isRevealed = false
     @State private var revealProgress: CGFloat = 0
@@ -46,6 +164,16 @@ struct V2ScreenshotAwakeningFlowView: View {
     @State private var assessmentError = ""
     @State private var assessmentTask: Task<Void, Never>?
     @State private var fuzzyBreathActive = false
+    @State private var scratchPaths: [[CGPoint]] = []
+    @State private var coveredScratchCells: Set<String> = []
+    @AppStorage("recallo.v06.currentCardID") private var persistedCardID = ""
+    @AppStorage("recallo.v06.currentIndex") private var persistedCurrentIndex = 0
+    @AppStorage("recallo.v06.phase") private var persistedPhase = V2RecallPresentationPhase.home.rawValue
+    @AppStorage("recallo.v06.revealCoverage") private var persistedRevealCoverage = 0.0
+    @AppStorage("recallo.v06.isRevealed") private var persistedIsRevealed = false
+    @AppStorage("recallo.v06.scratchPaths") private var persistedScratchPaths = ""
+    @AppStorage("recallo.v06.coveredCells") private var persistedCoveredCells = ""
+    @AppStorage("recallo.v06.assessedCardIDs") private var persistedAssessedCardIDs = ""
 
     private var currentCard: V2CapturedMemoryCard {
         session.cards[min(currentIndex, session.cards.count - 1)]
@@ -53,33 +181,25 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     var body: some View {
         ZStack {
-            V2Color.pageGreenBackground
+            sceneBackgroundColor
                 .ignoresSafeArea()
 
             if phase == .summoning {
                 summonTransition
                     .transition(.opacity)
+            } else if phase == .stowing {
+                stowingLanding
+                    .transition(.opacity)
+            } else if phase == .paused {
+                pausedLanding
+                    .transition(.opacity)
             } else {
                 VStack(spacing: 0) {
                     topBar
-                    if session.mode != .single {
-                        GeometryReader { geometry in
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(V2Color.primary.opacity(0.35))
-                                .frame(
-                                    width: geometry.size.width
-                                        * CGFloat(currentIndex + 1)
-                                        / CGFloat(session.cards.count),
-                                    height: 3
-                                )
-                        }
-                        .frame(height: 3)
-                        .padding(.horizontal, V2Layout.pageHorizontalInset)
-                    }
                     ScrollView(showsIndicators: false) {
-                        if phase == .archived {
+                        if phase == .checkpoint {
                             archiveLanding
-                        } else if phase == .feedback || phase == .submitting || phase == .failure {
+                        } else if phase == .assessing {
                             feedbackLanding
                         } else if currentCard.card.state == .formal {
                             formalCard
@@ -90,31 +210,65 @@ struct V2ScreenshotAwakeningFlowView: View {
                 }
             }
         }
-        .interactiveDismissDisabled()
+        .interactiveDismissDisabled(phase == .assessing)
         .task(id: summonTaskID) {
             guard phase == .summoning else { return }
             currentSchedule = currentCard.schedule
             summonStage = .compress
             if reduceMotion {
-                try? await Task.sleep(nanoseconds: 150_000_000)
+                try? await Task.sleep(nanoseconds: 180_000_000)
                 guard !Task.isCancelled, phase == .summoning else { return }
-                withAnimation(.easeOut(duration: 0.15)) {
+                withAnimation(.easeOut(duration: 0.18)) {
                     phase = .recall
                 }
                 return
             }
-            guard await advanceSummon(after: 120_000_000, to: .rise) else { return }
-            guard await advanceSummon(after: 360_000_000, to: .orbit) else { return }
-            guard await advanceSummon(after: 470_000_000, to: .settle) else { return }
-            guard await advanceSummon(after: 300_000_000, to: .cue) else { return }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+
+            let timings: [UInt64] = currentIndex == 0
+                ? [120_000_000, 360_000_000, 470_000_000, 300_000_000, 200_000_000]
+                : [80_000_000, 180_000_000, 180_000_000, 140_000_000, 120_000_000]
+            guard await advanceSummon(after: timings[0], to: .rise) else { return }
+            guard await advanceSummon(after: timings[1], to: .orbit) else { return }
+            guard await advanceSummon(after: timings[2], to: .settle) else { return }
+            guard await advanceSummon(after: timings[3], to: .cue) else { return }
+            try? await Task.sleep(nanoseconds: timings[4])
             guard !Task.isCancelled, phase == .summoning else { return }
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(.easeOut(duration: 0.18)) {
                 phase = .recall
             }
         }
+        .onAppear {
+            restorePersistedState()
+        }
         .onDisappear {
             assessmentTask?.cancel()
+            persistPresentationState()
+        }
+        .onChange(of: phase) { _, _ in
+            persistPresentationState()
+        }
+        .onChange(of: revealProgress) { _, _ in
+            persistPresentationState()
+        }
+        .onChange(of: isRevealed) { _, _ in
+            persistPresentationState()
+        }
+        .onChange(of: scenePhase) { _, newScenePhase in
+            switch newScenePhase {
+            case .active:
+                if phase == .paused {
+                    phase = phaseBeforePause
+                }
+            case .inactive, .background:
+                guard phase != .assessing, phase != .stowing else {
+                    persistPresentationState()
+                    return
+                }
+                phaseBeforePause = stablePhase(for: phase)
+                phase = .paused
+            @unknown default:
+                persistPresentationState()
+            }
         }
     }
 
@@ -128,31 +282,27 @@ struct V2ScreenshotAwakeningFlowView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(V2Color.textPrimary)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 44, height: 44)
                     .background(Circle().fill(V2Color.surfaceCream))
             }
             .accessibilityLabel("退出召回")
-            .disabled(phase == .feedback || phase == .submitting)
+            .disabled(phase == .assessing)
             .accessibilityHint(
-                phase == .feedback || phase == .submitting
+                phase == .assessing
                     ? "正在保存当前结果，完成后可以退出"
                     : "保留当前进度并返回首页"
             )
 
             Spacer()
 
-            Text(phase == .archived
-                 ? "记忆收藏册"
-                 : session.mode == .single
-                    ? "唤醒一张记忆"
-                    : "\(currentIndex + 1) / \(session.cards.count)")
+            Text(phase == .checkpoint ? "记忆收藏册" : "唤醒一张记忆")
                 .font(V2Typography.sectionTitle)
                 .foregroundStyle(V2Color.topTitle)
 
             Spacer()
 
             Color.clear
-                .frame(width: 42, height: 42)
+                .frame(width: 44, height: 44)
         }
         .padding(.horizontal, V2Layout.pageHorizontalInset)
         .padding(.top, 12)
@@ -258,15 +408,12 @@ struct V2ScreenshotAwakeningFlowView: View {
                             .transition(.opacity)
                             .accessibilityHidden(true)
                     }
-                    Image("RecalloMascotSuccess")
-                        .resizable()
-                        .renderingMode(.original)
-                        .scaledToFit()
-                        .frame(width: 92, height: 92)
-                        .offset(x: 126, y: 128)
-                        .transition(.scale(scale: 0.88).combined(with: .opacity))
-                        .accessibilityHidden(true)
                 }
+
+                V2RecallMascotView(state: mascotState, reduceMotion: reduceMotion)
+                    .frame(width: 98, height: 98)
+                    .offset(x: 126, y: 128)
+                    .transition(.scale(scale: 0.88).combined(with: .opacity))
             }
             .frame(height: 350)
 
@@ -275,6 +422,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             }
             .font(V2Typography.bodySmallEmphasis)
             .foregroundStyle(V2Color.textSecondary)
+            .frame(minWidth: 44, minHeight: 44)
             .accessibilityHint("直接进入主动回忆")
         }
         .v2PageColumn()
@@ -363,6 +511,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 }
                 .font(V2Typography.bodySmallEmphasis)
                 .foregroundStyle(V2Color.textSecondary)
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityHint("不需要拖动即可显示答案")
             }
         }
@@ -471,101 +620,24 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .foregroundStyle(V2Color.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(V2Color.uploadButtonFill)
-
-                Text(hiddenSemanticText)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(V2Color.textMuted.opacity(0.24))
-                    .redacted(reason: .placeholder)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 17)
-
-                GeometryReader { geometry in
-                    Text(hiddenSemanticText)
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(V2Color.primary)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 17)
-                        .frame(width: geometry.size.width, alignment: .leading)
-                        .mask(alignment: .leading) {
-                            Rectangle()
-                                .frame(width: geometry.size.width * revealProgress)
-                        }
-                        .offset(
-                            x: isRevealDragging && !reduceMotion
-                                ? (revealProgress - 0.5) * 4
-                                : 0
-                        )
-                }
-
-                if revealProgress < 0.18 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "hand.draw.fill")
-                        Text("擦开被遮住的语义")
-                            .font(V2Typography.bodySmallEmphasis)
+            V2ScratchRevealCanvas(
+                hiddenText: hiddenSemanticText,
+                reduceMotion: reduceMotion,
+                paths: $scratchPaths,
+                coveredCells: $coveredScratchCells,
+                coverage: $revealProgress,
+                isDrawing: $isRevealDragging,
+                onScratchStart: {
+                    if phase == .recall {
+                        phase = .scratching
                     }
-                    .foregroundStyle(V2Color.textSecondary)
-                    .padding(.horizontal, 18)
-                }
-            }
-            .frame(minHeight: 72)
+                },
+                onReveal: reveal
+            )
             .scaleEffect(x: 1, y: isRevealDragging && !reduceMotion ? 1.01 : 1)
-            .animation(
-                reduceMotion ? nil : .easeOut(duration: 0.15),
-                value: isRevealDragging
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .gesture(
-                DragGesture(minimumDistance: 4)
-                    .onChanged { value in
-                        isRevealDragging = true
-                        revealProgress = min(1, max(0, value.translation.width / 240))
-                    }
-                    .onEnded { _ in
-                        isRevealDragging = false
-                        if revealProgress >= 0.45 {
-                            reveal()
-                        } else {
-                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
-                                revealProgress = 0
-                            }
-                        }
-                    }
-            )
-            .onChange(of: revealProgress) { oldProgress, newProgress in
-                guard !reduceMotion else { return }
-                if oldProgress < 0.25 && newProgress >= 0.25 {
-                    UIImpactFeedbackGenerator(style: .light)
-                        .impactOccurred(intensity: 0.4)
-                }
-                if oldProgress < 0.5 && newProgress >= 0.5 {
-                    UIImpactFeedbackGenerator(style: .light)
-                        .impactOccurred(intensity: 0.6)
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("被遮住的语义")
-            .accessibilityValue("\(Int(revealProgress * 100))% 已揭示")
-            .accessibilityHint("向右拖动或轻点直接揭晓")
-            .accessibilityAdjustableAction { direction in
-                switch direction {
-                case .increment:
-                    revealProgress = min(1, revealProgress + 0.25)
-                    if revealProgress >= 0.45 { reveal() }
-                case .decrement:
-                    revealProgress = max(0, revealProgress - 0.25)
-                @unknown default:
-                    break
-                }
-            }
-            .accessibilityAction(named: "完整揭晓") {
-                reveal()
-            }
             .accessibilityIdentifier("v2.semantic-reveal")
 
-            Text("承重语义已在原句中精确遮挡；擦开 45% 后完整揭示")
+            Text("铅笔笔刷 26pt；刮开 45% 后完整揭示，也可以直接揭晓")
                 .font(V2Typography.caption)
                 .foregroundStyle(V2Color.textMuted)
         }
@@ -657,7 +729,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             HStack(spacing: 8) {
                 assessmentButton("记得", assessment: .remembered, color: V2Color.primary)
                 assessmentButton("模糊", assessment: .fuzzy, color: Color(hex: 0xD3A34A))
-                assessmentButton("忘记", assessment: .forgot, color: V2Color.feedbackWrongBorder)
+                assessmentButton("忘记", assessment: .forgot, color: V2Color.textSecondary)
             }
         }
     }
@@ -685,7 +757,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 )
         }
         .buttonStyle(.plain)
-        .disabled(phase != .recall)
+        .disabled(phase != .revealed)
         .accessibilityIdentifier("v2.assessment.\(assessment.rawValue)")
     }
 
@@ -701,14 +773,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .accessibilityHidden(true)
                 }
 
-                Image(feedbackMascotAsset)
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
+                V2RecallMascotView(state: mascotState, reduceMotion: reduceMotion)
                     .frame(width: 164, height: 164)
                     .offset(y: feedbackMascotOffset)
                     .offset(
-                        y: assessment == .forgot && phase == .feedback && !reduceMotion
+                        y: assessment == .forgot && phase == .assessing && !reduceMotion
                             ? 4
                             : 0
                     )
@@ -718,7 +787,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                     )
                     .changeEffect(
                         .jump(height: 18),
-                        value: phase == .feedback,
+                        value: phase == .assessing,
                         isEnabled: assessment == .remembered && !reduceMotion
                     )
                     .changeEffect(
@@ -729,7 +798,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                                 .foregroundStyle(Color(hex: 0xE8B44C))
                                 .frame(width: 10, height: 10)
                         },
-                        value: phase == .feedback,
+                        value: phase == .assessing,
                         isEnabled: assessment == .remembered && !reduceMotion
                     )
             }
@@ -746,13 +815,13 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .foregroundStyle(V2Color.textSecondary)
                 .multilineTextAlignment(.center)
 
-            if phase == .submitting {
+            if phase == .assessing && assessmentError.isEmpty {
                 ProgressView()
                     .tint(V2Color.primary)
                     .accessibilityLabel("正在保存复习结果")
             }
 
-            if phase == .failure {
+            if !assessmentError.isEmpty {
                 Text(assessmentError)
                     .font(V2Typography.caption)
                     .foregroundStyle(V2Color.textSecondary)
@@ -771,7 +840,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(
                     V2Color.primary.opacity(
-                        assessment == .remembered && phase == .feedback ? 0.25 : 0
+                        assessment == .remembered && phase == .assessing ? 0.25 : 0
                     ),
                     lineWidth: 2
                 )
@@ -784,7 +853,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             RoundedRectangle(cornerRadius: 20)
                 .stroke(
                     V2Color.textMuted.opacity(
-                        assessment == .fuzzy && phase == .feedback
+                        assessment == .fuzzy && phase == .assessing
                             ? (fuzzyBreathActive ? 0.4 : 0.15)
                             : 0
                     ),
@@ -796,7 +865,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 )
         )
         .onChange(of: phase) { _, newPhase in
-            if newPhase == .feedback && assessment == .fuzzy {
+            if newPhase == .assessing && assessment == .fuzzy {
                 fuzzyBreathActive = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     fuzzyBreathActive = false
@@ -805,9 +874,63 @@ struct V2ScreenshotAwakeningFlowView: View {
         }
     }
 
+    private var pausedLanding: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            V2RecallMascotView(state: .sleeping, reduceMotion: reduceMotion)
+                .frame(width: 150, height: 150)
+            Text("这段回忆先停在这里")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(V2Color.textPrimary)
+            Text("回到 App 后会从同一张卡、同一处刮痕继续。")
+                .font(V2Typography.bodySmall)
+                .foregroundStyle(V2Color.textSecondary)
+                .multilineTextAlignment(.center)
+            Spacer()
+        }
+        .v2PageColumn()
+        .accessibilityElement(children: .contain)
+    }
+
+    private var stowingLanding: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            V2RecallMascotView(state: .farewell, reduceMotion: reduceMotion)
+                .frame(width: 170, height: 170)
+            Text("毛球把记忆收好了")
+                .font(.system(size: 25, weight: .bold))
+                .foregroundStyle(V2Color.textPrimary)
+            Text("下次需要时，它会带着这张卡回来。")
+                .font(V2Typography.bodySmall)
+                .foregroundStyle(V2Color.textSecondary)
+            Spacer()
+        }
+        .v2PageColumn()
+        .task {
+            try? await Task.sleep(nanoseconds: reduceMotion ? 180_000_000 : 700_000_000)
+            guard !Task.isCancelled, phase == .stowing else { return }
+            clearPersistedPresentation()
+            onClose()
+        }
+    }
+
     private var archiveLanding: some View {
         VStack(spacing: 18) {
-            HStack(spacing: 14) {
+            ZStack(alignment: .bottomTrailing) {
+                if currentIndex + 1 < session.cards.count {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(V2Color.surfaceCream.opacity(0.76))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(V2Color.primary.opacity(0.22), lineWidth: 1)
+                        )
+                        .frame(height: 92)
+                        .offset(x: 12, y: 12)
+                        .rotationEffect(.degrees(reduceMotion ? 0 : 3))
+                        .accessibilityLabel("下一张记忆卡已准备好")
+                }
+
+                HStack(spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .fill(V2Color.pageGreenBackground)
@@ -831,11 +954,16 @@ struct V2ScreenshotAwakeningFlowView: View {
                 Spacer(minLength: 0)
             }
             .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 19, style: .continuous)
-                    .fill(V2Color.surfaceCream)
-                    .v2Shadow()
-            )
+                .background(
+                    RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        .fill(V2Color.surfaceCream)
+                        .v2Shadow()
+                )
+            }
+
+            V2RecallMascotView(state: .turning, reduceMotion: reduceMotion)
+                .frame(width: 92, height: 92)
+                .accessibilityLabel("毛球正在等待你的选择")
 
             Text("记忆已修复并入册")
                 .font(.system(size: 25, weight: .bold))
@@ -870,11 +998,24 @@ struct V2ScreenshotAwakeningFlowView: View {
                     )
             )
 
-            V2PrimaryActionButton(title: archiveActionTitle) {
-                advanceOrClose()
+            V2PrimaryActionButton(
+                title: currentIndex + 1 < session.cards.count ? "继续下一张" : "今天先到这里",
+                tone: .normal
+            ) {
+                if currentIndex + 1 < session.cards.count {
+                    advanceToNextCard()
+                } else {
+                    stowAndClose()
+                }
             }
+            .accessibilityHint(
+                currentIndex + 1 < session.cards.count
+                    ? "只取回下一张，完成后仍可停止"
+                    : "让毛球把这张卡收好"
+            )
 
-            Button("回到首页", action: onClose)
+            Button("先收好", action: stowAndClose)
+                .frame(minWidth: 44, minHeight: 44)
                 .font(V2Typography.bodySmallEmphasis)
                 .foregroundStyle(V2Color.textSecondary)
         }
@@ -904,10 +1045,6 @@ struct V2ScreenshotAwakeningFlowView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var archiveActionTitle: String {
-        currentIndex + 1 < session.cards.count ? "继续召回" : "完成本次召回"
-    }
-
     private var fragmentCard: some View {
         VStack(alignment: .leading, spacing: 18) {
             Label("记忆碎片 · \(sourceStatusTitle)", systemImage: "sparkles.rectangle.stack")
@@ -929,8 +1066,10 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .font(V2Typography.bodySmall)
                 .foregroundStyle(V2Color.textMuted)
 
-            V2PrimaryActionButton(title: nextButtonTitle) {
-                advanceOrClose()
+            V2PrimaryActionButton(title: "收下这张碎片") {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.34, dampingFraction: 0.78)) {
+                    phase = .checkpoint
+                }
             }
         }
         .padding(22)
@@ -941,10 +1080,6 @@ struct V2ScreenshotAwakeningFlowView: View {
         )
         .v2PageColumn()
         .padding(.bottom, 36)
-    }
-
-    private var nextButtonTitle: String {
-        currentIndex + 1 < session.cards.count ? "收下碎片，继续" : "收下碎片"
     }
 
     private var rarityColor: Color {
@@ -982,17 +1117,48 @@ struct V2ScreenshotAwakeningFlowView: View {
         }
     }
 
-    private var feedbackMascotAsset: String {
-        switch assessment {
-        case .remembered: "RecalloMascotHop"
-        case .fuzzy: "RecalloMascotTilt"
-        case .forgot: "RecalloMascotThinking"
-        case nil: "RecalloMascotIdle"
+    private var scenePalette: V2RecallScenePalette {
+        switch phase {
+        case .home: return .creamReady
+        case .summoning, .assessing: return .mistProcessing
+        case .recall, .scratching: return .coralRecall
+        case .revealed: return .creamReady
+        case .checkpoint, .stowing: return .sageLibrary
+        case .paused: return colorScheme == .dark ? .navyNight : .lavenderPaused
+        }
+    }
+
+    private var sceneBackgroundColor: Color {
+        switch scenePalette {
+        case .creamReady: return Color(hex: 0xFFF6E8)
+        case .mistProcessing: return Color(hex: 0xE9EEF0)
+        case .coralRecall: return Color(hex: 0xF7C6B1)
+        case .lavenderPaused: return Color(hex: 0xE7E0EF)
+        case .sageLibrary: return Color(hex: 0xDCE7D5)
+        case .navyNight: return Color(hex: 0x26384D)
+        }
+    }
+
+    private var mascotState: V2RecallMascotState {
+        switch phase {
+        case .home: return .idle
+        case .summoning:
+            switch summonStage {
+            case .compress: return .turning
+            case .rise, .orbit: return .rummaging
+            case .settle, .cue: return .carrying
+            }
+        case .recall, .scratching: return .watching
+        case .revealed: return .acknowledging
+        case .assessing: return assessment == .forgot ? .thinking : .acknowledging
+        case .checkpoint: return .turning
+        case .stowing: return .farewell
+        case .paused: return .sleeping
         }
     }
 
     private var feedbackMascotOffset: CGFloat {
-        guard !reduceMotion, phase == .feedback, assessment == .remembered else { return 0 }
+        guard !reduceMotion, phase == .assessing, assessment == .remembered else { return 0 }
         return -10
     }
 
@@ -1006,21 +1172,17 @@ struct V2ScreenshotAwakeningFlowView: View {
     }
 
     private var feedbackTitle: String {
-        switch phase {
-        case .failure: "结果还没有保存"
-        case .submitting: "正在安排下次召回"
-        default:
-            switch assessment {
-            case .remembered: "这段记忆更清晰了"
-            case .fuzzy: "已经找到一点轮廓"
-            case .forgot: "没关系，下次再修复"
-            case nil: "正在保存"
-            }
+        if !assessmentError.isEmpty { return "结果还没有保存" }
+        switch assessment {
+        case .remembered: return "这段记忆更清晰了"
+        case .fuzzy: return "已经找到一点轮廓"
+        case .forgot: return "没关系，下次再修复"
+        case nil: return "正在安排下次召回"
         }
     }
 
     private var feedbackDetail: String {
-        if phase == .failure {
+        if !assessmentError.isEmpty {
             return "保留当前选择并重试，不会重复记录。"
         }
         switch assessment {
@@ -1036,6 +1198,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         withAnimation(animation) {
             revealProgress = 1
             isRevealed = true
+            phase = .revealed
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
@@ -1048,17 +1211,21 @@ struct V2ScreenshotAwakeningFlowView: View {
     }
 
     private func completeAssessment(_ value: V2MemoryAssessment) {
-        guard pendingAssessment == nil, phase == .recall else { return }
+        guard pendingAssessment == nil, phase == .revealed else { return }
+        guard !assessedCardIDs.contains(currentCard.id) else {
+            phase = .checkpoint
+            return
+        }
         masteryBefore = currentCard.masteryStage
         masteryAfter = currentCard.masteryStage.applying(value)
         assessment = value
         pendingAssessment = V2PendingScreenshotAssessment(
             assessment: value,
-            attemptId: "ios-capture-assessment-\(UUID().uuidString)"
+            attemptId: "ios-capture-assessment-\(currentCard.id)"
         )
         assessmentError = ""
         withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.34, dampingFraction: 0.78)) {
-            phase = .feedback
+            phase = .assessing
         }
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         submitPendingAssessment(includesReactionDelay: true)
@@ -1081,7 +1248,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             }
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.2)) {
-                phase = .submitting
+                phase = .assessing
             }
             do {
                 let schedule = try await onAssessment(
@@ -1093,22 +1260,25 @@ struct V2ScreenshotAwakeningFlowView: View {
                 currentSchedule = schedule
                 self.pendingAssessment = nil
                 withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.24)) {
-                    phase = .archived
+                    var updatedAssessedCardIDs = assessedCardIDs
+                    updatedAssessedCardIDs.insert(currentCard.id)
+                    persistedAssessedCardIDs = updatedAssessedCardIDs.sorted().joined(separator: ",")
+                    phase = .checkpoint
                 }
             } catch is CancellationError {
                 return
             } catch {
                 assessmentError = error.localizedDescription
                 withAnimation(.easeOut(duration: 0.18)) {
-                    phase = .failure
+                    phase = .assessing
                 }
             }
         }
     }
 
-    private func advanceOrClose() {
+    private func advanceToNextCard() {
         guard currentIndex + 1 < session.cards.count else {
-            onClose()
+            stowAndClose()
             return
         }
         let animation: Animation? = reduceMotion ? nil : .easeOut(duration: 0.18)
@@ -1125,8 +1295,103 @@ struct V2ScreenshotAwakeningFlowView: View {
             assessmentError = ""
             variantFeedback = ""
             fuzzyBreathActive = false
+            scratchPaths = []
+            coveredScratchCells = []
         }
+        persistPresentationState()
         UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    private var assessedCardIDs: Set<String> {
+        Set(
+            persistedAssessedCardIDs
+                .split(separator: ",")
+                .map(String.init)
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    private func stowAndClose() {
+        assessmentTask?.cancel()
+        withAnimation(reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.4, dampingFraction: 0.82)) {
+            phase = .stowing
+        }
+    }
+
+    private func stablePhase(for candidate: V2RecallPresentationPhase) -> V2RecallPresentationPhase {
+        switch candidate {
+        case .summoning:
+            return .recall
+        case .assessing:
+            return isRevealed ? .revealed : .recall
+        case .stowing:
+            return .checkpoint
+        case .paused:
+            return phaseBeforePause
+        default:
+            return candidate
+        }
+    }
+
+    private func persistPresentationState() {
+        persistedCardID = currentCard.id
+        persistedCurrentIndex = currentIndex
+        persistedPhase = stablePhase(for: phase).rawValue
+        persistedRevealCoverage = Double(revealProgress)
+        persistedIsRevealed = isRevealed
+        persistedCoveredCells = coveredScratchCells.sorted().joined(separator: ",")
+        persistedScratchPaths = scratchPaths.map { points in
+            points.map { point in
+                "\(point.x):\(point.y)"
+            }.joined(separator: ";")
+        }.joined(separator: "|")
+    }
+
+    private func restorePersistedState() {
+        let restoredIndex = min(max(0, persistedCurrentIndex), session.cards.count - 1)
+        guard persistedCardID == session.cards[restoredIndex].id else {
+            currentIndex = 0
+            phase = .summoning
+            currentSchedule = currentCard.schedule
+            return
+        }
+
+        currentIndex = restoredIndex
+        currentSchedule = currentCard.schedule
+        revealProgress = CGFloat(persistedRevealCoverage)
+        isRevealed = persistedIsRevealed
+        coveredScratchCells = Set(
+            persistedCoveredCells.split(separator: ",").map(String.init)
+        )
+        scratchPaths = persistedScratchPaths.split(separator: "|").map { rawPath in
+            rawPath.split(separator: ";").compactMap { rawPoint in
+                let values = rawPoint.split(separator: ":")
+                guard values.count == 2,
+                      let x = Double(values[0]),
+                      let y = Double(values[1]) else { return nil }
+                return CGPoint(x: x, y: y)
+            }
+        }
+
+        let restoredPhase = V2RecallPresentationPhase(rawValue: persistedPhase) ?? .recall
+        if assessedCardIDs.contains(currentCard.id) {
+            phase = .checkpoint
+        } else if isRevealed {
+            phase = .revealed
+        } else {
+            phase = stablePhase(for: restoredPhase)
+        }
+        phaseBeforePause = phase
+    }
+
+    private func clearPersistedPresentation() {
+        persistedCardID = ""
+        persistedCurrentIndex = 0
+        persistedPhase = V2RecallPresentationPhase.home.rawValue
+        persistedRevealCoverage = 0
+        persistedIsRevealed = false
+        persistedScratchPaths = ""
+        persistedCoveredCells = ""
     }
 
     private func finishSummon() {

@@ -10,6 +10,7 @@ const files = {
   reviewFlowScreens: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Review/V2ReviewFlowScreens.swift"),
   awakeningViews: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Home/V2AwakeningViews.swift"),
   awakeningModels: resolve(repoRoot, "拾贝/拾贝/V2/Models/V2AwakeningModels.swift"),
+  screenshotAwakeningViews: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Home/V2ScreenshotAwakeningViews.swift"),
   v2Root: resolve(repoRoot, "拾贝/拾贝/V2/V2RootView.swift"),
   apiClient: resolve(repoRoot, "拾贝/拾贝/Services/APIClient.swift")
 };
@@ -70,9 +71,45 @@ const checks = [
   check(
     "awakening_home_is_single_card_and_low_pressure",
     source.awakeningViews.includes("今天，唤醒一点记忆")
-      && source.awakeningViews.includes('return response?.hasActiveCard == true ? "继续这张" : "抽一张"')
-      && source.awakeningViews.includes("一张就好，随时可以停下"),
-    "Awakening home must present one resumable card without streak, rank, or social pressure."
+      && source.awakeningViews.includes('return response?.hasActiveCard == true ? "继续这张" : "召回一张"')
+      && source.awakeningViews.includes("一次只看一张")
+      && !source.awakeningViews.includes("V2MemoryPoolSelector")
+      && !source.awakeningViews.includes("连续召回"),
+    "Awakening home must expose one low-pressure recall entry without pool or mode selectors."
+  ),
+  check(
+    "recall_ritual_uses_frozen_phase_contract",
+    /enum V2RecallPresentationPhase[\s\S]*case home[\s\S]*case summoning[\s\S]*case recall[\s\S]*case scratching[\s\S]*case revealed[\s\S]*case assessing[\s\S]*case checkpoint[\s\S]*case stowing[\s\S]*case paused/.test(source.awakeningViews),
+    "The recall ritual must keep the frozen nine-phase presentation contract."
+  ),
+  check(
+    "recall_mascot_has_ten_states",
+    /enum V2RecallMascotState[\s\S]*case idle[\s\S]*case reacting[\s\S]*case turning[\s\S]*case rummaging[\s\S]*case carrying[\s\S]*case watching[\s\S]*case acknowledging[\s\S]*case thinking[\s\S]*case sleeping[\s\S]*case farewell/.test(source.awakeningViews),
+    "Five bundled poses must be composed into ten semantic mascot states."
+  ),
+  check(
+    "scratch_reveal_uses_canvas_grid_threshold",
+    source.screenshotAwakeningViews.includes("Canvas { context, size in")
+      && source.screenshotAwakeningViews.includes("context.blendMode = .destinationOut")
+      && source.screenshotAwakeningViews.includes("brushDiameter: CGFloat = 26")
+      && source.screenshotAwakeningViews.includes("coverage >= 0.45"),
+    "Scratch reveal must use a 26pt destination-out Canvas and a 45 percent grid threshold."
+  ),
+  check(
+    "checkpoint_and_persistence_are_explicit",
+    source.screenshotAwakeningViews.includes('"继续下一张"')
+      && source.screenshotAwakeningViews.includes('Button("先收好"')
+      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.currentCardID")')
+      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.scratchPaths")')
+      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.assessedCardIDs")'),
+    "Checkpoint choice, scratch restoration, and idempotent assessment markers must persist."
+  ),
+  check(
+    "summon_timings_cover_first_next_and_reduced_motion",
+    source.screenshotAwakeningViews.includes("[120_000_000, 360_000_000, 470_000_000, 300_000_000, 200_000_000]")
+      && source.screenshotAwakeningViews.includes("[80_000_000, 180_000_000, 180_000_000, 140_000_000, 120_000_000]")
+      && source.screenshotAwakeningViews.includes("180_000_000"),
+    "Summoning must total 1450ms for the first card, 700ms later, and 180ms with Reduce Motion."
   ),
   check(
     "awakening_source_is_feedback_only",

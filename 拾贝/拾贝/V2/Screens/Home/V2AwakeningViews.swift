@@ -17,9 +17,7 @@ struct V2AwakeningHomeView: View {
     let onAddContent: () -> Void
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
-    @State private var selectedMemoryPool = V2MemoryPool.due
     @State private var isMascotReacting = false
-    @State private var mascotLeanAngle: Double = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -99,17 +97,11 @@ struct V2AwakeningHomeView: View {
                     Button {
                         reactMascot()
                     } label: {
-                        Image("RecalloMascotIdle")
-                            .resizable()
-                            .renderingMode(.original)
-                            .scaledToFit()
-                            .frame(width: 92, height: 92)
-                            .scaleEffect(
-                                reduceMotion
-                                    ? 1
-                                    : isMascotReacting ? 1.045 : 1
-                            )
-                            .rotationEffect(.degrees(mascotLeanAngle))
+                        V2RecallMascotView(
+                            state: isMascotReacting ? .reacting : .idle,
+                            reduceMotion: reduceMotion
+                        )
+                        .frame(width: 102, height: 102)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Recallo 毛球")
@@ -118,46 +110,17 @@ struct V2AwakeningHomeView: View {
                         reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.7),
                         value: isMascotReacting
                     )
-                    .animation(
-                        reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.65),
-                        value: mascotLeanAngle
-                    )
                     .padding(.top, 8)
-                    .onChange(of: selectedMemoryPool) { _, newPool in
-                        guard !reduceMotion else {
-                            mascotLeanAngle = 0
-                            return
-                        }
-                        let allPools = V2MemoryPool.allCases
-                        guard let index = allPools.firstIndex(of: newPool) else { return }
-                        let mid = Double(allPools.count - 1) / 2.0
-                        mascotLeanAngle = (Double(index) - mid) * 4.0
-                    }
-                    .onChange(of: reduceMotion) { _, isEnabled in
-                        if isEnabled {
-                            mascotLeanAngle = 0
-                        }
-                    }
-
-                    if screenshotCardCount > 0 {
-                        V2MemoryPoolSelector(
-                            selectedPool: $selectedMemoryPool,
-                            counts: screenshotPoolCounts,
-                            reduceMotion: reduceMotion
-                        )
-                        .v2PageColumn()
-                    }
 
                     V2MemoryCardStack(
-                        pool: selectedMemoryPool,
-                        count: screenshotCardCount > 0 ? selectedPoolCount : (canDraw ? 1 : 0),
-                        isActive: !isLoading && (screenshotCardCount > 0 ? selectedPoolCount > 0 : canDraw),
+                        pool: preferredPool,
+                        count: screenshotCardCount > 0 ? screenshotCardCount : (canDraw ? 1 : 0),
+                        isActive: !isLoading && (screenshotCardCount > 0 || canDraw),
                         reduceMotion: reduceMotion,
                         onDraw: {
                             V2AwakeningHaptics.selection()
                             if screenshotCardCount > 0 {
-                                guard selectedPoolCount > 0 else { return }
-                                onDrawScreenshot(selectedMemoryPool)
+                                drawScreenshotMemory()
                             } else {
                                 onDraw()
                             }
@@ -166,53 +129,22 @@ struct V2AwakeningHomeView: View {
                     .frame(width: 280, height: 344)
                     .padding(.top, 4)
 
-                    if screenshotCardCount > 0 {
-                        HStack(spacing: 12) {
-                            V2PrimaryActionButton(
-                                title: "召回 1 张",
-                                tone: selectedPoolCount > 0 ? .normal : .disabled
-                            ) {
-                                guard selectedPoolCount > 0 else { return }
-                                V2AwakeningHaptics.selection()
-                                onDrawScreenshot(selectedMemoryPool)
-                            }
-
-                            Button {
-                                guard selectedPoolCount > 0 else { return }
-                                V2AwakeningHaptics.selection()
-                                onContinuousScreenshotDraw(selectedMemoryPool)
-                            } label: {
-                                Text("连续召回")
-                                    .font(V2Typography.bodyEmphasis)
-                                    .foregroundStyle(selectedPoolCount > 0 ? V2Color.primary : V2Color.textMuted)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 53)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .fill(V2Color.surfaceCream)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                    .stroke(V2Color.primary, lineWidth: 1)
-                                            )
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(selectedPoolCount == 0)
-                        }
-                        .v2PageColumn()
-                    } else {
-                        V2PrimaryActionButton(
-                            title: actionTitle,
-                            tone: isLoading || !canDraw ? .disabled : .normal
-                        ) {
-                            V2AwakeningHaptics.selection()
+                    V2PrimaryActionButton(
+                        title: actionTitle,
+                        tone: isLoading || (screenshotCardCount == 0 && !canDraw) ? .disabled : .normal
+                    ) {
+                        V2AwakeningHaptics.selection()
+                        if screenshotCardCount > 0 {
+                            drawScreenshotMemory()
+                        } else {
                             onDraw()
                         }
-                        .v2PageColumn()
                     }
+                    .v2PageColumn()
+                    .accessibilityHint("每次只呈现一张，完成后由你决定是否继续")
 
                     Text(screenshotCardCount > 0
-                         ? "\(selectedMemoryPool.title) · \(selectedPoolCount) 张可召回 · 连续模式可随时退出"
+                         ? "\(screenshotCardCount) 张旧内容在等你，一次只看一张"
                          : "一张就好，随时可以停下")
                         .font(V2Typography.caption)
                         .foregroundStyle(V2Color.textMuted)
@@ -234,11 +166,23 @@ struct V2AwakeningHomeView: View {
 
     private var actionTitle: String {
         if isLoading { return "正在准备" }
-        return response?.hasActiveCard == true ? "继续这张" : "抽一张"
+        return response?.hasActiveCard == true ? "继续这张" : "召回一张"
     }
 
-    private var selectedPoolCount: Int {
-        screenshotPoolCounts[selectedMemoryPool, default: 0]
+    private var preferredPool: V2MemoryPool {
+        V2MemoryPool.allCases.first {
+            screenshotPoolCounts[$0, default: 0] > 0
+        } ?? .due
+    }
+
+    private func drawScreenshotMemory() {
+        guard screenshotCardCount > 0 else { return }
+        // 预取多张只为让检查点能显示下一张；界面始终一次呈现一张。
+        if screenshotCardCount > 1 {
+            onContinuousScreenshotDraw(preferredPool)
+        } else {
+            onDrawScreenshot(preferredPool)
+        }
     }
 
     private var homeSubtitle: String {
@@ -284,105 +228,6 @@ struct V2AwakeningHomeView: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
-    }
-}
-
-private struct V2MemoryPoolSelector: View {
-    @Binding var selectedPool: V2MemoryPool
-    let counts: [V2MemoryPool: Int]
-    let reduceMotion: Bool
-
-    @State private var hasAppeared = false
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            ForEach(Array(V2MemoryPool.allCases.enumerated()), id: \.element) { index, pool in
-                let count = counts[pool, default: 0]
-                Button {
-                    withAnimation(
-                        reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.72)
-                    ) {
-                        selectedPool = pool
-                    }
-                } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: pool.symbolName)
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(V2Color.primary)
-                            .frame(width: 34, height: 34)
-                            .background(
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .fill(V2Color.pageGreenBackground.opacity(0.58))
-                            )
-
-                        Text(pool.title)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(V2Color.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-
-                        Text("\(count) 张")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(count > 0 ? V2Color.primary : V2Color.textMuted)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 92)
-                    .padding(.horizontal, 4)
-                    .background(
-                        ZStack {
-                            if selectedPool == pool {
-                                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                                    .fill(V2Color.surfaceCream.opacity(0.4))
-                                    .offset(x: 2, y: 3)
-                            }
-                            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                                .fill(V2Color.surfaceCream.opacity(selectedPool == pool ? 1 : 0.72))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
-                                        .stroke(
-                                            selectedPool == pool ? V2Color.primary : V2Color.primary.opacity(0.22),
-                                            lineWidth: selectedPool == pool ? 1.5 : 1
-                                        )
-                                )
-                                .shadow(
-                                    color: V2Color.primary.opacity(selectedPool == pool ? 0.18 : 0.06),
-                                    radius: selectedPool == pool ? 6 : 2,
-                                    x: 0,
-                                    y: selectedPool == pool ? 4 : 1
-                                )
-                        }
-                    )
-                    .rotationEffect(.degrees(selectedPool == pool && !reduceMotion ? -5 : 0))
-                    .offset(y: reduceMotion ? 0 : selectedPool == pool ? -3 : 2)
-                }
-                .buttonStyle(V2MemoryPoolPressStyle(reduceMotion: reduceMotion))
-                .accessibilityLabel("\(pool.title)，\(count) 张可召回")
-                .accessibilityValue(selectedPool == pool ? "已选择" : "未选择")
-                .opacity(hasAppeared ? 1 : 0)
-                .animation(
-                    reduceMotion ? nil : .easeOut(duration: 0.28).delay(Double(index) * 0.06),
-                    value: hasAppeared
-                )
-            }
-        }
-        .frame(height: 108)
-        .onAppear {
-            guard !hasAppeared else { return }
-            hasAppeared = true
-        }
-    }
-}
-
-private struct V2MemoryPoolPressStyle: ButtonStyle {
-    let reduceMotion: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(
-                reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.72),
-                value: configuration.isPressed
-            )
     }
 }
 
@@ -627,6 +472,159 @@ struct V2AwakeningCompletionView: View {
     }
 }
 
+
+enum V2RecallPresentationPhase: String, Codable, CaseIterable {
+    case home
+    case summoning
+    case recall
+    case scratching
+    case revealed
+    case assessing
+    case checkpoint
+    case stowing
+    case paused
+}
+
+enum V2RecallMascotState: String, Codable, CaseIterable {
+    case idle
+    case reacting
+    case turning
+    case rummaging
+    case carrying
+    case watching
+    case acknowledging
+    case thinking
+    case sleeping
+    case farewell
+}
+
+enum V2RecallScenePalette: String, Codable, CaseIterable {
+    case creamReady
+    case mistProcessing
+    case coralRecall
+    case lavenderPaused
+    case sageLibrary
+    case navyNight
+}
+
+struct V2RecallMascotView: View {
+    let state: V2RecallMascotState
+    let reduceMotion: Bool
+    @State private var idlePulse = false
+
+    var body: some View {
+        ZStack {
+            if state == .sleeping {
+                Text("Z  z")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(V2Color.textMuted)
+                    .offset(x: 38, y: -34)
+            }
+
+            if state == .carrying || state == .rummaging || state == .farewell {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(V2Color.surfaceCream)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(V2Color.primary.opacity(0.46), lineWidth: 1)
+                    )
+                    .frame(width: state == .carrying ? 42 : 54, height: state == .carrying ? 30 : 38)
+                    .rotationEffect(.degrees(state == .carrying ? -5 : 3))
+                    .offset(x: state == .carrying ? -1 : 34, y: state == .carrying ? 30 : 32)
+            }
+
+            Image(assetName)
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .scaleEffect(x: mirrored ? -1 : 1, y: 1)
+                .scaleEffect(scale)
+                .rotationEffect(.degrees(rotation))
+                .offset(offset)
+                .opacity(state == .sleeping ? 0.82 : 1)
+
+            if state == .farewell {
+                Image(systemName: "hand.wave.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(V2Color.primary)
+                    .offset(x: 36, y: -2)
+            }
+        }
+        .scaleEffect(reduceMotion ? 1 : idlePulse ? 1.025 : 1)
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.72),
+            value: state
+        )
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.34),
+            value: idlePulse
+        )
+        .task(id: "\(state.rawValue)-\(reduceMotion)") {
+            idlePulse = false
+            guard state == .idle,
+                  !reduceMotion,
+                  !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !Task.isCancelled else { return }
+                idlePulse = true
+                try? await Task.sleep(nanoseconds: 360_000_000)
+                idlePulse = false
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var assetName: String {
+        switch state {
+        case .idle, .reacting, .watching, .sleeping:
+            return "RecalloMascotIdle"
+        case .turning, .rummaging, .farewell:
+            return "RecalloMascotTilt"
+        case .carrying:
+            return "RecalloMascotHop"
+        case .acknowledging:
+            return "RecalloMascotSuccess"
+        case .thinking:
+            return "RecalloMascotThinking"
+        }
+    }
+
+    private var scale: CGFloat {
+        switch state {
+        case .reacting: return 1.06
+        case .rummaging: return 0.96
+        case .carrying, .acknowledging: return 1.04
+        case .sleeping: return 0.9
+        default: return 1
+        }
+    }
+
+    private var rotation: Double {
+        switch state {
+        case .turning: return -7
+        case .rummaging: return 8
+        case .thinking: return -3
+        case .sleeping: return 8
+        case .farewell: return -9
+        default: return 0
+        }
+    }
+
+    private var offset: CGSize {
+        switch state {
+        case .carrying: return CGSize(width: 0, height: -7)
+        case .rummaging: return CGSize(width: 15, height: 8)
+        case .sleeping: return CGSize(width: 0, height: 11)
+        default: return .zero
+        }
+    }
+
+    private var mirrored: Bool {
+        state == .turning || state == .farewell
+    }
+}
+
 private struct V2MemoryCardStack: View {
     let pool: V2MemoryPool
     let count: Int
@@ -657,7 +655,7 @@ private struct V2MemoryCardStack: View {
                         Text("记忆卡")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(V2Color.textPrimary)
-                        Text(isActive ? "向上拖动，召回一张" : "这个卡池暂时是空的")
+                        Text(isActive ? "向上拖动，召回一张" : "今天没有待召回内容")
                             .font(V2Typography.caption)
                             .foregroundStyle(V2Color.textMuted)
                     }
@@ -699,7 +697,7 @@ private struct V2MemoryCardStack: View {
                 }
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(pool.title)，\(count) 张待召回记忆卡")
+        .accessibilityLabel("\(count) 张待召回记忆卡")
         .accessibilityHint(isActive ? "向上拖动二十八点、长按，或使用召回操作" : "当前没有可召回卡片")
         .accessibilityAction(named: "召回一张") {
             guard isActive else { return }
