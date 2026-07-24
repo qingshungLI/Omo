@@ -4,7 +4,7 @@
 >
 > 日期：2026-07-24
 >
-> 对应 PRD：[`prd-recallo-2-screenshot-awakening-v0.5.md`](./prd-recallo-2-screenshot-awakening-v0.5.md)
+> 对应 PRD：[`prd-recallo-2-screenshot-awakening-v0.6.md`](./prd-recallo-2-screenshot-awakening-v0.6.md)
 >
 > 状态：已从当前交付计划移出，仅保留为 10 小时 MVP 之后的生产化参考
 >
