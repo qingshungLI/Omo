@@ -8,6 +8,8 @@
 >
 > 素材登记：[`asset-provenance.md`](./asset-provenance.md)
 >
+> 制作清单：[`recallo-v06-animation-production-checklist.md`](./recallo-v06-animation-production-checklist.md)
+>
 > 参考实现：[`ios-app-demo.html`](./ios-app-demo.html)（单文件 Web 预览，本文件所有参数都在其中可直接验证）
 >
 > 生成模型：`qwen3.7-plus-2026-05-26`；本文只规定产品行为与视觉边界，不将实现归因于某个开发代理。
