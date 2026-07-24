@@ -30,6 +30,7 @@ test("uses one concise high-signal query and keeps strict candidate matching", a
     generateOverview: async () => ({ summary: "全片概览", highlights: ["要点一"] })
   });
   assert.equal(result.status, "completed");
+  assert.equal(result.memoryCard.state, "fragment");
   assert.deepEqual(queries, ["巫师财经 财经跨年"]);
   assert.ok(result.search.attempts.some((attempt) => attempt.matched));
 });
@@ -58,6 +59,8 @@ test("returns visual/search result without a search provider", async () => {
     searcher: async (query) => ({ provider: "none", query, results: [], errorCode: "search_provider_missing" })
   });
   assert.equal(result.status, "search_provider_missing");
+  assert.equal(result.memoryCard.state, "fragment");
+  assert.equal(result.memoryCard.sourceStatus, "unconfirmed");
   assert.match(result.query, /巫师财经/);
 });
 
@@ -114,6 +117,7 @@ test("rejects a search result whose title does not match the screenshot", async 
   assert.equal(result.status, "search_match_low_confidence");
   assert.equal(result.link, undefined);
   assert.equal(result.review, undefined);
+  assert.equal(result.memoryCard.state, "fragment");
 });
 
 test("rejects the same Bilibili title when the UP account does not match", async () => {
@@ -158,12 +162,30 @@ test("returns a timestamp-focused review and a whole-video overview", async () =
       },
       focus: { status: "timestamp_window", timestampSeconds: 42 }
     }),
-    generate: async () => ({ summaryCard: { text: "核心内容总结" }, units: [] }),
+    generate: async () => ({
+      title: "财经跨年",
+      summaryCard: { text: "核心内容总结" },
+      units: [{
+        questions: [{
+          knowledgePoint: "市场关系",
+          stem: "这段视频强调了什么？",
+          options: [
+            { id: "option-1", text: "市场与行业需要结合判断" },
+            { id: "option-2", text: "只看单一指标" }
+          ],
+          correctOptionId: "option-1",
+          explanation: "视频通过市场、行业和公司三个层次说明综合判断的方法。"
+        }]
+      }]
+    }),
     generateOverview: async () => ({ summary: "全片概览", highlights: ["市场", "行业"] })
   });
   assert.equal(result.status, "completed");
   assert.equal(result.review.summaryCard.text, "核心内容总结");
   assert.equal(result.videoOverview.summary, "全片概览");
+  assert.equal(result.memoryCard.state, "formal");
+  assert.equal(result.memoryCard.sourceStatus, "verified");
+  assert.equal(result.memoryCard.hiddenSemantic, "市场与行业需要结合判断");
   assert.equal(result.details.capture.text.includes("财经跨年"), true);
   assert.equal(result.details.source.overviewText.includes("完整视频转写"), true);
   assert.equal(result.details.source.transcriptSegments.length, 1);
@@ -174,6 +196,69 @@ test("returns a timestamp-focused review and a whole-video overview", async () =
   assert.equal(Number.isFinite(result.timings.reviewGenerationMs), true);
   assert.equal(Number.isFinite(result.timings.overviewGenerationMs), true);
   assert.equal(Number.isFinite(result.timings.totalMs), true);
+});
+
+test("uses verified screenshot text when video extraction is unavailable", async () => {
+  const extractionError = new Error("本地语音转写环境暂未配置。");
+  extractionError.code = "failed_extract_video";
+  const result = await runImageFlow({
+    imageBase64: "aGVsbG8=",
+    mimeType: "image/png",
+    analyzeImage: async () => ({
+      provider: "qwen-vision",
+      identity: {
+        platform: "douyin",
+        contentKind: "video",
+        title: "截图里可见的完整标题",
+        account: "测试作者",
+        timestampSeconds: null,
+        locatorTerms: ["核心观点"],
+        visibleTextLines: ["截图里可见的完整标题", "视频中称这是一个需要进一步核对的核心观点。"],
+        confidence: 0.9
+      },
+      lines: ["截图里可见的完整标题", "视频中称这是一个需要进一步核对的核心观点。"]
+    }),
+    searcher: async (query) => ({
+      provider: "tikhub",
+      query,
+      results: [{
+        title: "截图里可见的完整标题",
+        url: "https://www.douyin.com/video/123",
+        account: "测试作者",
+        platform: "douyin",
+        contentKind: "video"
+      }]
+    }),
+    extract: async () => {
+      throw extractionError;
+    },
+    generate: async (input) => {
+      assert.match(input.rawText, /不代表 Recallo 已完成外部事实核验/);
+      return {
+        title: "截图记忆",
+        units: [{
+          questions: [{
+            knowledgePoint: "事实核对方法",
+            stem: "截图中的内容应如何理解？",
+            options: [
+              { id: "option-1", text: "作为待核对的截图内容" },
+              { id: "option-2", text: "直接当作已证实事实" }
+            ],
+            correctOptionId: "option-1",
+            explanation: "截图能证明用户看过这段表述，但不能代替外部事实核验。"
+          }]
+        }]
+      };
+    }
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.sourceFallback, true);
+  assert.equal(result.source.focus.status, "screenshot_only");
+  assert.equal(result.memoryCard.state, "formal");
+  assert.equal(result.memoryCard.sourceStatus, "verified");
+  assert.equal(result.error, undefined);
+  assert.equal(result.sourceWarning.code, "failed_extract_video");
 });
 
 test("selects only subtitle blocks around the player timestamp", () => {

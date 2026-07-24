@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCompatibleUserContent } from "../openaiClient.js";
+import {
+  buildCompatibleSystemMessage,
+  buildCompatibleUserContent
+} from "../openaiClient.js";
 
 test("keeps text-only model requests as plain text", () => {
   assert.equal(buildCompatibleUserContent("hello"), "hello");
@@ -26,4 +29,15 @@ test("rejects unsupported image data URLs", () => {
     () => buildCompatibleUserContent("read", "https://example.com/image.png"),
     /Base64 Data URL/
   );
+});
+
+test("tells compatible models not to echo JSON Schema metadata", () => {
+  const message = buildCompatibleSystemMessage({
+    system: "识别截图",
+    schemaName: "identity",
+    schema: { type: "object", properties: { title: { type: "string" } } }
+  });
+  assert.match(message, /仅用于约束输出字段/);
+  assert.match(message, /严禁在结果中输出 type、properties、required/);
+  assert.match(message, /"title"/);
 });

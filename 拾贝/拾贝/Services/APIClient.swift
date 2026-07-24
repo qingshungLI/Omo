@@ -128,7 +128,13 @@ struct APIClient {
             mimeType: mimeType,
             sourceUrl: sourceUrl
         )
-        return try await send("/api/sources/image-flow", method: "POST", body: request, acceptsFailureBody: true)
+        return try await send(
+            "/api/sources/image-flow",
+            method: "POST",
+            body: request,
+            acceptsFailureBody: true,
+            timeoutInterval: 300
+        )
     }
 
     func fetchV2Chapter(id: String) async throws -> V2BackendChapter {
@@ -360,11 +366,15 @@ struct APIClient {
         _ path: String,
         method: String,
         body: Request,
-        acceptsFailureBody: Bool
+        acceptsFailureBody: Bool,
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> Response {
         let url = baseURL.appending(path: path)
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if let timeoutInterval {
+            request.timeoutInterval = timeoutInterval
+        }
         request.setValue("application/json", forHTTPHeaderField: "accept")
         request.setValue(deviceId, forHTTPHeaderField: "X-Device-Id")
         #if DEBUG
@@ -585,9 +595,41 @@ struct ImageFlowResponse: Codable {
     }
 
     var status: String
+    var message: String?
     var query: String?
     var link: Link?
     var sourceFallback: Bool?
+    var memoryCard: ImageFlowMemoryCard?
+}
+
+struct ImageFlowMemoryCard: Codable, Equatable, Identifiable {
+    enum State: String, Codable {
+        case formal
+        case fragment
+    }
+
+    enum Rarity: String, Codable {
+        case r = "R"
+        case sr = "SR"
+        case ssr = "SSR"
+    }
+
+    enum SourceStatus: String, Codable {
+        case verified
+        case unconfirmed
+    }
+
+    var id: String
+    var state: State
+    var coreKnowledge: String
+    var recallCue: String
+    var hiddenSemantic: String?
+    var explanation: String
+    var rarity: Rarity?
+    var rarityReason: String?
+    var sourceTitle: String?
+    var sourceUrl: String?
+    var sourceStatus: SourceStatus
 }
 
 struct AttemptRequest: Codable {

@@ -9,6 +9,9 @@ struct V2AwakeningHomeView: View {
     let showsUnreadNotificationBadge: Bool
     let onOpenNotifications: () -> Void
     let onOpenProfile: () -> Void
+    let screenshotCardCount: Int
+    let onDrawScreenshot: () -> Void
+    let onContinuousScreenshotDraw: () -> Void
     let onDraw: () -> Void
 
     var body: some View {
@@ -90,16 +93,48 @@ struct V2AwakeningHomeView: View {
 
                 Spacer(minLength: 20)
 
-                V2PrimaryActionButton(
-                    title: actionTitle,
-                    tone: isLoading || !canDraw ? .disabled : .normal
-                ) {
-                    V2AwakeningHaptics.selection()
-                    onDraw()
-                }
-                .v2PageColumn()
+                if screenshotCardCount > 0 {
+                    HStack(spacing: 12) {
+                        V2PrimaryActionButton(title: "抽 1 张") {
+                            V2AwakeningHaptics.selection()
+                            onDrawScreenshot()
+                        }
 
-                Text("一张就好，随时可以停下")
+                        Button {
+                            V2AwakeningHaptics.selection()
+                            onContinuousScreenshotDraw()
+                        } label: {
+                            Text("连续抽取")
+                                .font(V2Typography.bodyEmphasis)
+                                .foregroundStyle(V2Color.primary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 53)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(V2Color.surfaceCream)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                .stroke(V2Color.primary, lineWidth: 1)
+                                        )
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .v2PageColumn()
+                } else {
+                    V2PrimaryActionButton(
+                        title: actionTitle,
+                        tone: isLoading || !canDraw ? .disabled : .normal
+                    ) {
+                        V2AwakeningHaptics.selection()
+                        onDraw()
+                    }
+                    .v2PageColumn()
+                }
+
+                Text(screenshotCardCount > 0
+                     ? "已收集 \(screenshotCardCount) 张截图记忆 · 连续抽取也可随时退出"
+                     : "一张就好，随时可以停下")
                     .font(V2Typography.caption)
                     .foregroundStyle(V2Color.textMuted)
                     .padding(.top, 13)
@@ -117,6 +152,9 @@ struct V2AwakeningHomeView: View {
     }
 
     private var homeSubtitle: String {
+        if screenshotCardCount > 0 {
+            return "从你保存过的截图里，随机唤醒一个知识点"
+        }
         if response?.hasActiveCard == true {
             return "这张记忆还在等你"
         }

@@ -15,9 +15,14 @@ private enum V2NotificationRouteTarget {
     case failure
 }
 
-private struct V2PendingAIProcessingConsentSourceText: Identifiable {
+private struct V2PendingAIProcessingConsent: Identifiable {
+    enum Payload {
+        case sourceText(String)
+        case screenshot(Data)
+    }
+
     let id = UUID()
-    let value: String
+    let payload: Payload
 }
 
 struct V2RootView: View {
@@ -61,7 +66,11 @@ struct V2RootView: View {
     @State private var hasLoadedInitialBackendChapter = false
     @State private var showsStartupSplash = true
     @State private var generationState = V2GenerationState()
-    @State private var pendingAIProcessingConsentSourceText: V2PendingAIProcessingConsentSourceText?
+    @State private var pendingAIProcessingConsent: V2PendingAIProcessingConsent?
+    @State private var screenshotCards: [V2CapturedMemoryCard] = []
+    @State private var screenshotAnalysisState = V2ScreenshotAnalysisState.idle
+    @State private var screenshotAnalysisTask: Task<Void, Never>?
+    @State private var screenshotDrawSession: V2ScreenshotDrawSession?
     @State private var account: AccountSnapshot?
     @State private var isAccountLoading = false
     @State private var accountMessage = ""
@@ -131,19 +140,32 @@ struct V2RootView: View {
         } message: {
             Text("删除后，这个章节和它的生成任务都会被移除。")
         }
-        .sheet(item: $pendingAIProcessingConsentSourceText) { pendingSourceText in
+        .sheet(item: $pendingAIProcessingConsent) { pendingConsent in
             V2AIProcessingConsentSheet(
                 onAgree: {
                     hasAcceptedAIProcessingConsent = true
-                    pendingAIProcessingConsentSourceText = nil
-                    startV2GenerationAfterConsent(sourceText: pendingSourceText.value)
+                    pendingAIProcessingConsent = nil
+                    switch pendingConsent.payload {
+                    case .sourceText(let sourceText):
+                        startV2GenerationAfterConsent(sourceText: sourceText)
+                    case .screenshot(let imageData):
+                        startScreenshotAnalysisAfterConsent(imageData: imageData)
+                    }
                 },
                 onCancel: {
-                    pendingAIProcessingConsentSourceText = nil
+                    pendingAIProcessingConsent = nil
                 }
             )
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $screenshotDrawSession) { session in
+            V2ScreenshotAwakeningFlowView(
+                session: session,
+                onClose: {
+                    screenshotDrawSession = nil
+                }
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .shiBeiDidRegisterForRemoteNotifications)) { notification in
             guard let token = notification.userInfo?["deviceToken"] as? String else { return }
@@ -177,12 +199,19 @@ struct V2RootView: View {
         case .learning:
             V2AwakeningHomeView(
                 response: awakeningResponse,
-                hasReviewableContent: usesFixtures || backendChapters.contains(where: isHomeLearningCandidate),
+                hasReviewableContent: !screenshotCards.isEmpty || usesFixtures || backendChapters.contains(where: isHomeLearningCandidate),
                 isLoading: isAwakeningLoading,
                 selectedTab: $selectedTab,
                 showsUnreadNotificationBadge: hasUnreadNotifications,
                 onOpenNotifications: { pushRoute(.notifications) },
                 onOpenProfile: { pushRoute(.profile) },
+                screenshotCardCount: screenshotCards.count,
+                onDrawScreenshot: {
+                    openScreenshotDraw(mode: .single)
+                },
+                onContinuousScreenshotDraw: {
+                    openScreenshotDraw(mode: .continuous)
+                },
                 onDraw: {
                     Task {
                         await openAwakeningCard()
@@ -214,7 +243,9 @@ struct V2RootView: View {
                 preflightSourceWithMetadata: { input in
                     try await apiClient.preflightSource(input: input, fetchMetadata: true)
                 },
-                onGenerate: startV2Generation
+                onGenerate: startV2Generation,
+                screenshotAnalysisState: screenshotAnalysisState,
+                onAnalyzeScreenshot: requestScreenshotAnalysis
             )
         case .discover:
             V2DiscoverView(
@@ -1517,7 +1548,65 @@ struct V2RootView: View {
             return
         }
 
+        guard hasAcceptedAIProcessingConsent else {
+            pendingAIProcessingConsent = V2PendingAIProcessingConsent(payload: .sourceText(trimmed))
+            return
+        }
+
         startV2GenerationAfterConsent(sourceText: trimmed)
+    }
+
+    private func requestScreenshotAnalysis(_ imageData: Data) {
+        guard !imageData.isEmpty else {
+            screenshotAnalysisState = .failed("没有读取到图片，请重新选择。")
+            return
+        }
+        guard hasAcceptedAIProcessingConsent else {
+            pendingAIProcessingConsent = V2PendingAIProcessingConsent(payload: .screenshot(imageData))
+            return
+        }
+        startScreenshotAnalysisAfterConsent(imageData: imageData)
+    }
+
+    private func startScreenshotAnalysisAfterConsent(imageData: Data) {
+        screenshotAnalysisTask?.cancel()
+        screenshotAnalysisState = .preparing
+        screenshotAnalysisTask = Task {
+            do {
+                let preparedData = try V2ScreenshotImageProcessor.prepare(imageData)
+                try Task.checkCancellation()
+                screenshotAnalysisState = .analyzing
+                let response = try await apiClient.analyzeScreenshot(imageData: preparedData)
+                try Task.checkCancellation()
+                guard let memoryCard = response.memoryCard else {
+                    throw V2ScreenshotAnalysisError.missingMemoryCard
+                }
+                let captured = V2CapturedMemoryCard(card: memoryCard, screenshotData: preparedData)
+                if let index = screenshotCards.firstIndex(where: { $0.id == captured.id }) {
+                    screenshotCards[index] = captured
+                } else {
+                    screenshotCards.append(captured)
+                }
+                screenshotAnalysisState = .generated(
+                    memoryCard.state == .formal
+                        ? "记忆卡已生成，正在打开。"
+                        : "来源还不能确认，已先保存为记忆碎片。"
+                )
+                selectedTab = .learning
+                screenshotDrawSession = V2ScreenshotDrawSession.make(mode: .single, from: [captured])
+            } catch is CancellationError {
+                return
+            } catch {
+                screenshotAnalysisState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func openScreenshotDraw(mode: V2ScreenshotDrawMode) {
+        guard let session = V2ScreenshotDrawSession.make(mode: mode, from: screenshotCards) else {
+            return
+        }
+        screenshotDrawSession = session
     }
 
     private func startV2GenerationAfterConsent(sourceText: String) {

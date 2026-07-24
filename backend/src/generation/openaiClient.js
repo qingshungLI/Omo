@@ -53,7 +53,7 @@ async function callOpenAICompatibleJson(request, { provider }) {
     || process.env.MODEL
     || "qwen3.7-plus-2026-05-26";
   const url = resolveCompatibleChatUrl(process.env.BASE_URL || process.env.AI_BASE_URL);
-  const systemMessage = `${system}\n\n只输出 JSON 对象，不要输出 Markdown。必须符合 ${schemaName}：\n${JSON.stringify(schema)}`;
+  const systemMessage = buildCompatibleSystemMessage({ system, schemaName, schema });
   const requestText = [systemMessage, user, imageDataUrl ? "[screenshot image omitted]" : ""]
     .filter(Boolean)
     .join("\n\n");
@@ -316,6 +316,16 @@ export function buildCompatibleUserContent(user, imageDataUrl = "") {
       image_url: { url: normalizeImageDataUrl(imageDataUrl) }
     }
   ];
+}
+
+export function buildCompatibleSystemMessage({ system = "", schemaName = "output", schema = {} } = {}) {
+  return [
+    system,
+    "只输出最终数据的 JSON 对象，不要输出 Markdown。",
+    `以下 ${schemaName} JSON Schema 仅用于约束输出字段，不是需要复述的数据。`,
+    "严禁在结果中输出 type、properties、required、additionalProperties 等 Schema 元数据；直接从业务字段开始。",
+    JSON.stringify(schema)
+  ].filter(Boolean).join("\n\n");
 }
 
 function normalizeImageDataUrl(value) {

@@ -55,6 +55,46 @@ test("normalizes Douyin screenshots without inventing source details", () => {
   assert.equal(identity.confidence, 1);
 });
 
+test("does not treat a publication date as a player timestamp", () => {
+  const identity = normalizeScreenshotIdentity({
+    platform: "bilibili",
+    contentKind: "video",
+    title: "可见标题",
+    account: "作者",
+    timestampSeconds: 1_782_964_380,
+    locatorTerms: [],
+    visibleTextLines: ["2026年7月1日19:53", "可见标题"],
+    confidence: 0.9
+  });
+  assert.equal(identity.timestampSeconds, null);
+});
+
+test("retries screenshot vision once when structured JSON is incomplete", async () => {
+  let calls = 0;
+  const result = await analyzeScreenshotImage({
+    imageBase64: ONE_PIXEL_PNG,
+    mimeType: "image/png",
+    modelJsonCaller: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("模型返回内容不是可解析 JSON，请重试。");
+      return {
+        platform: "douyin",
+        contentKind: "video",
+        title: "第二次返回完整结果",
+        account: "测试作者",
+        timestampSeconds: null,
+        locatorTerms: [],
+        visibleTextLines: ["第二次返回完整结果"],
+        confidence: 0.9
+      };
+    }
+  });
+
+  assert.equal(calls, 2);
+  assert.equal(result.identity.platform, "douyin");
+  assert.equal(result.identity.title, "第二次返回完整结果");
+});
+
 test("allows an unknown platform without inventing a title", () => {
   const identity = normalizeScreenshotIdentity({
     platform: "unknown",

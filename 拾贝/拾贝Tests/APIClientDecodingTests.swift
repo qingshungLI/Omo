@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import 拾贝
 
 final class APIClientDecodingTests: XCTestCase {
@@ -487,6 +488,103 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertEqual(response.awakeningSession?.lifecycleTitle, "待唤醒")
         XCTAssertEqual(response.card?.question.options.map(\.id), ["a", "b"])
         XCTAssertNil(response.feedback)
+    }
+
+    func testDecodesFormalScreenshotMemoryCard() throws {
+        let data = Data(
+            """
+            {
+              "status": "completed",
+              "memoryCard": {
+                "id": "card-1",
+                "state": "formal",
+                "coreKnowledge": "什么情况下使用间隔复习？ → 需要长期记住时",
+                "recallCue": "什么情况下使用间隔复习？",
+                "hiddenSemantic": "需要长期记住时",
+                "explanation": "它适合跨越较长时间保持的信息。",
+                "rarity": "SR",
+                "rarityReason": "这是一条可在相似场景复用的方法或机制。",
+                "sourceTitle": "间隔复习",
+                "sourceUrl": "https://www.bilibili.com/video/BVtest",
+                "sourceStatus": "verified"
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(ImageFlowResponse.self, from: data)
+
+        XCTAssertEqual(response.memoryCard?.state, .formal)
+        XCTAssertEqual(response.memoryCard?.rarity, .sr)
+        XCTAssertEqual(response.memoryCard?.hiddenSemantic, "需要长期记住时")
+        XCTAssertEqual(response.memoryCard?.sourceStatus, .verified)
+    }
+
+    func testDecodesScreenshotFragmentFromFailureResponse() throws {
+        let data = Data(
+            """
+            {
+              "status": "search_match_low_confidence",
+              "message": "没有找到可信来源。",
+              "memoryCard": {
+                "id": "fragment-1",
+                "state": "fragment",
+                "coreKnowledge": "待核对标题",
+                "recallCue": "你当时为什么想记住这张截图？",
+                "explanation": "没有找到可信来源。",
+                "sourceStatus": "unconfirmed"
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(ImageFlowResponse.self, from: data)
+
+        XCTAssertEqual(response.memoryCard?.state, .fragment)
+        XCTAssertNil(response.memoryCard?.rarity)
+        XCTAssertNil(response.memoryCard?.hiddenSemantic)
+        XCTAssertEqual(response.memoryCard?.sourceStatus, .unconfirmed)
+    }
+
+    func testScreenshotDrawSessionDeduplicatesAndLimitsContinuousDraw() {
+        let cards = (0..<12).map { index in
+            V2CapturedMemoryCard(
+                card: ImageFlowMemoryCard(
+                    id: "card-\(index % 11)",
+                    state: .formal,
+                    coreKnowledge: "知识 \(index)",
+                    recallCue: "问题 \(index)",
+                    hiddenSemantic: "答案 \(index)",
+                    explanation: "解释",
+                    rarity: .r,
+                    rarityReason: "原因",
+                    sourceTitle: nil,
+                    sourceUrl: nil,
+                    sourceStatus: .verified
+                ),
+                screenshotData: Data()
+            )
+        }
+
+        let session = V2ScreenshotDrawSession.make(mode: .continuous, from: cards, shuffle: { $0 })
+
+        XCTAssertEqual(session?.cards.count, 10)
+        XCTAssertEqual(Set(session?.cards.map(\.id) ?? []).count, 10)
+    }
+
+    func testScreenshotImageProcessorProducesBoundedJPEG() throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 3_000, height: 1_500))
+        let image = renderer.image { context in
+            UIColor.systemGreen.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 3_000, height: 1_500))
+        }
+        let source = try XCTUnwrap(image.pngData())
+
+        let prepared = try V2ScreenshotImageProcessor.prepare(source)
+        let decoded = try XCTUnwrap(UIImage(data: prepared))
+
+        XCTAssertLessThanOrEqual(prepared.count, V2ScreenshotImageProcessor.maximumBytes)
+        XCTAssertLessThanOrEqual(max(decoded.size.width, decoded.size.height), V2ScreenshotImageProcessor.maximumEdge)
     }
 
     private func fixtureData(named name: String) throws -> Data {

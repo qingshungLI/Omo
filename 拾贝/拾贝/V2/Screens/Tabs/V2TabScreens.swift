@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct V2TabScaffold<Content: View>: View {
     @Binding var selectedTab: V2HomeTab
@@ -273,8 +274,12 @@ struct V2UploadView: View {
     let preflightSource: (String) async throws -> SourcePreflightResponse
     let preflightSourceWithMetadata: (String) async throws -> SourcePreflightResponse
     let onGenerate: (String) -> Void
+    let screenshotAnalysisState: V2ScreenshotAnalysisState
+    let onAnalyzeScreenshot: (Data) -> Void
     @State private var sourceText = ""
     @State private var validationMessage = ""
+    @State private var screenshotLoadMessage = ""
+    @State private var selectedScreenshotItem: PhotosPickerItem?
     @State private var preflightState = V2UploadPreflightState.idle
     @State private var preflightTask: Task<Void, Never>?
 
@@ -324,6 +329,51 @@ struct V2UploadView: View {
                     )
                         .padding(.top, V2UploadPageMetrics.groupTopPadding)
 
+                    PhotosPicker(
+                        selection: $selectedScreenshotItem,
+                        matching: .images,
+                        photoLibrary: .shared()
+                    ) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "photo.badge.plus")
+                            Text(screenshotButtonTitle)
+                        }
+                        .font(V2Typography.bodyEmphasis)
+                        .foregroundStyle(V2Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 53)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(V2Color.surfaceCream)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(V2Color.borderSoftGreen, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .disabled(screenshotAnalysisState.isBusy)
+                    .accessibilityHint("选择 B站或抖音截图，交给 AI 生成一张记忆卡")
+
+                    if let screenshotStatusText {
+                        Text(screenshotStatusText)
+                            .font(V2Typography.label)
+                            .foregroundStyle(screenshotStatusIsError ? V2Color.feedbackWrongBorder : V2Color.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    HStack(spacing: 8) {
+                        Rectangle()
+                            .fill(V2Color.borderSoftGreen)
+                            .frame(height: 1)
+                        Text("或粘贴链接 / 正文")
+                            .font(V2Typography.caption)
+                            .foregroundStyle(V2Color.textMuted)
+                        Rectangle()
+                            .fill(V2Color.borderSoftGreen)
+                            .frame(height: 1)
+                    }
+
                     V2PrimaryActionButton(
                         title: primaryActionTitle,
                         tone: canStartGeneration ? .normal : .disabled
@@ -355,6 +405,22 @@ struct V2UploadView: View {
             .onChange(of: sourceText) { newValue in
                 schedulePreflight(for: newValue)
             }
+            .onChange(of: selectedScreenshotItem) { item in
+                guard let item else { return }
+                screenshotLoadMessage = ""
+                Task {
+                    do {
+                        guard let data = try await item.loadTransferable(type: Data.self) else {
+                            screenshotLoadMessage = "没有读取到图片，请重新选择。"
+                            return
+                        }
+                        onAnalyzeScreenshot(data)
+                    } catch {
+                        screenshotLoadMessage = "读取图片失败，请重新选择。"
+                    }
+                    selectedScreenshotItem = nil
+                }
+            }
             .onDisappear {
                 preflightTask?.cancel()
             }
@@ -369,6 +435,39 @@ struct V2UploadView: View {
             return "正在确认"
         }
         return "开始生成"
+    }
+
+    private var screenshotButtonTitle: String {
+        switch screenshotAnalysisState {
+        case .preparing:
+            "正在压缩截图"
+        case .analyzing:
+            "正在整理记忆卡"
+        default:
+            "从截图生成记忆卡"
+        }
+    }
+
+    private var screenshotStatusText: String? {
+        if !screenshotLoadMessage.isEmpty {
+            return screenshotLoadMessage
+        }
+        switch screenshotAnalysisState {
+        case .idle:
+            return "MVP 现场主测 B站与抖音截图"
+        case .preparing:
+            return "正在为上传准备图片…"
+        case .analyzing:
+            return "AI 正在识别标题、核对来源并生成卡片…"
+        case .generated(let message), .failed(let message):
+            return message
+        }
+    }
+
+    private var screenshotStatusIsError: Bool {
+        if !screenshotLoadMessage.isEmpty { return true }
+        if case .failed = screenshotAnalysisState { return true }
+        return false
     }
 
     private func schedulePreflight(for value: String) {

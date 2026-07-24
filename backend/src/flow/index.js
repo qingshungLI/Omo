@@ -2,6 +2,7 @@ import { analyzeScreenshotImage } from "./vision.js";
 import { enabledCapturePlatforms, searchLinks } from "./search.js";
 import { extractFocusedSourceContent, isVideoUrl } from "./source.js";
 import { generateQuickReviewPath, generateVideoOverview } from "./review.js";
+import { buildMemoryCard, buildMemoryFragment } from "./memoryCard.js";
 
 export async function runImageFlow({
   imagePath = "",
@@ -34,39 +35,47 @@ export async function runImageFlow({
   const allowedPlatforms = new Set(normalizeEnabledPlatforms(enabledPlatforms));
   if (sourceUrl && !sourcePlatform) {
     timings.totalMs = Date.now() - flowStartedAt;
-    return {
+    const response = {
       status: "platform_not_supported",
       message: "当前截图流程只接受 B站、抖音或小红书来源链接。",
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
+    response.memoryCard = fragmentForResult(response);
+    return response;
   }
   if (sourcePlatform && !allowedPlatforms.has(sourcePlatform)) {
     timings.totalMs = Date.now() - flowStartedAt;
-    return {
+    const response = {
       status: "platform_not_supported",
       message: `${platformLabel(sourcePlatform)}截图 adapter 当前未启用。`,
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
+    response.memoryCard = fragmentForResult(response);
+    return response;
   }
   if (identity.platform && identity.platform !== "unknown" && !allowedPlatforms.has(identity.platform)) {
     timings.totalMs = Date.now() - flowStartedAt;
-    return {
+    const response = {
       status: "platform_not_supported",
       message: `${platformLabel(identity.platform)}截图 adapter 当前未启用。`,
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
+    response.memoryCard = fragmentForResult(response);
+    return response;
   }
   if (sourcePlatform && isKnownPlatform(identity.platform) && sourcePlatform !== identity.platform) {
     timings.totalMs = Date.now() - flowStartedAt;
-    return {
+    const response = {
       status: "source_platform_mismatch",
       message: `截图识别为${platformLabel(identity.platform)}，但指定链接来自${platformLabel(sourcePlatform)}，已停止处理。`,
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
+    response.memoryCard = fragmentForResult(response);
+    return response;
   }
   reportProgress(onProgress, { stage: "search", message: "截图理解完成，正在用 TikHub 核对内容来源", percent: 20 });
   const queries = buildSearchQueries(identity);
@@ -118,13 +127,15 @@ export async function runImageFlow({
   }
   if (!candidate) {
     timings.totalMs = Date.now() - flowStartedAt;
-    return {
+    const response = {
       ...result,
       status: search.errorCode || "search_match_low_confidence",
       message: search.errorCode
         ? "已理解截图，但尚未配置可用的来源搜索 API。"
         : "没有找到标题和博主均可信的来源链接，已停止生成，避免保存错误内容。"
     };
+    response.memoryCard = fragmentForResult(response);
+    return response;
   }
 
   result.link = candidate;
@@ -190,6 +201,12 @@ export async function runImageFlow({
     result.review = review;
     if (videoOverview) result.videoOverview = videoOverview;
     result.status = "completed";
+    result.memoryCard = buildMemoryCard({
+      review,
+      source: result.source,
+      link: result.link,
+      capture: result.capture
+    });
     reportProgress(onProgress, { stage: "completed", message: "复习卡已生成", percent: 100 });
   } catch (error) {
     if (timings.sourceExtractionMs === undefined) {
@@ -201,10 +218,81 @@ export async function runImageFlow({
     }
     result.error = { code: error?.code || "source_extract_failed", message: error?.message || "来源内容提取失败。", provider: error?.provider || null };
     result.status = result.error.code;
-    reportProgress(onProgress, { stage: "failed", message: result.error.message, percent: 100 });
+    const screenshotEvidence = buildScreenshotEvidence(captureAnalysis, identity);
+    if (result.error.code === "failed_extract_video" && screenshotEvidence.length >= 24) {
+      try {
+        reportProgress(onProgress, { stage: "generate", message: "视频转写不可用，正在只依据截图可见内容生成记忆卡", percent: 82 });
+        const fallbackReview = await measureAsync(timings, "reviewGenerationMs", () => generate({
+          id: `image-fallback-${Date.now()}`,
+          title: candidate.title || identity.title || "截图记忆",
+          sourceUrl: candidate.url,
+          sourceAccount: candidate.account || identity.account,
+          rawText: screenshotEvidence,
+          blocks: [{ id: "screenshot-visible", type: "paragraph", text: screenshotEvidence }]
+        }));
+        result.review = fallbackReview;
+        result.source = {
+          sourceType: "screenshot",
+          title: candidate.title || identity.title || "截图记忆",
+          url: candidate.url,
+          account: candidate.account || identity.account || "",
+          textLength: screenshotEvidence.length,
+          platform: candidate.platform || identity.platform,
+          focus: { status: "screenshot_only" }
+        };
+        result.sourceFallback = true;
+        result.sourceWarning = result.error;
+        delete result.error;
+        result.status = "completed";
+        result.memoryCard = buildMemoryCard({
+          review: fallbackReview,
+          source: result.source,
+          link: result.link,
+          capture: result.capture
+        });
+        reportProgress(onProgress, { stage: "completed", message: "已根据截图可见内容生成记忆卡", percent: 100 });
+      } catch (fallbackError) {
+        result.sourceFallbackError = {
+          code: fallbackError?.code || "screenshot_fallback_failed",
+          message: fallbackError?.message || "截图可见内容生成失败。"
+        };
+        result.memoryCard = fragmentForResult({
+          ...result,
+          message: result.error.message
+        });
+        reportProgress(onProgress, { stage: "failed", message: result.error.message, percent: 100 });
+      }
+    } else {
+      result.memoryCard = fragmentForResult({
+        ...result,
+        message: result.error.message
+      });
+      reportProgress(onProgress, { stage: "failed", message: result.error.message, percent: 100 });
+    }
   }
   timings.totalMs = Date.now() - flowStartedAt;
   return result;
+}
+
+function buildScreenshotEvidence(captureAnalysis, identity) {
+  const lines = Array.isArray(identity?.visibleTextLines) && identity.visibleTextLines.length > 0
+    ? identity.visibleTextLines
+    : Array.isArray(captureAnalysis?.lines) ? captureAnalysis.lines : [];
+  const visibleText = lines.map((line) => String(line || "").trim()).filter(Boolean).join("\n");
+  if (!visibleText) return "";
+  return [
+    "以下文字只来自用户截图，用于记忆截图中看过的内容，不代表 Recallo 已完成外部事实核验。",
+    visibleText
+  ].join("\n");
+}
+
+function fragmentForResult(result) {
+  return buildMemoryFragment({
+    capture: result.capture,
+    link: result.link,
+    message: result.message || result.error?.message,
+    code: result.status || result.error?.code
+  });
 }
 
 function reportProgress(handler, progress) {
