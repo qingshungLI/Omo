@@ -10,6 +10,13 @@ import {
   serializeLegacyReview
 } from "./captureMemoryCard.js";
 
+const IMAGE_FLOW_INTERNAL_EVIDENCE = Symbol("recallo.imageFlow.internalEvidence");
+
+export function imageFlowInternalEvidence(result) {
+  const evidence = result?.[IMAGE_FLOW_INTERNAL_EVIDENCE];
+  return Array.isArray(evidence) ? structuredClone(evidence) : [];
+}
+
 export async function runImageFlow({
   imagePath = "",
   imageBase64 = "",
@@ -185,6 +192,7 @@ export async function runImageFlow({
       };
     }
     const evidence = evidenceForSource(source);
+    setImageFlowInternalEvidence(result, evidence);
     const reviewInput = {
       id: `image-${Date.now()}`,
       title: source.sourceTitle,
@@ -239,6 +247,7 @@ export async function runImageFlow({
           type: "screenshot",
           text: screenshotEvidence
         }];
+        setImageFlowInternalEvidence(result, fallbackEvidence);
         result.source = {
           sourceType: "screenshot",
           title: candidate.title || identity.title || "截图记忆",
@@ -382,6 +391,15 @@ function evidenceForSource(source) {
   return rawText
     ? [{ id: "source-content", type: "paragraph", text: rawText }]
     : [];
+}
+
+function setImageFlowInternalEvidence(result, evidence) {
+  Object.defineProperty(result, IMAGE_FLOW_INTERNAL_EVIDENCE, {
+    value: structuredClone(Array.isArray(evidence) ? evidence : []),
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
 }
 
 function reportProgress(handler, progress) {

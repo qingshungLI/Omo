@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -101,9 +102,9 @@ import {
 import { buildVersionInfo } from "./versionInfo.js";
 import { AppleAuthError, verifyAppleIdentityToken } from "./appleAuth.js";
 import { buildSourceCapabilities, preflightSourceInput } from "./sources/sourcePreflight.js";
-import { runImageFlow } from "./flow/index.js";
+import { imageFlowInternalEvidence, runImageFlow } from "./flow/index.js";
 import { createImageFlowJob, getImageFlowJob } from "./flow/imageFlowJobs.js";
-import { captureMemoryStore } from "./flow/captureMemoryStore.js";
+import { captureMemoryRepository } from "./flow/captureMemoryStore.js";
 import { buildMemoizedVideoRuntimeReadiness } from "./media/videoRuntimeReadiness.js";
 import { takeTemporaryPublicMedia } from "./media/temporaryPublicMedia.js";
 
@@ -285,13 +286,14 @@ async function handleImageFlow(req, res) {
     imagePath: process.env.NODE_ENV === "development" ? body.imagePath || "" : "",
     sourceUrl: body.sourceUrl || "",
     publicMediaBaseUrl: process.env.SHIBEI_PUBLIC_BASE_URL || requestBaseUrl(req),
-    includeDetails: body.includeDetails === true
+    includeDetails: false
   };
+  const imageSha256 = await imageFlowImageSha256(input);
   if (body.async === true) {
     const job = createImageFlowJob(
       async (onProgress) => {
         const result = await runImageFlow({ ...input, onProgress });
-        persistCaptureMemoryResult(deviceId, result);
+        await persistCaptureMemoryResult(deviceId, result, { imageSha256 });
         return result;
       },
       { ownerId: deviceId }
@@ -301,7 +303,7 @@ async function handleImageFlow(req, res) {
   }
   try {
     const result = await runImageFlow(input);
-    persistCaptureMemoryResult(deviceId, result);
+    await persistCaptureMemoryResult(deviceId, result, { imageSha256 });
     sendJson(res, result.status === "completed" || result.status === "vision_completed" ? 200 : 422, result);
   } catch (error) {
     sendJson(res, 422, {
@@ -312,16 +314,63 @@ async function handleImageFlow(req, res) {
   }
 }
 
-function persistCaptureMemoryResult(deviceId, result) {
-  const stored = captureMemoryStore.upsertCaptureAnalysis(
+async function persistCaptureMemoryResult(deviceId, result, { imageSha256 = "" } = {}) {
+  const stored = await captureMemoryRepository.persistCaptureResult(deviceId, result, {
     deviceId,
-    result?.captureAnalysis
-  );
+    imageSha256,
+    evidence: imageFlowInternalEvidence(result)
+  });
   if (stored && result?.captureAnalysis) {
-    result.captureAnalysis.schedule = stored.schedule;
-    result.schedule = stored.schedule;
+    const payload = captureMemoryCardPayload(stored);
+    result.captureId = stored.captureId;
+    result.captureAnalysis.disposition = stored.disposition;
+    result.captureAnalysis.memoryCard = stored.disposition === "create_card" ? payload : null;
+    result.captureAnalysis.schedule = stored.schedule || null;
+    result.memoryCard = stored.disposition === "create_card"
+      ? {
+          ...(result.memoryCard || {}),
+          id: stored.id,
+          state: "formal",
+          nextReviewAt: stored.schedule?.nextReviewAt
+        }
+      : { ...payload, state: "fragment" };
+    result.schedule = stored.schedule || null;
+    if (stored.disposition !== "create_card") result.review = null;
   }
   return stored;
+}
+
+function captureMemoryCardPayload(stored) {
+  const fields = stored?.disposition === "create_card"
+    ? [
+        "id", "coreKnowledge", "recallCue", "hiddenSemantic", "explanation",
+        "sourceEvidenceIds", "rarity", "rarityReason", "rarityConfidence",
+        "rarityRuleVersion", "recallVariants", "sourceStatus", "sourceTitle", "sourceUrl"
+      ]
+    : ["id", "coreKnowledge", "recallCue", "explanation", "sourceStatus"];
+  const payload = {};
+  for (const field of fields) {
+    if (stored?.[field] !== undefined) payload[field] = structuredClone(stored[field]);
+  }
+  return payload;
+}
+
+async function imageFlowImageSha256(input) {
+  const encoded = String(input?.imageBase64 || "").trim();
+  if (encoded) {
+    const payload = encoded.replace(/^data:image\/[A-Za-z0-9.+-]+;base64,/i, "").replace(/\s+/g, "");
+    if (/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) {
+      const bytes = Buffer.from(payload, "base64");
+      if (bytes.length > 0) return createHash("sha256").update(bytes).digest("hex");
+    }
+  }
+  if (input?.imagePath) {
+    const bytes = await readFile(input.imagePath).catch(() => null);
+    if (bytes?.length) return createHash("sha256").update(bytes).digest("hex");
+  }
+  return createHash("sha256")
+    .update([input?.mimeType, input?.sourceUrl, encoded].map((value) => String(value || "")).join("\n"))
+    .digest("hex");
 }
 
 async function handleTemporaryAsrMedia(req, res, token) {
@@ -2341,7 +2390,7 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && pathname === "/api/memory-cards") {
     try {
-      const result = captureMemoryStore.list(deviceId, {
+      const result = await captureMemoryRepository.list(deviceId, {
         pool: requestUrl.searchParams.get("pool") || ""
       });
       sendJson(res, 200, result);
@@ -2354,11 +2403,28 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  const captureMemoryCardMatch = pathname.match(/^\/api\/memory-cards\/([^/]+)$/);
+  if (req.method === "DELETE" && captureMemoryCardMatch) {
+    const result = await captureMemoryRepository.deleteCard(
+      deviceId,
+      decodeURIComponent(captureMemoryCardMatch[1])
+    );
+    if (!result) {
+      sendJson(res, 404, {
+        errorCode: "capture_memory_card_not_found",
+        message: "记忆卡不存在。"
+      });
+    } else {
+      sendJson(res, 200, result);
+    }
+    return;
+  }
+
   const captureMemoryAssessmentMatch = pathname.match(/^\/api\/memory-cards\/([^/]+)\/assessments$/);
   if (req.method === "POST" && captureMemoryAssessmentMatch) {
     try {
       const body = await readBody(req);
-      const result = captureMemoryStore.recordAssessment(
+      const result = await captureMemoryRepository.recordAssessment(
         deviceId,
         decodeURIComponent(captureMemoryAssessmentMatch[1]),
         {
@@ -2567,6 +2633,9 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "DELETE" && req.url === "/api/device-data") {
     const deleted = await deleteStoredDeviceData(deviceId);
+    if (!hasDatabase) {
+      deleted.captureMemoryCards = await captureMemoryRepository.clearDevice(deviceId);
+    }
     sendJson(res, 200, { ok: true, deleted });
     return;
   }
@@ -2979,6 +3048,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 export {
   buildCostRunResponse,
+  captureMemoryCardPayload,
   costWorkbenchEnabled,
   createReviewSessionForChapter,
   persistCaptureMemoryResult,

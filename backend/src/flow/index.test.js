@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSearchQueries, buildSearchQuery, extractScreenshotIdentity, runImageFlow } from "./index.js";
+import {
+  buildSearchQueries,
+  buildSearchQuery,
+  extractScreenshotIdentity,
+  imageFlowInternalEvidence,
+  runImageFlow
+} from "./index.js";
 import { focusSourceContent } from "./source.js";
 import { searchLinks } from "./search.js";
 
@@ -314,6 +320,9 @@ test("uses the capture_memory_card_2 generator in the production path and keeps 
   assert.equal(result.memoryCard.state, "formal");
   assert.equal(result.memoryCard.sourceStatus, "verified");
   assert.equal(result.review.units[0].questions.length, 3);
+  assert.deepEqual(imageFlowInternalEvidence(result).map((item) => item.id), ["subtitle-1"]);
+  assert.equal(Object.keys(result).some((key) => key.includes("Evidence")), false);
+  assert.equal(Object.getOwnPropertySymbols(result).length, 1);
 });
 
 test("marks screenshot-only generation partial while mapping the legacy card to unconfirmed", async () => {
