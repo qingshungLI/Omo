@@ -1,6 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { databasePool, hasDatabase } from "../db.js";
+import {
+  databasePool,
+  hasDatabase,
+  incrementCapturePersistenceEpochForDevice,
+  incrementCapturePersistenceEpochsForAccount
+} from "../db.js";
 import {
   advanceReviewSchedule,
   createInitialReviewSchedule,
@@ -11,15 +16,32 @@ import {
 export const CAPTURE_MEMORY_CARDS_SCHEMA_VERSION = "capture_memory_cards_1";
 export const CAPTURE_MEMORY_ASSESSMENT_SCHEMA_VERSION = "capture_memory_assessment_1";
 export const CAPTURE_MEMORY_DELETION_SCHEMA_VERSION = "capture_memory_card_deletion_1";
+export const CAPTURE_PERSISTENCE_EPOCH_SCHEMA_VERSION = "capture_persistence_epoch_1";
+export const CAPTURE_PERSISTENCE_STALE_SCHEMA_VERSION = "capture_persistence_stale_1";
 export const MASTERY_STAGES = Object.freeze(["sealed", "awakened", "solidified", "engraved"]);
 
 export class MemoryCaptureRepository {
   durable = false;
   #cardsByDeviceId = new Map();
   #captureIdsByDeviceHash = new Map();
+  #persistenceEpochByDeviceId = new Map();
+
+  beginPersistence(deviceId) {
+    const ownerId = requiredText(deviceId, "deviceId");
+    return serializePersistenceEpoch(
+      ownerId,
+      this.#currentPersistenceEpoch(ownerId),
+      this.durable
+    );
+  }
 
   persistCaptureResult(deviceId, result, options = {}) {
     const ownerId = requiredText(deviceId, "deviceId");
+    const expectedEpoch = expectedPersistenceEpoch(options.persistenceEpoch, ownerId);
+    const currentEpoch = this.#currentPersistenceEpoch(ownerId);
+    if (expectedEpoch !== null && expectedEpoch !== currentEpoch) {
+      return serializeStalePersistence(this.durable);
+    }
     const normalized = normalizeCapturePersistence(result, options);
     if (!normalized) return null;
     const cards = this.#deviceCards(ownerId);
@@ -160,6 +182,7 @@ export class MemoryCaptureRepository {
 
   clearDevice(deviceId) {
     const ownerId = requiredText(deviceId, "deviceId");
+    this.#incrementPersistenceEpoch(ownerId);
     const count = this.#cardsByDeviceId.get(ownerId)?.size || 0;
     this.#cardsByDeviceId.delete(ownerId);
     for (const key of this.#captureIdsByDeviceHash.keys()) {
@@ -175,6 +198,20 @@ export class MemoryCaptureRepository {
   reset() {
     this.#cardsByDeviceId.clear();
     this.#captureIdsByDeviceHash.clear();
+    this.#persistenceEpochByDeviceId.clear();
+  }
+
+  #currentPersistenceEpoch(deviceId) {
+    if (!this.#persistenceEpochByDeviceId.has(deviceId)) {
+      this.#persistenceEpochByDeviceId.set(deviceId, "0");
+    }
+    return this.#persistenceEpochByDeviceId.get(deviceId);
+  }
+
+  #incrementPersistenceEpoch(deviceId) {
+    const next = (BigInt(this.#currentPersistenceEpoch(deviceId)) + 1n).toString();
+    this.#persistenceEpochByDeviceId.set(deviceId, next);
+    return next;
   }
 
   #deviceCards(deviceId) {
@@ -191,6 +228,23 @@ export class PostgresCaptureRepository {
     this.pool = pool;
   }
 
+  async beginPersistence(deviceId) {
+    const ownerId = requiredText(deviceId, "deviceId");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await ensureDevice(client, ownerId);
+      const epoch = await readPersistenceEpoch(client, ownerId);
+      await client.query("COMMIT");
+      return serializePersistenceEpoch(ownerId, epoch, this.durable);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async persistCaptureResult(deviceId, result, options = {}) {
     const ownerId = requiredText(deviceId, "deviceId");
     const normalized = normalizeCapturePersistence(result, options);
@@ -199,6 +253,12 @@ export class PostgresCaptureRepository {
     try {
       await client.query("BEGIN");
       await ensureDevice(client, ownerId);
+      const currentEpoch = await readPersistenceEpoch(client, ownerId, { lock: true });
+      const expectedEpoch = expectedPersistenceEpoch(options.persistenceEpoch, ownerId);
+      if (expectedEpoch !== null && expectedEpoch !== currentEpoch) {
+        await client.query("ROLLBACK");
+        return serializeStalePersistence(this.durable);
+      }
       const accountId = await linkedAccountId(client, ownerId);
       const captureId = `capture-${randomUUID()}`;
       const captureResult = await client.query(
@@ -481,25 +541,115 @@ export class PostgresCaptureRepository {
   }
 
   async clearDevice(deviceId) {
-    const result = await this.pool.query(
-      "DELETE FROM captures WHERE device_id = $1 RETURNING id",
-      [requiredText(deviceId, "deviceId")]
-    );
-    return result.rowCount || 0;
+    const ownerId = requiredText(deviceId, "deviceId");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await ensureDevice(client, ownerId);
+      await incrementCapturePersistenceEpochForDevice(client, ownerId);
+      const result = await client.query(
+        "DELETE FROM captures WHERE device_id = $1 RETURNING id",
+        [ownerId]
+      );
+      await client.query("COMMIT");
+      return result.rowCount || 0;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
-  async clearAccount(accountId) {
-    const result = await this.pool.query(
-      "DELETE FROM captures WHERE account_id = $1 RETURNING id",
-      [requiredText(accountId, "accountId")]
-    );
-    return result.rowCount || 0;
+  async clearAccount(accountId, { requestedDeviceId } = {}) {
+    const stableAccountId = requiredText(accountId, "accountId");
+    const stableDeviceId = requiredText(requestedDeviceId, "requestedDeviceId");
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await ensureDevice(client, stableDeviceId);
+      await incrementCapturePersistenceEpochsForAccount(client, {
+        accountId: stableAccountId,
+        requestedDeviceId: stableDeviceId
+      });
+      const result = await client.query(
+        "DELETE FROM captures WHERE account_id = $1 RETURNING id",
+        [stableAccountId]
+      );
+      await client.query("COMMIT");
+      return result.rowCount || 0;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 
 export const captureMemoryRepository = hasDatabase
   ? new PostgresCaptureRepository(databasePool)
   : new MemoryCaptureRepository();
+
+export function isCapturePersistenceStale(value) {
+  return value?.schemaVersion === CAPTURE_PERSISTENCE_STALE_SCHEMA_VERSION
+    && value?.status === "cancelled";
+}
+
+async function readPersistenceEpoch(queryable, deviceId, { lock = false } = {}) {
+  const result = await queryable.query(
+    `SELECT capture_persistence_epoch
+       FROM devices
+      WHERE id = $1${lock ? " FOR UPDATE" : ""}`,
+    [deviceId]
+  );
+  if (!result.rows[0]) throw new Error("capture persistence device not found");
+  return normalizePersistenceEpoch(result.rows[0].capture_persistence_epoch);
+}
+
+function serializePersistenceEpoch(deviceId, epoch, durable) {
+  return {
+    schemaVersion: CAPTURE_PERSISTENCE_EPOCH_SCHEMA_VERSION,
+    deviceId,
+    epoch: normalizePersistenceEpoch(epoch),
+    durable
+  };
+}
+
+function serializeStalePersistence(durable) {
+  return {
+    schemaVersion: CAPTURE_PERSISTENCE_STALE_SCHEMA_VERSION,
+    status: "cancelled",
+    stale: true,
+    persisted: false,
+    errorCode: "capture_persistence_stale",
+    reason: "device_persistence_epoch_changed",
+    durable
+  };
+}
+
+function expectedPersistenceEpoch(value, deviceId) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const tokenDeviceId = cleanText(value.deviceId);
+    if (tokenDeviceId && tokenDeviceId !== deviceId) {
+      throw repositoryError(
+        "capture_persistence_epoch_device_mismatch",
+        "persistence epoch 与设备不匹配。"
+      );
+    }
+    return normalizePersistenceEpoch(value.epoch);
+  }
+  return normalizePersistenceEpoch(value);
+}
+
+function normalizePersistenceEpoch(value) {
+  const epoch = String(value ?? "").trim();
+  if (!/^\d+$/.test(epoch)) {
+    throw repositoryError("capture_persistence_epoch_invalid", "persistence epoch 无效。");
+  }
+  return BigInt(epoch).toString();
+}
 
 function normalizeCapturePersistence(result, options = {}) {
   const captureAnalysis = result?.captureAnalysis;

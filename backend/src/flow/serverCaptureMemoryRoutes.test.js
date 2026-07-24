@@ -90,8 +90,10 @@ test("persists a synchronous image-flow result without flattening repository met
     generateOverview: async () => ({ summary: "全片概览", highlights: [] })
   });
 
+  const persistenceEpoch = await captureMemoryStore.beginPersistence("image-flow-device");
   const stored = await persistCaptureMemoryResult("image-flow-device", result, {
-    imageSha256: "b".repeat(64)
+    imageSha256: "b".repeat(64),
+    persistenceEpoch
   });
   assert.equal(stored.disposition, "create_card");
   assert.equal((await captureMemoryStore.list("image-flow-device")).cards.length, 1);
@@ -100,6 +102,53 @@ test("persists a synchronous image-flow result without flattening repository met
   assert.equal("durable" in result.captureAnalysis.memoryCard, false);
   assert.equal(result.memoryCard.state, "formal");
   assert.equal(result.memoryCard.rarityReason, "局部学习方法。");
+  captureMemoryStore.reset();
+});
+
+test("does not restore a card when deletion wins while the model is running", async () => {
+  captureMemoryStore.reset();
+  const persistenceEpoch = await captureMemoryStore.beginPersistence("stale-device");
+  const modelResult = {
+    status: "completed",
+    captureAnalysis: {
+      schemaVersion: "capture_memory_card_2",
+      disposition: "create_card",
+      sourceStatus: "verified",
+      decisionReason: "证据充分。",
+      memoryCard: {
+        id: "stale-card",
+        coreKnowledge: "主动回忆能够暴露记忆缺口。",
+        recallCue: "主动回忆有什么作用？",
+        hiddenSemantic: "暴露记忆缺口",
+        explanation: "先提取信息。",
+        sourceEvidenceIds: ["e-1"],
+        rarity: "R",
+        rarityReason: "局部学习方法。",
+        rarityConfidence: 0.8,
+        rarityRuleVersion: "capture_rarity_2",
+        recallVariants: []
+      },
+      schedule: createInitialReviewSchedule({ now: new Date("2026-07-24T08:00:00.000Z") })
+    },
+    memoryCard: { id: "stale-card", state: "formal" },
+    review: { units: [{ questions: [{ id: "stale-question" }] }] }
+  };
+
+  captureMemoryStore.clearDevice("stale-device");
+  const stored = await persistCaptureMemoryResult("stale-device", modelResult, {
+    imageSha256: "d".repeat(64),
+    persistenceEpoch
+  });
+
+  assert.equal(stored.schemaVersion, "capture_persistence_stale_1");
+  assert.equal(stored.persisted, false);
+  assert.equal(modelResult.status, "cancelled");
+  assert.equal(modelResult.errorCode, "capture_persistence_stale");
+  assert.equal(modelResult.captureAnalysis, null);
+  assert.equal(modelResult.memoryCard, null);
+  assert.equal(modelResult.review, null);
+  assert.equal(captureMemoryStore.list("stale-device").cards.length, 0);
+  assert.equal(captureMemoryStore.beginPersistence("stale-device").epoch, "1");
   captureMemoryStore.reset();
 });
 
@@ -267,4 +316,30 @@ test("lists device-isolated cards and records idempotent assessments over HTTP",
   });
   assert.equal(repeatedDelete.status, 404);
   assert.equal((await repeatedDelete.json()).errorCode, "capture_memory_card_not_found");
+
+  const raceDeviceId = "route-delete-race";
+  const raceEpoch = captureMemoryStore.beginPersistence(raceDeviceId);
+  const deviceDeleteResponse = await fetch(`${baseUrl}/api/device-data`, {
+    method: "DELETE",
+    headers: { ...headers, "x-device-id": raceDeviceId }
+  });
+  assert.equal(deviceDeleteResponse.status, 200);
+  const raceResult = {
+    status: "completed",
+    captureAnalysis: {
+      schemaVersion: "capture_memory_card_2",
+      disposition: "archive_only",
+      sourceStatus: "unconfirmed",
+      decisionReason: "模型稍后完成。",
+      memoryCard: null,
+      schedule: null
+    }
+  };
+  const stale = await persistCaptureMemoryResult(raceDeviceId, raceResult, {
+    imageSha256: "e".repeat(64),
+    persistenceEpoch: raceEpoch
+  });
+  assert.equal(stale.schemaVersion, "capture_persistence_stale_1");
+  assert.equal(raceResult.status, "cancelled");
+  assert.equal(captureMemoryStore.list(raceDeviceId).cards.length, 0);
 });

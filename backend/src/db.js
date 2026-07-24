@@ -310,6 +310,53 @@ export async function ensureDevice(deviceId) {
   );
 }
 
+export async function incrementCapturePersistenceEpochForDevice(queryable, deviceId) {
+  const stableDeviceId = String(deviceId || "").trim();
+  if (!queryable || !stableDeviceId) throw new Error("queryable and deviceId are required");
+  const result = await queryable.query(
+    `UPDATE devices
+        SET capture_persistence_epoch = capture_persistence_epoch + 1,
+            last_seen_at = NOW()
+      WHERE id = $1
+      RETURNING id, capture_persistence_epoch`,
+    [stableDeviceId]
+  );
+  if (!result.rows[0]) throw new Error("capture persistence device not found");
+  return {
+    deviceIds: result.rows.map((row) => String(row.id)),
+    epochs: result.rows.map((row) => String(row.capture_persistence_epoch))
+  };
+}
+
+export async function incrementCapturePersistenceEpochsForAccount(queryable, {
+  accountId,
+  requestedDeviceId
+} = {}) {
+  const stableAccountId = String(accountId || "").trim();
+  const stableDeviceId = String(requestedDeviceId || "").trim();
+  if (!queryable || !stableAccountId || !stableDeviceId) {
+    throw new Error("queryable, accountId and requestedDeviceId are required");
+  }
+  const result = await queryable.query(
+    `UPDATE devices
+        SET capture_persistence_epoch = capture_persistence_epoch + 1,
+            last_seen_at = NOW()
+      WHERE id IN (
+        SELECT device_id FROM account_device_links WHERE account_id = $1
+        UNION
+        SELECT device_id FROM captures WHERE account_id = $1
+        UNION
+        SELECT $2::text
+      )
+      RETURNING id, capture_persistence_epoch`,
+    [stableAccountId, stableDeviceId]
+  );
+  return {
+    deviceIds: result.rows.map((row) => String(row.id)),
+    epochs: result.rows.map((row) => String(row.capture_persistence_epoch))
+  };
+}
+
 export function hashAccountIdentifier(value, options = {}) {
   const provider = normalizeAccountProvider(options.provider);
   const raw = String(value || "").trim();
@@ -536,6 +583,10 @@ export async function deleteAccountData(accountId, {
       accountId: stableAccountId,
       reason
     });
+    const capturePersistenceEpochs = await incrementCapturePersistenceEpochsForAccount(client, {
+      accountId: stableAccountId,
+      requestedDeviceId: stableDeviceId
+    });
     const captureMemoryCards = await client.query(
       "DELETE FROM captures WHERE account_id = $1 RETURNING id",
       [stableAccountId]
@@ -573,6 +624,7 @@ export async function deleteAccountData(accountId, {
       notifications: notifications.rowCount || 0,
       generationJobs: generationJobs.rowCount || 0,
       captureMemoryCards: captureMemoryCards.rowCount || 0,
+      capturePersistenceEpochs: capturePersistenceEpochs.deviceIds.length,
       pushTokens: pushTokens.rowCount || 0,
       quotaClaims: quotaClaims.rowCount || 0,
       deviceLinks: links.rowCount || 0
@@ -751,6 +803,7 @@ export async function deleteDeviceData(deviceId) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const capturePersistenceEpochs = await incrementCapturePersistenceEpochForDevice(client, deviceId);
     const pushTokens = await client.query(
       `DELETE FROM device_push_tokens
         WHERE device_id = $1
@@ -800,7 +853,8 @@ export async function deleteDeviceData(deviceId) {
           generationJobs: generationJobs.rowCount,
           favorites: favorites.rowCount,
           pushTokens: pushTokens.rowCount,
-          captureMemoryCards: captureMemoryCards.rowCount
+          captureMemoryCards: captureMemoryCards.rowCount,
+          capturePersistenceEpochs: capturePersistenceEpochs.deviceIds.length
         }
       },
       snapshot: {
@@ -818,7 +872,8 @@ export async function deleteDeviceData(deviceId) {
       generationJobs: generationJobs.rowCount || 0,
       favorites: favorites.rowCount || 0,
       pushTokens: pushTokens.rowCount || 0,
-      captureMemoryCards: captureMemoryCards.rowCount || 0
+      captureMemoryCards: captureMemoryCards.rowCount || 0,
+      capturePersistenceEpochs: capturePersistenceEpochs.deviceIds.length
     };
   } catch (error) {
     await client.query("ROLLBACK");

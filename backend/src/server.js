@@ -104,7 +104,10 @@ import { AppleAuthError, verifyAppleIdentityToken } from "./appleAuth.js";
 import { buildSourceCapabilities, preflightSourceInput } from "./sources/sourcePreflight.js";
 import { imageFlowInternalEvidence, runImageFlow } from "./flow/index.js";
 import { createImageFlowJob, getImageFlowJob } from "./flow/imageFlowJobs.js";
-import { captureMemoryRepository } from "./flow/captureMemoryStore.js";
+import {
+  captureMemoryRepository,
+  isCapturePersistenceStale
+} from "./flow/captureMemoryStore.js";
 import { buildMemoizedVideoRuntimeReadiness } from "./media/videoRuntimeReadiness.js";
 import { takeTemporaryPublicMedia } from "./media/temporaryPublicMedia.js";
 
@@ -288,12 +291,16 @@ async function handleImageFlow(req, res) {
     publicMediaBaseUrl: process.env.SHIBEI_PUBLIC_BASE_URL || requestBaseUrl(req),
     includeDetails: false
   };
+  const persistenceEpoch = await captureMemoryRepository.beginPersistence(deviceId);
   const imageSha256 = await imageFlowImageSha256(input);
   if (body.async === true) {
     const job = createImageFlowJob(
       async (onProgress) => {
         const result = await runImageFlow({ ...input, onProgress });
-        await persistCaptureMemoryResult(deviceId, result, { imageSha256 });
+        await persistCaptureMemoryResult(deviceId, result, {
+          imageSha256,
+          persistenceEpoch
+        });
         return result;
       },
       { ownerId: deviceId }
@@ -303,8 +310,14 @@ async function handleImageFlow(req, res) {
   }
   try {
     const result = await runImageFlow(input);
-    await persistCaptureMemoryResult(deviceId, result, { imageSha256 });
-    sendJson(res, result.status === "completed" || result.status === "vision_completed" ? 200 : 422, result);
+    await persistCaptureMemoryResult(deviceId, result, {
+      imageSha256,
+      persistenceEpoch
+    });
+    const statusCode = result.status === "cancelled"
+      ? 409
+      : result.status === "completed" || result.status === "vision_completed" ? 200 : 422;
+    sendJson(res, statusCode, result);
   } catch (error) {
     sendJson(res, 422, {
       status: "failed",
@@ -314,12 +327,27 @@ async function handleImageFlow(req, res) {
   }
 }
 
-async function persistCaptureMemoryResult(deviceId, result, { imageSha256 = "" } = {}) {
+async function persistCaptureMemoryResult(deviceId, result, {
+  imageSha256 = "",
+  persistenceEpoch = null
+} = {}) {
   const stored = await captureMemoryRepository.persistCaptureResult(deviceId, result, {
     deviceId,
     imageSha256,
+    persistenceEpoch,
     evidence: imageFlowInternalEvidence(result)
   });
+  if (isCapturePersistenceStale(stored)) {
+    result.status = "cancelled";
+    result.errorCode = stored.errorCode;
+    result.message = "任务处理期间数据已被删除，本次结果未保存。";
+    result.captureAnalysis = null;
+    result.memoryCard = null;
+    result.review = null;
+    result.schedule = null;
+    delete result.captureId;
+    return stored;
+  }
   if (stored && result?.captureAnalysis) {
     const payload = captureMemoryCardPayload(stored);
     result.captureId = stored.captureId;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isCapturePersistenceStale,
   MemoryCaptureRepository,
   PostgresCaptureRepository
 } from "./captureMemoryRepository.js";
@@ -50,13 +51,33 @@ class FakeRepositoryClient {
   constructor() {
     this.calls = [];
     this.card = null;
+    this.epoch = "0";
   }
 
   async query(sql, params = []) {
     const text = String(sql).trim();
     this.calls.push({ text, params });
+    if (text.startsWith("SELECT capture_persistence_epoch")) {
+      return { rows: [{ capture_persistence_epoch: this.epoch }] };
+    }
+    if (text.startsWith("UPDATE devices") && text.includes("capture_persistence_epoch")) {
+      this.epoch = (BigInt(this.epoch) + 1n).toString();
+      const accountWide = text.includes("account_device_links");
+      return {
+        rows: accountWide
+          ? [
+              { id: "device-a", capture_persistence_epoch: this.epoch },
+              { id: "device-b", capture_persistence_epoch: this.epoch }
+            ]
+          : [{ id: params[0], capture_persistence_epoch: this.epoch }],
+        rowCount: accountWide ? 2 : 1
+      };
+    }
     if (text.startsWith("SELECT account_id FROM account_device_links")) return { rows: [] };
     if (text.startsWith("INSERT INTO captures")) return { rows: [{ id: params[0] }] };
+    if (text.startsWith("DELETE FROM captures") && text.includes("account_id = $1")) {
+      return { rows: [{ id: "capture-a" }, { id: "capture-b" }], rowCount: 2 };
+    }
     if (text.startsWith("SELECT * FROM memory_cards") && text.includes("capture_id = $1")) {
       return { rows: [] };
     }
@@ -93,9 +114,12 @@ class FakeRepositoryClient {
 test("Postgres repository awaits one transaction and persists only cited evidence", async () => {
   const client = new FakeRepositoryClient();
   const repository = new PostgresCaptureRepository({ connect: async () => client });
+  const persistenceEpoch = await repository.beginPersistence("device-a");
+  client.calls = [];
   const stored = await repository.persistCaptureResult("device-a", captureResult(), {
     now: NOW,
     imageSha256: IMAGE_SHA,
+    persistenceEpoch,
     evidence: evidence()
   });
 
@@ -108,6 +132,61 @@ test("Postgres repository awaits one transaction and persists only cited evidenc
   assert.equal(evidenceInserts[0].params[4], "主动回忆能够暴露记忆缺口。");
   assert.equal(client.calls.at(-1).text, "COMMIT");
   assert.equal(client.calls.some((call) => call.params.includes("不应被持久化的完整转写内容。")), false);
+});
+
+test("Postgres repository rejects a stale epoch before inserting a capture", async () => {
+  const client = new FakeRepositoryClient();
+  const repository = new PostgresCaptureRepository({ connect: async () => client });
+  const persistenceEpoch = await repository.beginPersistence("device-a");
+  await repository.clearDevice("device-a");
+  assert.equal(client.epoch, "1");
+  client.calls = [];
+
+  const stored = await repository.persistCaptureResult("device-a", captureResult(), {
+    now: NOW,
+    imageSha256: IMAGE_SHA,
+    persistenceEpoch,
+    evidence: evidence()
+  });
+
+  assert.equal(isCapturePersistenceStale(stored), true);
+  assert.equal(stored.persisted, false);
+  assert.equal(client.calls.some((call) => call.text.startsWith("INSERT INTO captures")), false);
+  assert.equal(client.calls.at(-1).text, "ROLLBACK");
+});
+
+test("Postgres account deletion fence covers multiple devices before deleting captures", async () => {
+  const client = new FakeRepositoryClient();
+  const repository = new PostgresCaptureRepository({ connect: async () => client });
+  const count = await repository.clearAccount("account-a", { requestedDeviceId: "device-a" });
+
+  assert.equal(count, 2);
+  const bumpIndex = client.calls.findIndex((call) =>
+    call.text.startsWith("UPDATE devices") && call.text.includes("account_device_links")
+  );
+  const deleteIndex = client.calls.findIndex((call) =>
+    call.text.startsWith("DELETE FROM captures") && call.text.includes("account_id = $1")
+  );
+  assert.equal(bumpIndex > -1, true);
+  assert.equal(deleteIndex > bumpIndex, true);
+  assert.deepEqual(client.calls[bumpIndex].params, ["account-a", "device-a"]);
+  assert.equal(client.calls.at(-1).text, "COMMIT");
+});
+
+test("memory deletion keeps an epoch tombstone and blocks the old task", () => {
+  const repository = new MemoryCaptureRepository();
+  const persistenceEpoch = repository.beginPersistence("device-a");
+  repository.clearDevice("device-a");
+  const stored = repository.persistCaptureResult("device-a", captureResult(), {
+    now: NOW,
+    imageSha256: IMAGE_SHA,
+    persistenceEpoch,
+    evidence: evidence()
+  });
+
+  assert.equal(isCapturePersistenceStale(stored), true);
+  assert.equal(repository.list("device-a").cards.length, 0);
+  assert.equal(repository.beginPersistence("device-a").epoch, "1");
 });
 
 test("memory repository is idempotent by image hash and never downgrades a formal card", async () => {
