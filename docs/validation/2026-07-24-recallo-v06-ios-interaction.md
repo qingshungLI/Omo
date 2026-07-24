@@ -2,7 +2,7 @@
 
 > 日期：2026-07-24
 >
-> 实施与测试环境：`bridge-amax:/data1/yuxiao/recallo-v062-qoder`
+> 实施与测试环境：`bridge-amax:/data1/yuxiao/recallo-v062-integration`
 >
 > 范围：SwiftUI 今日页、毛球状态、召回仪式、语义刮开、检查点与恢复；不改后端、Adapter 或知识图谱。
 
@@ -14,7 +14,7 @@
 - 五张现有透明 PNG 通过位移、镜像、缩放、代码卡片/文件夹和 SF Symbols 组合成十种语义状态；未新增图片资产。
 - 首张过场为 1450ms，后续为 700ms；Reduce Motion 为 180ms。过场可跳过，状态变化会取消旧任务。
 - 语义刮层使用 SwiftUI `Canvas` 与 `destinationOut`，笔刷 26pt，12×7 覆盖网格达到 45% 后完整揭示。
-- `AppStorage` 保存卡片、稳定阶段、路径、覆盖网格、揭示状态和已反馈卡 ID；反馈 attempt ID 由卡 ID 稳定派生，避免恢复后重复提交。
+- `AppStorage` 保存卡片、稳定阶段、路径、覆盖网格、揭示状态、反馈/掌握变化和服务端调度；反馈 attempt ID 由“卡 ID + 本轮 nextReviewAt”稳定派生，使同一轮重试幂等、下一轮仍可提交。
 - 场景色由阶段自动选择 `creamReady / mistProcessing / coralRecall / lavenderPaused / sageLibrary / navyNight`，不新增主题设置入口。
 
 ## RISKS
@@ -31,7 +31,7 @@
 
 ## TEST EVIDENCE
 
-全部命令在 `bridge-amax:/data1/yuxiao/recallo-v062-qoder` 执行。
+全部命令在 `bridge-amax:/data1/yuxiao/recallo-v062-integration` 执行。
 
 ### 生产守卫
 
@@ -48,13 +48,16 @@ npm run check:ios
 node tools/v2-ui-regression-guard.mjs
 ```
 
-结果：18 项全部 `PASS`。新增覆盖：
+结果：22 项全部 `PASS`。新增覆盖：
 
 - 首页单入口且无卡池/模式选择；
 - 九阶段合同；
 - 毛球十态；
 - Canvas `destinationOut`、26pt 笔刷与 45% 网格阈值；
-- 检查点双选择、路径恢复与反馈幂等；
+- 检查点双选择、路径恢复与按复习周期幂等；
+- 恢复后的反馈、掌握变化和服务端调度；
+- VoiceOver 与手势共享覆盖网格，半径按 13pt 计算，避免少量点击提前揭示；
+- 模糊反馈使用侧头，短暂 `inactive` 不打断卡面；
 - 1450ms / 700ms / 180ms 时间合同。
 
 ### Swift 源码结构检查
@@ -72,6 +75,11 @@ git diff --check
 ```
 
 结果：`PASS`，无空白错误。
+
+
+### Qoder 只读复审与修复
+
+Qoder 智能体模式·极致对 `f508aa5` 做了只读审查，发现原实现把幂等键永久绑定到卡 ID，导致同一卡片下一轮复习也被当作重复提交。集成分支已改为按 `cardID + nextReviewAt` 形成复习周期键，并增加对应静态守卫；同时修复检查点恢复、刮层面积估算、VoiceOver 覆盖同步和模糊反馈姿态。
 
 ### Apple 工具链
 

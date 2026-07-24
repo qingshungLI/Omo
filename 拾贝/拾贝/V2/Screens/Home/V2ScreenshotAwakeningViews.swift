@@ -103,11 +103,9 @@ private struct V2ScratchRevealCanvas: View {
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment:
-                    coverage = min(1, coverage + 0.15)
-                    onScratchStart()
-                    if coverage >= 0.45 { onReveal() }
+                    adjustCoveredCells(by: 0.15)
                 case .decrement:
-                    coverage = max(0, coverage - 0.15)
+                    adjustCoveredCells(by: -0.15)
                 @unknown default:
                     break
                 }
@@ -123,8 +121,14 @@ private struct V2ScratchRevealCanvas: View {
         guard size.width > 0, size.height > 0 else { return }
         let column = min(gridColumns - 1, max(0, Int(point.x / size.width * CGFloat(gridColumns))))
         let row = min(gridRows - 1, max(0, Int(point.y / size.height * CGFloat(gridRows))))
-        let radiusColumns = max(1, Int(brushDiameter / max(1, size.width / CGFloat(gridColumns))))
-        let radiusRows = max(1, Int(brushDiameter / max(1, size.height / CGFloat(gridRows))))
+        let radiusColumns = max(
+            0,
+            Int(((brushDiameter / 2) / max(1, size.width / CGFloat(gridColumns))).rounded())
+        )
+        let radiusRows = max(
+            0,
+            Int(((brushDiameter / 2) / max(1, size.height / CGFloat(gridRows))).rounded())
+        )
         for x in max(0, column - radiusColumns)...min(gridColumns - 1, column + radiusColumns) {
             for y in max(0, row - radiusRows)...min(gridRows - 1, row + radiusRows) {
                 coveredCells.insert("\(x):\(y)")
@@ -134,6 +138,29 @@ private struct V2ScratchRevealCanvas: View {
         if coverage >= 0.45 {
             onReveal()
         }
+    }
+
+    private func adjustCoveredCells(by delta: CGFloat) {
+        let totalCells = gridColumns * gridRows
+        let targetCoverage = min(1, max(0, coverage + delta))
+        let targetCount = Int((targetCoverage * CGFloat(totalCells)).rounded())
+        let allCells = (0..<gridRows).flatMap { row in
+            (0..<gridColumns).map { column in "\(column):\(row)" }
+        }
+        if targetCount > coveredCells.count {
+            for cell in allCells where !coveredCells.contains(cell) {
+                coveredCells.insert(cell)
+                if coveredCells.count >= targetCount { break }
+            }
+        } else if targetCount < coveredCells.count {
+            for cell in coveredCells.sorted().reversed() {
+                coveredCells.remove(cell)
+                if coveredCells.count <= targetCount { break }
+            }
+        }
+        coverage = min(1, CGFloat(coveredCells.count) / CGFloat(totalCells))
+        onScratchStart()
+        if coverage >= 0.45 { onReveal() }
     }
 }
 
@@ -173,7 +200,14 @@ struct V2ScreenshotAwakeningFlowView: View {
     @AppStorage("recallo.v06.isRevealed") private var persistedIsRevealed = false
     @AppStorage("recallo.v06.scratchPaths") private var persistedScratchPaths = ""
     @AppStorage("recallo.v06.coveredCells") private var persistedCoveredCells = ""
-    @AppStorage("recallo.v06.assessedCardIDs") private var persistedAssessedCardIDs = ""
+    @AppStorage("recallo.v06.assessedReviewCycles") private var persistedAssessedReviewCycles = ""
+    @AppStorage("recallo.v06.assessment") private var persistedAssessment = ""
+    @AppStorage("recallo.v06.masteryBefore") private var persistedMasteryBefore = 0
+    @AppStorage("recallo.v06.masteryAfter") private var persistedMasteryAfter = 0
+    @AppStorage("recallo.v06.scheduleNextReviewAt") private var persistedScheduleNextReviewAt = ""
+    @AppStorage("recallo.v06.scheduleIntervalDays") private var persistedScheduleIntervalDays = 0
+    @AppStorage("recallo.v06.scheduleState") private var persistedScheduleState = ""
+    @AppStorage("recallo.v06.scheduleStatus") private var persistedScheduleStatus = ""
 
     private var currentCard: V2CapturedMemoryCard {
         session.cards[min(currentIndex, session.cards.count - 1)]
@@ -259,7 +293,9 @@ struct V2ScreenshotAwakeningFlowView: View {
                 if phase == .paused {
                     phase = phaseBeforePause
                 }
-            case .inactive, .background:
+            case .inactive:
+                persistPresentationState()
+            case .background:
                 guard phase != .assessing, phase != .stowing else {
                     persistPresentationState()
                     return
@@ -1150,7 +1186,13 @@ struct V2ScreenshotAwakeningFlowView: View {
             }
         case .recall, .scratching: return .watching
         case .revealed: return .acknowledging
-        case .assessing: return assessment == .forgot ? .thinking : .acknowledging
+        case .assessing:
+            switch assessment {
+            case .remembered: return .acknowledging
+            case .fuzzy: return .turning
+            case .forgot: return .thinking
+            case nil: return .watching
+            }
         case .checkpoint: return .turning
         case .stowing: return .farewell
         case .paused: return .sleeping
@@ -1212,7 +1254,7 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private func completeAssessment(_ value: V2MemoryAssessment) {
         guard pendingAssessment == nil, phase == .revealed else { return }
-        guard !assessedCardIDs.contains(currentCard.id) else {
+        guard !assessedReviewCycles.contains(currentReviewCycleKey) else {
             phase = .checkpoint
             return
         }
@@ -1221,7 +1263,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         assessment = value
         pendingAssessment = V2PendingScreenshotAssessment(
             assessment: value,
-            attemptId: "ios-capture-assessment-\(currentCard.id)"
+            attemptId: "ios-capture-assessment-\(currentReviewCycleKey)"
         )
         assessmentError = ""
         withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.34, dampingFraction: 0.78)) {
@@ -1260,9 +1302,9 @@ struct V2ScreenshotAwakeningFlowView: View {
                 currentSchedule = schedule
                 self.pendingAssessment = nil
                 withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.24)) {
-                    var updatedAssessedCardIDs = assessedCardIDs
-                    updatedAssessedCardIDs.insert(currentCard.id)
-                    persistedAssessedCardIDs = updatedAssessedCardIDs.sorted().joined(separator: ",")
+                    var updatedReviewCycles = assessedReviewCycles
+                    updatedReviewCycles.insert(currentReviewCycleKey)
+                    persistedAssessedReviewCycles = updatedReviewCycles.sorted().suffix(64).joined(separator: ",")
                     phase = .checkpoint
                 }
             } catch is CancellationError {
@@ -1302,9 +1344,13 @@ struct V2ScreenshotAwakeningFlowView: View {
         UISelectionFeedbackGenerator().selectionChanged()
     }
 
-    private var assessedCardIDs: Set<String> {
+    private var currentReviewCycleKey: String {
+        "\(currentCard.id)-\(currentCard.schedule.nextReviewAt)"
+    }
+
+    private var assessedReviewCycles: Set<String> {
         Set(
-            persistedAssessedCardIDs
+            persistedAssessedReviewCycles
                 .split(separator: ",")
                 .map(String.init)
                 .filter { !$0.isEmpty }
@@ -1345,6 +1391,13 @@ struct V2ScreenshotAwakeningFlowView: View {
                 "\(point.x):\(point.y)"
             }.joined(separator: ";")
         }.joined(separator: "|")
+        persistedAssessment = assessment?.rawValue ?? ""
+        persistedMasteryBefore = masteryBefore.rawValue
+        persistedMasteryAfter = masteryAfter.rawValue
+        persistedScheduleNextReviewAt = currentSchedule?.nextReviewAt ?? ""
+        persistedScheduleIntervalDays = currentSchedule?.intervalDays ?? 0
+        persistedScheduleState = currentSchedule?.state ?? ""
+        persistedScheduleStatus = currentSchedule?.status ?? ""
     }
 
     private func restorePersistedState() {
@@ -1357,7 +1410,17 @@ struct V2ScreenshotAwakeningFlowView: View {
         }
 
         currentIndex = restoredIndex
-        currentSchedule = currentCard.schedule
+        currentSchedule = persistedScheduleNextReviewAt.isEmpty
+            ? currentCard.schedule
+            : ImageFlowReviewSchedule(
+                nextReviewAt: persistedScheduleNextReviewAt,
+                intervalDays: persistedScheduleIntervalDays,
+                state: persistedScheduleState,
+                status: persistedScheduleStatus.isEmpty ? nil : persistedScheduleStatus
+            )
+        assessment = V2MemoryAssessment(rawValue: persistedAssessment)
+        masteryBefore = V2MemoryMasteryStage(rawValue: persistedMasteryBefore) ?? currentCard.masteryStage
+        masteryAfter = V2MemoryMasteryStage(rawValue: persistedMasteryAfter) ?? masteryBefore
         revealProgress = CGFloat(persistedRevealCoverage)
         isRevealed = persistedIsRevealed
         coveredScratchCells = Set(
@@ -1374,7 +1437,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         }
 
         let restoredPhase = V2RecallPresentationPhase(rawValue: persistedPhase) ?? .recall
-        if assessedCardIDs.contains(currentCard.id) {
+        if assessedReviewCycles.contains(currentReviewCycleKey) {
             phase = .checkpoint
         } else if isRevealed {
             phase = .revealed
@@ -1392,6 +1455,13 @@ struct V2ScreenshotAwakeningFlowView: View {
         persistedIsRevealed = false
         persistedScratchPaths = ""
         persistedCoveredCells = ""
+        persistedAssessment = ""
+        persistedMasteryBefore = V2MemoryMasteryStage.sealed.rawValue
+        persistedMasteryAfter = V2MemoryMasteryStage.sealed.rawValue
+        persistedScheduleNextReviewAt = ""
+        persistedScheduleIntervalDays = 0
+        persistedScheduleState = ""
+        persistedScheduleStatus = ""
     }
 
     private func finishSummon() {

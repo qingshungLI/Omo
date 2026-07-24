@@ -101,8 +101,37 @@ const checks = [
       && source.screenshotAwakeningViews.includes('Button("先收好"')
       && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.currentCardID")')
       && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.scratchPaths")')
-      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.assessedCardIDs")'),
+      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.assessedReviewCycles")'),
     "Checkpoint choice, scratch restoration, and idempotent assessment markers must persist."
+  ),
+  check(
+    "assessment_idempotency_is_scoped_to_review_cycle",
+    source.screenshotAwakeningViews.includes("currentReviewCycleKey")
+      && source.screenshotAwakeningViews.includes('attemptId: "ios-capture-assessment-\\(currentReviewCycleKey)"')
+      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.assessedReviewCycles")')
+      && !source.screenshotAwakeningViews.includes('attemptId: "ios-capture-assessment-\\(currentCard.id)"'),
+    "Assessment idempotency must be stable for retries but change when the card enters a later review cycle."
+  ),
+  check(
+    "checkpoint_restores_assessment_mastery_and_schedule",
+    source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.assessment")')
+      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.masteryAfter")')
+      && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.scheduleNextReviewAt")')
+      && source.screenshotAwakeningViews.includes("ImageFlowReviewSchedule("),
+    "Checkpoint restoration must keep the submitted assessment, mastery transition, and returned schedule."
+  ),
+  check(
+    "scratch_accessibility_and_coverage_share_cells",
+    source.screenshotAwakeningViews.includes("adjustCoveredCells(by: 0.15)")
+      && source.screenshotAwakeningViews.includes("brushDiameter / 2")
+      && !source.screenshotAwakeningViews.includes("coverage = min(1, coverage + 0.15)"),
+    "VoiceOver adjustment and finger scratching must share one cell-based coverage source without inflating the brush radius."
+  ),
+  check(
+    "fuzzy_feedback_uses_tilt_without_inactive_pause",
+    /case \.fuzzy: return \.turning/.test(source.screenshotAwakeningViews)
+      && /case \.inactive:\s+persistPresentationState\(\)/.test(source.screenshotAwakeningViews),
+    "Fuzzy feedback should use the head tilt and transient inactive events should not replace the ritual with a paused screen."
   ),
   check(
     "summon_timings_cover_first_next_and_reduced_motion",
