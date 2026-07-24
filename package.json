@@ -14,6 +14,7 @@
     "security:secrets:history": "node tools/secret-scan.mjs --history",
     "check": "npm run security:secrets && npm run security:secrets:test && npm --prefix backend run check && node --check tools/local-backend-smoke.mjs && node --check tools/recallo-workspace-guard.mjs && node tools/recallo-workspace-guard.mjs",
     "check:ios": "node tools/ios-production-guard.mjs",
+    "test:web-e2e": "node tools/web-app-demo-e2e.mjs",
     "smoke": "node tools/local-backend-smoke.mjs",
     "db:start": "bash tools/local-backend-env.sh start",
     "db:stop": "bash tools/local-backend-env.sh stop",

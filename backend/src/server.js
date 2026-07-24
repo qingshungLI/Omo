@@ -104,6 +104,7 @@ import { AppleAuthError, verifyAppleIdentityToken } from "./appleAuth.js";
 import { buildSourceCapabilities, preflightSourceInput } from "./sources/sourcePreflight.js";
 import { imageFlowInternalEvidence, runImageFlow } from "./flow/index.js";
 import { createImageFlowJob, getImageFlowJob } from "./flow/imageFlowJobs.js";
+import { configureScreenshotE2EFixture } from "./flow/e2eScreenshotFixture.js";
 import {
   captureMemoryRepository,
   isCapturePersistenceStale
@@ -296,7 +297,9 @@ async function handleImageFlow(req, res) {
   if (body.async === true) {
     const job = createImageFlowJob(
       async (onProgress) => {
-        const result = await runImageFlow({ ...input, onProgress });
+        const result = await runImageFlow(configureScreenshotE2EFixture({
+          ...input, onProgress
+        }));
         await persistCaptureMemoryResult(deviceId, result, {
           imageSha256,
           persistenceEpoch
@@ -309,7 +312,7 @@ async function handleImageFlow(req, res) {
     return;
   }
   try {
-    const result = await runImageFlow(input);
+    const result = await runImageFlow(configureScreenshotE2EFixture(input));
     await persistCaptureMemoryResult(deviceId, result, {
       imageSha256,
       persistenceEpoch
@@ -2327,7 +2330,7 @@ const server = createServer(async (req, res) => {
   const pathname = requestUrl.pathname.replace(/\/+$/, "") || "/";
 
   if (["GET", "HEAD"].includes(req.method) && pathname === "/demo") {
-    await sendPublicHtml(req, res, "flow-demo.html");
+    await sendPublicHtml(req, res, "ios-app-demo.html");
     return;
   }
 
