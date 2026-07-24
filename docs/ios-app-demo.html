@@ -1684,6 +1684,55 @@
       }
     }
   </style>
+
+  <style id="recallo-v06-style">
+    :root {
+      --creamReady: #fff3de; --mistProcessing: #e7eef1; --coralRecall: #f7b99f;
+      --lavenderPaused: #e9e0f1; --sageLibrary: #dbe8d4; --navyNight: #25384d;
+      --v06-stage: var(--creamReady); --v06-ink: #243f43; --v06-paper: #fffaf0;
+      --v06-coral: #e98d6b; --v06-gold: #dba94d;
+    }
+    .app { background: var(--v06-stage); transition: background-color .28s ease; }
+    .v06-screen { position:absolute; inset:0; padding:50px 22px 104px; overflow:auto; color:var(--v06-ink); background:radial-gradient(circle at 15% 12%,rgba(255,255,255,.65),transparent 28%),radial-gradient(circle at 84% 70%,rgba(255,255,255,.3),transparent 32%),var(--v06-stage); }
+    .v06-screen::after { content:""; position:fixed; inset:0; opacity:.12; pointer-events:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E"); }
+    .v06-top { display:flex; align-items:center; justify-content:space-between; min-height:44px; position:relative; z-index:2; }
+    .v06-top strong { font-size:14px; letter-spacing:.02em; }
+    .v06-icon { width:44px; height:44px; border:0; border-radius:50%; color:var(--v06-ink); background:rgba(255,250,240,.82); box-shadow:0 4px 14px rgba(52,62,51,.09); cursor:pointer; }
+    .v06-home { min-height:650px; display:flex; flex-direction:column; align-items:center; text-align:center; position:relative; z-index:1; }
+    .v06-home h2 { margin:8px 0 5px; font-size:25px; letter-spacing:-.03em; }
+    .v06-home p { margin:0; color:#687779; font-size:13px; }
+    .v06-mascot { position:relative; width:126px; height:126px; margin:2px auto; border:0; background:transparent; cursor:pointer; transform-origin:50% 82%; }
+    .v06-mascot img { width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 8px 6px rgba(60,75,68,.12)); transition:transform .34s cubic-bezier(.2,.9,.2,1),opacity .2s; }
+    .v06-mascot::after { content:attr(data-effect); position:absolute; top:7px; right:-2px; color:var(--v06-ink); font:700 13px/1.1 ui-rounded,system-ui; white-space:pre; }
+    .v06-mascot[data-state="reacting"] img{animation:v06-boop .34s ease}.v06-mascot[data-state="turning"] img{transform:scaleX(-1) rotate(-7deg)}
+    .v06-mascot[data-state="rummaging"] img{animation:v06-rummage .38s ease-in-out infinite alternate;transform:translateX(10px) rotate(7deg) scale(.95)}
+    .v06-mascot[data-state="carrying"] img{transform:translateY(-8px) scale(1.04)}.v06-mascot[data-state="watching"] img{animation:v06-breathe 3.6s ease-in-out infinite}
+    .v06-mascot[data-state="acknowledging"] img{animation:v06-hop .46s cubic-bezier(.2,.8,.2,1)}.v06-mascot[data-state="thinking"] img{transform:rotate(-3deg)}
+    .v06-mascot[data-state="sleeping"] img{transform:translateY(10px) rotate(8deg) scale(.9);opacity:.82}.v06-mascot[data-state="farewell"] img{animation:v06-wave .46s ease-in-out 2 alternate;transform:scaleX(-1)}
+    .v06-prop { position:absolute; left:50%; bottom:12px; width:42px; height:30px; border:1px solid rgba(36,63,67,.28); border-radius:7px; background:var(--v06-paper); transform:translateX(-50%) rotate(-4deg); }
+    .v06-folder { position:absolute; right:-10px; bottom:14px; width:58px; height:42px; border:1px solid rgba(36,63,67,.3); border-radius:8px 8px 11px 11px; background:#e9aa72; transform:rotate(3deg); }
+    .v06-stack { width:250px; height:270px; margin:0 auto 4px; border:0; background:transparent; position:relative; cursor:grab; touch-action:none; transition:transform .22s cubic-bezier(.2,.85,.2,1); }
+    .v06-stack:active{cursor:grabbing}.v06-card-layer{position:absolute;inset:14px 12px 4px;border:1px solid rgba(36,63,67,.19);border-radius:25px;background:rgba(255,250,240,.82);box-shadow:0 14px 30px rgba(61,72,57,.13)}
+    .v06-card-layer:nth-child(1){transform:rotate(-5deg) translate(-10px,10px)}.v06-card-layer:nth-child(2){transform:rotate(5deg) translate(10px,5px)}
+    .v06-card-front{display:grid;place-items:center;padding:32px;text-align:center}.v06-card-front strong{font-size:22px}.v06-card-front span{display:block;margin-top:10px;color:#768082;font-size:12px}
+    .v06-primary{min-width:230px;min-height:52px;border:0;border-radius:17px;color:#fffaf0;background:var(--v06-ink);box-shadow:0 9px 20px rgba(36,63,67,.18);font-weight:750;cursor:pointer}.v06-primary:active{transform:scale(.97)}
+    .v06-subtle{min-width:44px;min-height:44px;border:0;background:transparent;color:#58696b;font-weight:650;cursor:pointer}
+    .v06-nav{position:absolute;z-index:5;left:14px;right:14px;bottom:12px;height:74px;padding:8px 16px;display:flex;justify-content:space-around;border:1px solid rgba(36,63,67,.12);border-radius:28px;background:rgba(255,250,240,.9);backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(45,61,48,.13)}
+    .v06-nav button{min-width:64px;min-height:54px;border:0;color:#748083;background:transparent;font-size:11px;cursor:pointer}.v06-nav button[aria-current="page"]{color:var(--v06-ink);font-weight:760}.v06-nav b{display:block;margin-bottom:4px;font-size:19px}
+    .v06-scene{min-height:720px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative;z-index:1}.v06-scene h2{margin:4px 0 6px;font-size:24px}.v06-scene>p{margin:0 0 16px;color:#657477;font-size:13px}
+    .v06-summon-card{width:244px;height:318px;display:grid;place-items:center;padding:26px;border:1px solid rgba(36,63,67,.18);border-radius:26px;background:var(--v06-paper);box-shadow:0 20px 46px rgba(56,67,55,.16);animation:v06-summon 1.45s cubic-bezier(.2,.82,.2,1) both}.v06-summon-card[data-fast="true"]{animation-duration:.7s}
+    .v06-orbit{position:absolute;width:330px;height:170px;border:7px solid transparent;border-top-color:var(--v06-coral);border-radius:50%;opacity:.55;animation:v06-orbit .9s ease-in-out both;transform:rotate(-14deg)}
+    .v06-memory{width:100%;max-width:330px;padding:20px;text-align:left;border:1px solid rgba(36,63,67,.15);border-radius:24px;background:var(--v06-paper);box-shadow:0 16px 36px rgba(53,67,55,.14);position:relative}.v06-memory[data-rarity="SR"]{border-color:rgba(233,141,107,.7);box-shadow:0 16px 38px rgba(233,141,107,.2)}.v06-memory[data-rarity="SSR"]{border-color:rgba(219,169,77,.74);box-shadow:0 16px 40px rgba(219,169,77,.24)}
+    .v06-rarity{display:inline-flex;min-height:32px;align-items:center;padding:0 11px;border-radius:999px;background:rgba(36,63,67,.08);font-weight:850}.v06-memory h2{margin:16px 0 13px;font-size:21px;line-height:1.42}.v06-core{font-size:16px;line-height:1.72}
+    .v06-scratch-wrap{position:relative;min-height:88px;margin:14px 0;overflow:hidden;border-radius:16px;background:#fff5df}.v06-scratch-answer{min-height:88px;display:flex;align-items:center;padding:16px;color:var(--v06-coral);font-size:18px;font-weight:760}.v06-scratch{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}.v06-scratch-label{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;color:#5d686a;font-size:12px;font-weight:720}
+    .v06-explanation{padding-top:14px;border-top:1px dashed rgba(36,63,67,.18);color:#5f6d70;font-size:14px;line-height:1.65}.v06-assess{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.v06-assess button{min-height:46px;border:1px solid rgba(36,63,67,.23);border-radius:13px;color:var(--v06-ink);background:#fffaf0;font-weight:720;cursor:pointer}
+    .v06-checkpoint{width:100%;max-width:330px;position:relative}.v06-next-edge{position:absolute;inset:14px -10px auto 14px;height:108px;border:1px solid rgba(36,63,67,.18);border-radius:20px;background:#fffaf0;transform:rotate(3deg)}.v06-check-card{position:relative;padding:18px;border:1px solid rgba(36,63,67,.17);border-radius:21px;background:#fffaf0;text-align:left;box-shadow:0 14px 30px rgba(54,69,55,.13)}.v06-actions{display:grid;gap:8px;width:100%;margin-top:20px}
+    .v06-list{display:grid;gap:11px;margin-top:18px}.v06-list article{padding:16px;border:1px solid rgba(36,63,67,.13);border-radius:18px;background:rgba(255,250,240,.85)}.v06-list small{color:#718082}.v06-particles{position:absolute;inset:0;pointer-events:none}.v06-particles i{position:absolute;width:8px;height:8px;border-radius:50%;background:#edb54a;animation:v06-particle .55s ease-out both}
+    @keyframes v06-boop{45%{transform:scale(1.08,.93)}}@keyframes v06-rummage{to{transform:translateX(14px) rotate(-4deg) scale(.96)}}@keyframes v06-breathe{50%{transform:scale(1.02)}}@keyframes v06-hop{45%{transform:translateY(-17px) scale(1.03)}}@keyframes v06-wave{to{transform:scaleX(-1) rotate(-8deg)}}
+    @keyframes v06-summon{0%{transform:translateY(28px) scale(.94);opacity:.8}38%{transform:translateY(-22px) rotate(3deg)}70%{transform:translateY(-8px) rotate(-3deg);box-shadow:0 22px 50px rgba(233,141,107,.28)}100%{transform:none;opacity:1}}@keyframes v06-orbit{0%{opacity:0;transform:rotate(-24deg) scale(.7)}50%{opacity:.6}100%{opacity:0;transform:rotate(12deg) scale(1.1)}}@keyframes v06-particle{to{transform:translate(var(--x),var(--y)) scale(.2);opacity:0}}
+    @media(max-width:760px){.preview-shell{display:block;padding:0}.preview-copy{display:none}.device{width:100vw;height:100vh;min-height:650px;border:0;border-radius:0}.device::before{display:none}}@media(max-width:390px){.v06-screen{padding-left:16px;padding-right:16px}.v06-memory,.v06-checkpoint{max-width:100%}.v06-stack{width:232px}}
+    @media(prefers-reduced-motion:reduce){.app{transition-duration:.18s}.v06-mascot img,.v06-stack,.v06-primary{animation:none!important;transition-duration:.18s!important}.v06-summon-card{animation:v06-fade .18s ease both!important}.v06-orbit,.v06-particles{display:none!important}@keyframes v06-fade{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}}
+  </style>
 </head>
 <body>
   <main class="preview-shell">
@@ -1693,10 +1742,10 @@
         <span>Recallo · iOS MVP</span>
       </div>
       <h1 id="preview-title">把刷过的内容，变成会再次想起的记忆。</h1>
-      <p>这是当前 iOS 方向的 Web 交互预览。你可以从自己的过去选择记忆池，体验召回、主动回忆、修复与入册。</p>
+      <p>这是当前 iOS 方向的 Web 交互预览。毛球会从你保存过的旧内容里取回一张；想起多少、要不要继续，都由你决定。</p>
       <ol class="steps">
         <li><span class="step-number">1</span><span>在“今日”里添加截图，或载入内置 B站演示截图。</span></li>
-        <li><span class="step-number">2</span><span>选择“今日待唤醒 / 时间胶囊 / 快要遗忘”，召回一定来自自己的内容。</span></li>
+        <li><span class="step-number">2</span><span>点按或上拖卡叠，毛球只取回一张来自自己的旧内容。</span></li>
         <li><span class="step-number">3</span><span>先回忆再揭晓；R/SR/SSR 表示内容价值，封存到铭刻表示你的掌握程度。</span></li>
         <li><span class="step-number">4</span><span>擦开被遮挡的承重语义，主动回忆后再看答案，最后进行自评。</span></li>
       </ol>
@@ -1835,7 +1884,7 @@
       const selected = state.screen === tab || (tab === "home" && ["summon", "draw", "complete"].includes(state.screen));
       return `
         <button class="nav-button ${selected ? "active" : ""}" data-nav="${tab}" type="button" aria-label="${label}" aria-current="${selected ? "page" : "false"}">
-          <img src="/app-demo-assets/phosphor/${asset}" alt="">
+          <img src="app-demo-assets/phosphor/${asset}" alt="">
           <span>${label}</span>
         </button>
       `;
@@ -1885,7 +1934,7 @@
               <h2>今天，唤醒一点记忆</h2>
               <p class="home-subtitle">从自己的过去，召回一段正在消失的记忆</p>
               <button class="mascot" id="mascot-button" type="button" aria-label="毛球，点我一下">
-                <img src="/app-demo-assets/mascot-v06/recallo-mascot-idle.png" alt="">
+                <img src="app-demo-assets/mascot-v06/recallo-mascot-idle.png" alt="">
               </button>
               <p class="mascot-hint" id="mascot-hint">它只提醒你：抽到的是自己的过去</p>
               <div class="memory-pools" aria-label="选择记忆池">
@@ -1906,12 +1955,12 @@
                 <button class="primary-button" id="draw-one" type="button">召回 1 张</button>
                 <button class="secondary-button" id="draw-many" type="button">连续召回</button>
               </div>
-              <button class="direct-reveal" data-nav="upload" type="button"><img src="/app-demo-assets/phosphor/plus.svg" alt="" width="16" height="16"> 添加新截图</button>
+              <button class="direct-reveal" data-nav="upload" type="button"><img src="app-demo-assets/phosphor/plus.svg" alt="" width="16" height="16"> 添加新截图</button>
               <p class="helper-copy">${selectedPool.title} · ${selectedPool.cardIndexes.length} 张可召回 · 连续模式可随时退出</p>
             </div>
           </div>
-          <img class="bg-deco left" src="/app-demo-assets/bg-deco-left-hill-plant.svg" alt="">
-          <img class="bg-deco right" src="/app-demo-assets/bg-deco-right-hill-plant.svg" alt="">
+          <img class="bg-deco left" src="app-demo-assets/bg-deco-left-hill-plant.svg" alt="">
+          <img class="bg-deco right" src="app-demo-assets/bg-deco-right-hill-plant.svg" alt="">
           ${bottomNav()}
         </section>
       `;
@@ -1935,7 +1984,7 @@
                 <h2>把刚刚刷到的内容，留给未来的你</h2>
                 <p>一张截图，只提炼一个值得再想起的点</p>
                 <div class="mascot" aria-hidden="true">
-                  <img src="/app-demo-assets/mascot-v06/recallo-mascot-thinking.png" alt="">
+                  <img src="app-demo-assets/mascot-v06/recallo-mascot-thinking.png" alt="">
                 </div>
               </div>
               <div class="upload-card">
@@ -1951,8 +2000,8 @@
               </div>
             </div>
           </div>
-          <img class="bg-deco left" src="/app-demo-assets/bg-deco-left-hill-plant.svg" alt="">
-          <img class="bg-deco right" src="/app-demo-assets/bg-deco-right-hill-plant.svg" alt="">
+          <img class="bg-deco left" src="app-demo-assets/bg-deco-left-hill-plant.svg" alt="">
+          <img class="bg-deco right" src="app-demo-assets/bg-deco-right-hill-plant.svg" alt="">
           ${bottomNav()}
         </section>
       `;
@@ -2186,7 +2235,7 @@
           <div class="screen-scroll">
             <div class="complete-content">
               <div class="mascot ${state.lastAssessment === "remembered" ? "success" : ""}" aria-hidden="true">
-                <img src="/app-demo-assets/mascot-v06/${state.lastAssessment === "remembered" ? "recallo-mascot-success.png" : "recallo-mascot-tilt.png"}" alt=""${mascotTransform}>
+                <img src="app-demo-assets/mascot-v06/${state.lastAssessment === "remembered" ? "recallo-mascot-success.png" : "recallo-mascot-tilt.png"}" alt=""${mascotTransform}>
               </div>
               <div class="archive-card complete-card ${assessmentClass}">
                 <div class="archive-thumb">${memoryPools[state.selectedPool].symbol}</div>
@@ -2587,6 +2636,66 @@
 
     document.getElementById("desktop-reset").addEventListener("click", resetExperience);
     render();
+  </script>
+
+  <script id="recallo-v06-runtime">
+    (() => {
+      const KEY = "recallo-v06-web-state";
+      const phases = new Set(["home","summoning","recall","scratching","revealed","assessing","checkpoint","stowing","paused"]);
+      const poses = {
+        idle:["idle",""], reacting:["hop","!"], turning:["tilt",""], rummaging:["thinking","…"], carrying:["hop","✦"],
+        watching:["idle",""], acknowledging:["success","!"], thinking:["thinking","?"], sleeping:["tilt","z z"], farewell:["success","♡"]
+      };
+      const colors = {creamReady:"#fff3de",mistProcessing:"#e7eef1",coralRecall:"#f7b99f",lavenderPaused:"#e9e0f1",sageLibrary:"#dbe8d4",navyNight:"#25384d"};
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+      const fresh = () => ({phase:"home",tab:"today",mascot:"idle",cardIndex:0,summonCount:0,revealed:false,coverage:0,paths:[],cells:[],assessments:{},lastAssessment:"",resumePhase:"home",lastSummonDuration:0});
+      const load = () => { try { const value={...fresh(),...JSON.parse(localStorage.getItem(KEY)||"null")}; if(!phases.has(value.phase)) return fresh(); if(["summoning","stowing"].includes(value.phase)) value.phase="recall"; if(value.phase==="assessing") value.phase=value.assessments[`card-${value.cardIndex}-summon-${value.summonCount}`]?"checkpoint":"revealed"; return value; } catch { return fresh(); } };
+      let ui=load(), timers=[], idleTimer=0, lowPower=false;
+      const save=()=>localStorage.setItem(KEY,JSON.stringify(ui));
+      const clear=()=>{timers.forEach(clearTimeout);timers=[]};
+      const later=(fn,ms)=>{const timer=setTimeout(fn,ms);timers.push(timer);return timer};
+      const item=()=>cards[((ui.cardIndex%cards.length)+cards.length)%cards.length];
+      const escape=value=>String(value??"").replace(/[&<>'"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#039;",'"':"&quot;"}[char]));
+      const inSession=()=>!['home','paused'].includes(ui.phase);
+      const palette=()=>ui.phase==='paused'?'lavenderPaused':ui.tab==='library'?'sageLibrary':ui.tab==='profile'?'navyNight':['summoning','stowing'].includes(ui.phase)?'mistProcessing':['recall','scratching','revealed','assessing','checkpoint'].includes(ui.phase)?'coralRecall':'creamReady';
+
+      function mascot(state=ui.mascot,interactive=false){
+        const [asset,effect]=poses[state]||poses.idle;
+        return `<button class="v06-mascot" data-action="mascot" data-state="${state}" data-effect="${effect}" type="button" aria-label="毛球${interactive?'，点它会回应你':'正在陪你回忆'}" ${interactive?'':'tabindex="-1"'}><img src="app-demo-assets/mascot-v06/recallo-mascot-${asset}.png" alt="">${state==='carrying'?'<span class="v06-prop"></span>':''}${state==='rummaging'?'<span class="v06-folder"></span>':''}</button>`;
+      }
+      const top=(title,action='')=>`<header class="v06-top"><strong>${title}</strong>${action||'<span></span>'}</header>`;
+      const nav=()=>`<nav class="v06-nav" aria-label="主要导航">${[['today','☀','今日'],['library','▤','知识库'],['profile','○','我的']].map(([id,icon,label])=>`<button data-tab="${id}" aria-current="${ui.tab===id?'page':'false'}" type="button"><b>${icon}</b>${label}</button>`).join('')}</nav>`;
+      function home(){return `<section class="v06-screen" data-testid="v06-home">${top('Recallo · 今日','<button class="v06-icon" aria-label="通知" type="button">◌</button>')}<div class="v06-home">${mascot(ui.mascot,true)}<h2>找回一段自己的过去</h2><p>每次只取回一张。想起多少，都算数。</p><button class="v06-stack" data-action="summon" data-testid="recall-stack" type="button" aria-label="点按、长按或向上拖动，召回一张旧内容"><span class="v06-card-layer"></span><span class="v06-card-layer"></span><span class="v06-card-layer v06-card-front"><span><strong>今天的一张</strong><span>来自你保存过的内容</span></span></span></button><button class="v06-primary" data-action="summon" type="button">让毛球取回一张</button></div>${nav()}</section>`}
+      function library(){return `<section class="v06-screen" data-testid="v06-library">${top('知识库')}<h2>被你留下的记忆</h2><p>这里没有伪造的知识图谱，只有真实卡片。</p><div class="v06-list">${cards.map(card=>`<article><strong>${escape(card.rarity)} · ${escape(card.hidden)}</strong><p>${escape(card.cue)}</p><small>${escape(card.source)}</small></article>`).join('')}</div>${nav()}</section>`}
+      function profile(){const count=Object.keys(ui.assessments).length;return `<section class="v06-screen" style="--v06-ink:#fffaf0" data-testid="v06-profile">${top('我的')}<div class="v06-scene">${mascot(count?'acknowledging':'sleeping')}<h2>${count?`已经找回 ${count} 张`:'你的过去还安静地待着'}</h2><p style="color:rgba(255,250,240,.78)">不打卡，不排行，只记录真实发生的回忆。</p><button class="v06-primary" style="background:#fffaf0;color:#25384d" data-action="reset" type="button">重置演示</button></div>${nav()}</section>`}
+      function stowingView(){return `<section class="v06-screen" data-testid="v06-stowing"><div class="v06-scene">${mascot('farewell')}<h2>先替你把卡收好</h2><p>进度已经留下，下次仍从自己的过去继续。</p></div></section>`}
+      function summoning(){return `<section class="v06-screen" data-testid="v06-summoning">${top('正在取回','<button class="v06-subtle" data-action="skip" type="button">跳过</button>')}<div class="v06-scene"><div class="v06-orbit"></div>${mascot()}<article class="v06-summon-card" data-fast="${ui.lastSummonDuration<1000}"><div><span class="v06-rarity">来自你的过去</span><h2>毛球找到了一张</h2><p>${ui.lastSummonDuration}ms · 可随时跳过</p></div></article></div></section>`}
+      function scratch(card){return ui.revealed?`<div class="v06-scratch-wrap"><div class="v06-scratch-answer">${escape(card.hidden)}</div></div>`:`<div class="v06-scratch-wrap" data-testid="scratch-area"><div class="v06-scratch-answer">${escape(card.hidden)}</div><canvas class="v06-scratch" tabindex="0" role="button" aria-label="刮开关键语义；回车或空格可直接揭示"></canvas><span class="v06-scratch-label">轻轻刮开 · ${Math.round(ui.coverage*100)}%</span></div>`}
+      function recall(){const card=item(),shown=ui.revealed||ui.phase==='revealed';return `<section class="v06-screen" data-testid="v06-recall">${top('先想一想','<button class="v06-subtle" data-action="stow" type="button">先收好</button>')}<div class="v06-scene">${mascot(shown?'thinking':'watching')}<article class="v06-memory" data-rarity="${escape(card.rarity)}"><span class="v06-rarity">${escape(card.rarity)} · 核心潜力</span><h2>${escape(card.cue)}</h2><div class="v06-core">${escape(card.coreBefore)}</div>${scratch(card)}<div class="v06-core">${escape(card.coreAfter)}</div>${shown?`<div class="v06-explanation"><strong>为什么值得记住</strong><br>${escape(card.explanation)}<br><small>${escape(card.source)}</small></div><div class="v06-assess"><button data-assess="remembered">记得</button><button data-assess="fuzzy">模糊</button><button data-assess="forgot">忘记</button></div>`:'<button class="v06-subtle" data-action="reveal" type="button">一键揭示</button>'}</article></div></section>`}
+      function assessing(){const map={remembered:['acknowledging','你想起来了，记忆被重新连上。'],fuzzy:['turning','模糊也很好，我们会更早再见。'],forgot:['thinking','忘记不是失败，毛球先替你收好。']},[pose,copy]=map[ui.lastAssessment]||map.fuzzy;return `<section class="v06-screen" data-testid="v06-assessing"><div class="v06-scene">${mascot(pose)}${ui.lastAssessment==='remembered'&&!reduced.matches?'<span class="v06-particles"><i style="left:46%;top:48%;--x:-35px;--y:-45px"></i><i style="left:52%;top:48%;--x:35px;--y:-52px"></i><i style="left:49%;top:52%;--x:-8px;--y:-62px"></i></span>':''}<h2>${copy}</h2><p>反馈只决定下次出现的时间，不改变稀有度。</p></div></section>`}
+      function checkpoint(){const card=item();return `<section class="v06-screen" data-testid="v06-checkpoint">${top('这一张，已经找回')}<div class="v06-scene">${mascot(ui.lastAssessment==='remembered'?'acknowledging':'thinking')}<div class="v06-checkpoint"><span class="v06-next-edge"></span><article class="v06-check-card"><span class="v06-rarity">${escape(card.rarity)}</span><h2>${escape(card.hidden)}</h2><p>${escape(card.rarityReason)}</p></article></div><div class="v06-actions"><button class="v06-primary" data-action="continue" type="button">继续下一张</button><button class="v06-subtle" data-action="stow" type="button">先收好</button><small>下一张已经在卡边等你</small></div></div></section>`}
+      const paused=()=>`<section class="v06-screen" data-testid="v06-paused"><div class="v06-scene">${mascot('sleeping')}<h2>这张卡替你停在这里</h2><p>回来时仍是同一张，刮开进度也还在。</p><button class="v06-primary" data-action="resume" type="button">继续回忆</button></div></section>`;
+
+      function renderV06(){const name=palette();app.style.setProperty('--v06-stage',colors[name]);app.style.setProperty('--v06-ink',name==='navyNight'?'#fffaf0':'#243f43');if(ui.phase==='paused')app.innerHTML=paused();else if(inSession())app.innerHTML=ui.phase==='stowing'?stowingView():ui.phase==='summoning'?summoning():ui.phase==='assessing'?assessing():ui.phase==='checkpoint'?checkpoint():recall();else app.innerHTML=ui.tab==='library'?library():ui.tab==='profile'?profile():home();bind();if(['recall','scratching'].includes(ui.phase)&&!ui.revealed)setupScratch();save()}
+      function startSummon(){clear();ui.tab='today';ui.phase='summoning';ui.mascot='turning';ui.lastSummonDuration=reduced.matches?180:ui.summonCount===0?1450:700;renderV06();if(!reduced.matches){later(()=>{ui.mascot='rummaging';renderV06()},Math.min(240,ui.lastSummonDuration*.25));later(()=>{ui.mascot='carrying';renderV06()},Math.min(720,ui.lastSummonDuration*.62))}later(finishSummon,ui.lastSummonDuration)}
+      function finishSummon(){clear();ui.phase='recall';ui.mascot='watching';ui.summonCount+=1;renderV06()}
+      function reveal(){ui.revealed=true;ui.coverage=1;ui.phase='revealed';ui.mascot='thinking';renderV06()}
+      function assess(value){const key=`card-${ui.cardIndex}-summon-${ui.summonCount}`;if(ui.assessments[key]){ui.phase='checkpoint';renderV06();return}ui.assessments[key]=value;ui.lastAssessment=value;ui.phase='assessing';renderV06();later(()=>{ui.phase='checkpoint';renderV06()},reduced.matches?180:620)}
+      function next(){clear();ui.cardIndex=(ui.cardIndex+1)%cards.length;ui.revealed=false;ui.coverage=0;ui.paths=[];ui.cells=[];ui.lastAssessment='';startSummon()}
+      function stow(){clear();const completed=ui.phase==='checkpoint';if(completed){ui.cardIndex=(ui.cardIndex+1)%cards.length;ui.revealed=false;ui.coverage=0;ui.paths=[];ui.cells=[];ui.lastAssessment=''}ui.phase='stowing';ui.mascot='farewell';renderV06();later(()=>{ui.phase='home';ui.tab='today';ui.mascot='idle';renderV06();scheduleIdle()},reduced.matches?180:520)}
+      function reset(){clear();clearTimeout(idleTimer);localStorage.removeItem(KEY);ui=fresh();renderV06();scheduleIdle()}
+
+      function setupScratch(){const canvas=app.querySelector('.v06-scratch');if(!canvas)return;const rect=canvas.getBoundingClientRect(),dpr=Math.max(1,devicePixelRatio||1),ctx=canvas.getContext('2d');canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);ctx.scale(dpr,dpr);ctx.fillStyle='#c9c4b8';ctx.fillRect(0,0,rect.width,rect.height);ctx.strokeStyle='rgba(91,88,82,.22)';ctx.lineWidth=2;for(let y=8;y<rect.height;y+=9){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(rect.width,y-5);ctx.stroke()}ctx.globalCompositeOperation='destination-out';ctx.lineWidth=26;ctx.lineCap='round';ctx.lineJoin='round';let previous=null;ui.paths.forEach(point=>{const p={x:point.x*rect.width,y:point.y*rect.height};if(point.move||!previous){previous=p;return}ctx.beginPath();ctx.moveTo(previous.x,previous.y);ctx.lineTo(p.x,p.y);ctx.stroke();previous=p});let drawing=false;const pos=event=>({x:Math.max(0,Math.min(rect.width,event.clientX-rect.left)),y:Math.max(0,Math.min(rect.height,event.clientY-rect.top))});const mark=(point,move=false)=>{ui.phase='scratching';const p={x:point.x/rect.width,y:point.y/rect.height,move},last=ui.paths.at(-1);ui.paths.push(p);if(last&&!move){ctx.beginPath();ctx.moveTo(last.x*rect.width,last.y*rect.height);ctx.lineTo(point.x,point.y);ctx.stroke()}const cx=Math.floor(p.x*12),cy=Math.floor(p.y*7),radiusX=Math.max(0,Math.round(13/(rect.width/12))),radiusY=Math.max(0,Math.round(13/(rect.height/7)));for(let dx=-radiusX;dx<=radiusX;dx++)for(let dy=-radiusY;dy<=radiusY;dy++)if(cx+dx>=0&&cx+dx<12&&cy+dy>=0&&cy+dy<7)ui.cells.push(`${cx+dx}:${cy+dy}`);ui.cells=[...new Set(ui.cells)];ui.coverage=Math.min(1,ui.cells.length/84);const label=app.querySelector('.v06-scratch-label');if(label)label.textContent=`轻轻刮开 · ${Math.round(ui.coverage*100)}%`;save();if(ui.coverage>=.45)reveal()};canvas.addEventListener('pointerdown',event=>{drawing=true;canvas.setPointerCapture(event.pointerId);mark(pos(event),true)});canvas.addEventListener('pointermove',event=>{if(drawing)mark(pos(event))});canvas.addEventListener('pointerup',event=>{drawing=false;try{canvas.releasePointerCapture(event.pointerId)}catch{}save()});canvas.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();reveal()}else if(event.key.startsWith('Arrow')){event.preventDefault();const count=ui.cells.length;for(let i=count;i<Math.min(84,count+12);i++)ui.cells.push(`${i%12}:${Math.floor(i/12)}`);ui.coverage=ui.cells.length/84;ui.coverage>=.45?reveal():renderV06()}})}
+      function stackGesture(){const stack=app.querySelector('.v06-stack');if(!stack)return;let startY=0,startX=0,triggered=false,hold=0;stack.addEventListener('pointerdown',event=>{startY=event.clientY;startX=event.clientX;triggered=false;hold=setTimeout(()=>{triggered=true;startSummon()},460)});stack.addEventListener('pointermove',event=>{const dy=event.clientY-startY,dx=event.clientX-startX;stack.style.transform=`translate(${Math.max(-6,Math.min(6,dx/9))}px,${Math.min(0,dy)}px) rotate(${Math.max(-4,Math.min(4,dx/12))}deg)`;if(!triggered&&dy<=-28){triggered=true;clearTimeout(hold);startSummon()}});for(const type of ['pointerup','pointercancel'])stack.addEventListener(type,()=>{clearTimeout(hold);stack.style.transform=''})}
+      function bind(){app.querySelectorAll('[data-tab]').forEach(button=>button.addEventListener('click',()=>{if(inSession())return;ui.tab=button.dataset.tab;ui.mascot=ui.tab==='today'?'idle':ui.tab==='library'?'watching':'sleeping';renderV06()}));app.querySelectorAll('[data-action]').forEach(button=>button.addEventListener('click',event=>{const action=event.currentTarget.dataset.action;if(action==='summon')startSummon();else if(action==='skip')finishSummon();else if(action==='reveal')reveal();else if(action==='continue')next();else if(action==='stow')stow();else if(action==='resume'){ui.phase=ui.resumePhase||'recall';renderV06()}else if(action==='reset')reset();else if(action==='mascot'){const old=ui.mascot;ui.mascot='reacting';renderV06();later(()=>{ui.mascot=old==='reacting'?'idle':old;renderV06()},reduced.matches?180:360)}}));app.querySelectorAll('[data-assess]').forEach(button=>button.addEventListener('click',()=>assess(button.dataset.assess)));stackGesture()}
+      function scheduleIdle(){clearTimeout(idleTimer);if(reduced.matches||lowPower||document.hidden||ui.phase!=='home'||ui.tab!=='today')return;idleTimer=setTimeout(()=>{const states=['turning','thinking','sleeping','reacting'];ui.mascot=states[Math.floor(Math.random()*states.length)];renderV06();later(()=>{if(ui.phase==='home'){ui.mascot='idle';renderV06();scheduleIdle()}},650)},8000+Math.random()*6000)}
+      document.addEventListener('visibilitychange',()=>{if(document.hidden&&inSession()){ui.resumePhase=ui.phase;ui.phase='paused';clear();renderV06()}else if(!document.hidden&&ui.phase==='paused'){ui.phase=ui.resumePhase||'recall';renderV06()}});
+      reduced.addEventListener?.('change',()=>{if(ui.phase==='summoning')finishSummon();renderV06();scheduleIdle()});
+      navigator.getBattery?.().then(battery=>{const sync=()=>{lowPower=!battery.charging&&battery.level<=.2;scheduleIdle()};battery.addEventListener('levelchange',sync);battery.addEventListener('chargingchange',sync);sync()}).catch(()=>{});
+      document.getElementById('desktop-reset').addEventListener('click',event=>{event.stopImmediatePropagation();reset()},true);
+      window.__recalloV06={getState:()=>JSON.parse(JSON.stringify(ui)),startSummon,reveal,assess,continueNext:next,stow,reset,render:renderV06};
+      renderV06();scheduleIdle();
+    })();
   </script>
 </body>
 </html>
