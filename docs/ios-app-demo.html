@@ -349,6 +349,7 @@
     }
 
     .memory-pool {
+      position: relative;
       min-height: 226px;
       display: flex;
       flex-direction: column;
@@ -362,7 +363,7 @@
       background: rgba(253, 250, 242, 0.7);
       box-shadow: 0 4px 12px rgba(112, 120, 62, 0.08);
       cursor: pointer;
-      transition: transform 260ms cubic-bezier(.34,1.56,.64,1), border-color 180ms ease, background 180ms ease;
+      transition: transform 320ms cubic-bezier(.34,1.56,.64,1), border-color 180ms ease, background 180ms ease, box-shadow 260ms ease;
     }
 
     .memory-pool:hover { border-color: rgba(152, 168, 78, 0.7); }
@@ -372,6 +373,18 @@
       background: var(--cream);
       box-shadow: 0 7px 20px rgba(112, 120, 62, 0.18);
       transform: translateY(-5px) rotate(-5deg);
+    }
+
+    .memory-pool.selected::after {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      z-index: -1;
+      border: 1px solid rgba(152, 168, 78, 0.2);
+      border-radius: 16px;
+      background: rgba(253, 250, 242, 0.4);
+      transform: translateY(3px) rotate(2deg);
+      pointer-events: none;
     }
 
     .pool-symbol {
@@ -899,6 +912,28 @@
       animation: summon-card 1250ms cubic-bezier(.2,.8,.2,1) both;
     }
 
+    .summoned-card::before {
+      content: "";
+      position: absolute;
+      inset: -20px;
+      border-radius: 40px;
+      opacity: 0;
+      animation: summon-glow 1250ms ease-out both;
+      pointer-events: none;
+    }
+
+    .summoned-card.r::before {
+      background: radial-gradient(circle, rgba(103, 103, 103, 0.08) 0%, transparent 70%);
+    }
+
+    .summoned-card.sr::before {
+      background: radial-gradient(circle, rgba(240, 138, 93, 0.12) 0%, transparent 70%);
+    }
+
+    .summoned-card.ssr::before {
+      background: radial-gradient(circle, rgba(217, 164, 65, 0.14) 0%, transparent 70%);
+    }
+
     .summoned-card .rarity,
     .summoned-card .mastery-chip {
       position: absolute;
@@ -976,6 +1011,12 @@
     @keyframes summon-badge {
       from { opacity: 0; transform: translateY(5px) scale(.94); }
       to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes summon-glow {
+      0% { opacity: 0; transform: scale(0.8); }
+      40% { opacity: 1; }
+      100% { opacity: 0; transform: scale(1.2); }
     }
 
     .draw-content {
@@ -1433,6 +1474,19 @@
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
+    .complete-card.assessment-remembered {
+      border-color: rgba(152, 168, 78, 0.4);
+      box-shadow: 0 0 0 3px rgba(152, 168, 78, 0.08), var(--soft-shadow);
+    }
+
+    .complete-card.assessment-fuzzy {
+      border-color: rgba(211, 163, 74, 0.35);
+    }
+
+    .complete-card.assessment-forgot {
+      border-color: rgba(140, 139, 130, 0.3);
+    }
+
     .complete-content h2 {
       margin: 18px 0 7px;
       font-size: 25px;
@@ -1531,6 +1585,17 @@
       border: 0 !important;
     }
 
+    .session-progress {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 3px;
+      background: var(--primary);
+      opacity: 0.45;
+      border-radius: 0 2px 2px 0;
+      transition: width 260ms ease;
+    }
+
     @media (max-width: 820px) {
       .preview-shell {
         display: block;
@@ -1609,6 +1674,13 @@
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+      }
+
+      .memory-pool.selected,
+      .mascot img,
+      .complete-content .mascot img,
+      .semantic-mask {
+        transform: none !important;
       }
     }
   </style>
@@ -2002,7 +2074,7 @@
               <div class="summon-shadow-card"></div>
               <div class="summon-shadow-card"></div>
               <div class="summon-trail ${card.rarity.toLowerCase()}"></div>
-              <div class="summoned-card">
+              <div class="summoned-card ${card.rarity.toLowerCase()}">
                 <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
                 <span class="mastery-chip">${masteryLabels[state.masteryByCard[state.currentCard]]}</span>
                 ${icons.sparkle}
@@ -2067,6 +2139,7 @@
       return `
         ${statusBar()}
         <section class="screen" data-screen="draw">
+          ${state.drawMode === "continuous" ? `<div class="session-progress" style="width: ${((state.sessionPosition + 1) / state.continuousLimit) * 100}%"></div>` : ""}
           <header class="flow-top">
             <button class="circle-button" id="close-draw" type="button" aria-label="退出召回">${icons.close}</button>
             <div class="top-title">${progressText}</div>
@@ -2103,15 +2176,19 @@
         `<span class="mastery-step ${index <= activeIndex ? "active" : ""}">${masteryLabels[stage]}</span>`
       ).join("");
       const hasNext = state.drawMode === "continuous" && state.sessionPosition + 1 < state.continuousLimit;
+      const assessmentClass = state.lastAssessment ? `assessment-${state.lastAssessment}` : "";
+      let mascotTransform = "";
+      if (state.lastAssessment === "fuzzy") mascotTransform = ' style="transform: rotate(-5deg)"';
+      else if (state.lastAssessment === "forgot") mascotTransform = ' style="transform: translateY(3px)"';
       return `
         ${statusBar()}
         <section class="screen" data-screen="complete">
           <div class="screen-scroll">
             <div class="complete-content">
               <div class="mascot ${state.lastAssessment === "remembered" ? "success" : ""}" aria-hidden="true">
-                <img src="/app-demo-assets/mascot-v06/${state.lastAssessment === "remembered" ? "recallo-mascot-success.png" : "recallo-mascot-tilt.png"}" alt="">
+                <img src="/app-demo-assets/mascot-v06/${state.lastAssessment === "remembered" ? "recallo-mascot-success.png" : "recallo-mascot-tilt.png"}" alt=""${mascotTransform}>
               </div>
-              <div class="archive-card">
+              <div class="archive-card complete-card ${assessmentClass}">
                 <div class="archive-thumb">${memoryPools[state.selectedPool].symbol}</div>
                 <div>
                   <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
@@ -2173,8 +2250,15 @@
       ];
       app.querySelectorAll("[data-pool]").forEach((button) => {
         button.addEventListener("click", () => {
-          state.selectedPool = button.dataset.pool;
+          const key = button.dataset.pool;
+          state.selectedPool = key;
           render();
+          const poolKeys = Object.keys(memoryPools);
+          const poolIndex = poolKeys.indexOf(key);
+          const leanAngle = (poolIndex - 1) * 4;
+          const mascotImg = document.querySelector(".mascot img");
+          const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          if (mascotImg) mascotImg.style.transform = reduced ? "" : `rotate(${leanAngle}deg)`;
         });
       });
       document.getElementById("draw-one").addEventListener("click", () => startDraw("single"));
@@ -2286,11 +2370,31 @@
         });
         mask.addEventListener("pointermove", (event) => {
           if (!dragging) return;
+          const oldProgress = state.revealProgress;
           updateRevealProgress(Math.abs(event.clientX - startX) / Math.max(1, mask.clientWidth));
+          mask.style.transform = `scaleY(${1 + state.revealProgress * 0.015})`;
+          if (oldProgress < 0.25 && state.revealProgress >= 0.25) {
+            mask.style.outline = "2px solid rgba(152, 168, 78, 0.4)";
+            setTimeout(() => {
+              mask.style.outline = "";
+            }, 150);
+          }
+          if (oldProgress < 0.5 && state.revealProgress >= 0.5) {
+            mask.style.outline = "2px solid rgba(152, 168, 78, 0.6)";
+            setTimeout(() => {
+              mask.style.outline = "";
+            }, 150);
+          }
           if (state.revealProgress >= 0.45) reveal();
         });
-        mask.addEventListener("pointerup", () => { dragging = false; });
-        mask.addEventListener("pointercancel", () => { dragging = false; });
+        mask.addEventListener("pointerup", () => {
+          dragging = false;
+          mask.style.transform = "";
+        });
+        mask.addEventListener("pointercancel", () => {
+          dragging = false;
+          mask.style.transform = "";
+        });
         mask.addEventListener("keydown", (event) => {
           if (event.key.startsWith("Arrow")) {
             event.preventDefault();

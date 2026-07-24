@@ -19,6 +19,7 @@ struct V2AwakeningHomeView: View {
     private var reduceMotion
     @State private var selectedMemoryPool = V2MemoryPool.due
     @State private var isMascotReacting = false
+    @State private var mascotLeanAngle: Double = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -108,6 +109,7 @@ struct V2AwakeningHomeView: View {
                                     ? 1
                                     : isMascotReacting ? 1.045 : 1
                             )
+                            .rotationEffect(.degrees(mascotLeanAngle))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Recallo 毛球")
@@ -116,7 +118,26 @@ struct V2AwakeningHomeView: View {
                         reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.7),
                         value: isMascotReacting
                     )
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.65),
+                        value: mascotLeanAngle
+                    )
                     .padding(.top, 8)
+                    .onChange(of: selectedMemoryPool) { _, newPool in
+                        guard !reduceMotion else {
+                            mascotLeanAngle = 0
+                            return
+                        }
+                        let allPools = V2MemoryPool.allCases
+                        guard let index = allPools.firstIndex(of: newPool) else { return }
+                        let mid = Double(allPools.count - 1) / 2.0
+                        mascotLeanAngle = (Double(index) - mid) * 4.0
+                    }
+                    .onChange(of: reduceMotion) { _, isEnabled in
+                        if isEnabled {
+                            mascotLeanAngle = 0
+                        }
+                    }
 
                     if screenshotCardCount > 0 {
                         V2MemoryPoolSelector(
@@ -271,13 +292,15 @@ private struct V2MemoryPoolSelector: View {
     let counts: [V2MemoryPool: Int]
     let reduceMotion: Bool
 
+    @State private var hasAppeared = false
+
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            ForEach(V2MemoryPool.allCases) { pool in
+            ForEach(Array(V2MemoryPool.allCases.enumerated()), id: \.element) { index, pool in
                 let count = counts[pool, default: 0]
                 Button {
                     withAnimation(
-                        reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.78)
+                        reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.72)
                     ) {
                         selectedPool = pool
                     }
@@ -306,26 +329,47 @@ private struct V2MemoryPoolSelector: View {
                     .frame(height: 92)
                     .padding(.horizontal, 4)
                     .background(
-                        RoundedRectangle(cornerRadius: 17, style: .continuous)
-                            .fill(V2Color.surfaceCream.opacity(selectedPool == pool ? 1 : 0.72))
-                            .overlay(
+                        ZStack {
+                            if selectedPool == pool {
                                 RoundedRectangle(cornerRadius: 17, style: .continuous)
-                                    .stroke(
-                                        selectedPool == pool ? V2Color.primary : V2Color.primary.opacity(0.22),
-                                        lineWidth: selectedPool == pool ? 1.5 : 1
-                                    )
-                            )
-                            .v2Shadow()
+                                    .fill(V2Color.surfaceCream.opacity(0.4))
+                                    .offset(x: 2, y: 3)
+                            }
+                            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                .fill(V2Color.surfaceCream.opacity(selectedPool == pool ? 1 : 0.72))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                        .stroke(
+                                            selectedPool == pool ? V2Color.primary : V2Color.primary.opacity(0.22),
+                                            lineWidth: selectedPool == pool ? 1.5 : 1
+                                        )
+                                )
+                                .shadow(
+                                    color: V2Color.primary.opacity(selectedPool == pool ? 0.18 : 0.06),
+                                    radius: selectedPool == pool ? 6 : 2,
+                                    x: 0,
+                                    y: selectedPool == pool ? 4 : 1
+                                )
+                        }
                     )
-                    .rotationEffect(.degrees(selectedPool == pool ? -5 : 0))
-                    .offset(y: selectedPool == pool ? -3 : 2)
+                    .rotationEffect(.degrees(selectedPool == pool && !reduceMotion ? -5 : 0))
+                    .offset(y: reduceMotion ? 0 : selectedPool == pool ? -3 : 2)
                 }
                 .buttonStyle(V2MemoryPoolPressStyle(reduceMotion: reduceMotion))
                 .accessibilityLabel("\(pool.title)，\(count) 张可召回")
                 .accessibilityValue(selectedPool == pool ? "已选择" : "未选择")
+                .opacity(hasAppeared ? 1 : 0)
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.28).delay(Double(index) * 0.06),
+                    value: hasAppeared
+                )
             }
         }
         .frame(height: 108)
+        .onAppear {
+            guard !hasAppeared else { return }
+            hasAppeared = true
+        }
     }
 }
 
@@ -590,11 +634,12 @@ private struct V2MemoryCardStack: View {
     let reduceMotion: Bool
     let onDraw: () -> Void
     @GestureState private var dragTranslation = CGSize.zero
+    @State private var stackSettle: CGFloat = 0
 
     var body: some View {
         ZStack {
-            card(rotation: -5, x: -20, y: 13, opacity: 0.72)
-            card(rotation: 5, x: 20, y: 7, opacity: 0.84)
+            card(rotation: -5, x: -20, y: 13 + stackSettle * 2, opacity: 0.72)
+            card(rotation: 5, x: 20, y: 7 + stackSettle * 2, opacity: 0.84)
 
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(V2Color.surfaceCream)
@@ -630,6 +675,10 @@ private struct V2MemoryCardStack: View {
             reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.76),
             value: dragTranslation
         )
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.72),
+            value: stackSettle
+        )
         .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -657,6 +706,18 @@ private struct V2MemoryCardStack: View {
             onDraw()
         }
         .accessibilityIdentifier("v2.memory-card-stack")
+        .onChange(of: pool) { _, _ in
+            guard isActive else { return }
+            if reduceMotion {
+                stackSettle = 0
+            } else {
+                stackSettle = 1
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 180_000_000)
+                    stackSettle = 0
+                }
+            }
+        }
     }
 
     private var isDragging: Bool {

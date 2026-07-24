@@ -45,6 +45,7 @@ struct V2ScreenshotAwakeningFlowView: View {
     @State private var variantFeedback = ""
     @State private var assessmentError = ""
     @State private var assessmentTask: Task<Void, Never>?
+    @State private var fuzzyBreathActive = false
 
     private var currentCard: V2CapturedMemoryCard {
         session.cards[min(currentIndex, session.cards.count - 1)]
@@ -61,6 +62,20 @@ struct V2ScreenshotAwakeningFlowView: View {
             } else {
                 VStack(spacing: 0) {
                     topBar
+                    if session.mode != .single {
+                        GeometryReader { geometry in
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(V2Color.primary.opacity(0.35))
+                                .frame(
+                                    width: geometry.size.width
+                                        * CGFloat(currentIndex + 1)
+                                        / CGFloat(session.cards.count),
+                                    height: 3
+                                )
+                        }
+                        .frame(height: 3)
+                        .padding(.horizontal, V2Layout.pageHorizontalInset)
+                    }
                     ScrollView(showsIndicators: false) {
                         if phase == .archived {
                             archiveLanding
@@ -163,6 +178,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .rotationEffect(.degrees(index == 0 ? -6 : 5))
                         .offset(x: index == 0 ? -16 : 18, y: index == 0 ? 17 : 12)
                         .v2Shadow()
+                        .opacity(!reduceMotion && summonStage == .rise ? 0.62 : 1)
+                        .animation(
+                            reduceMotion ? nil : .easeInOut(duration: 0.3),
+                            value: summonStage
+                        )
                 }
 
                 if !reduceMotion && summonStage == .orbit {
@@ -207,6 +227,13 @@ struct V2ScreenshotAwakeningFlowView: View {
                         )
                         .v2Shadow()
                 )
+                .shadow(
+                    color: !reduceMotion && summonStage == .orbit
+                        ? rarityColor.opacity(0.18)
+                        : Color.clear,
+                    radius: !reduceMotion && summonStage == .orbit ? 6 : 0,
+                    y: !reduceMotion && summonStage == .orbit ? 4 : 0
+                )
                 .scaleEffect(summonCardScale)
                 .offset(summonCardOffset)
                 .rotationEffect(.degrees(summonCardRotation))
@@ -222,6 +249,15 @@ struct V2ScreenshotAwakeningFlowView: View {
                 )
 
                 if summonStage == .cue {
+                    if !reduceMotion {
+                        Circle()
+                            .fill(rarityColor.opacity(0.08))
+                            .frame(width: 220, height: 220)
+                            .blur(radius: 30)
+                            .offset(x: 126, y: 128)
+                            .transition(.opacity)
+                            .accessibilityHidden(true)
+                    }
                     Image("RecalloMascotSuccess")
                         .resizable()
                         .renderingMode(.original)
@@ -255,7 +291,7 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private var summonCardOffset: CGSize {
         switch summonStage {
-        case .compress: CGSize(width: 0, height: 28)
+        case .compress: CGSize(width: -2, height: 28)
         case .rise: CGSize(width: 0, height: -22)
         case .orbit: CGSize(width: -8, height: -12)
         case .settle, .cue: .zero
@@ -457,6 +493,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                             Rectangle()
                                 .frame(width: geometry.size.width * revealProgress)
                         }
+                        .offset(
+                            x: isRevealDragging && !reduceMotion
+                                ? (revealProgress - 0.5) * 4
+                                : 0
+                        )
                 }
 
                 if revealProgress < 0.18 {
@@ -470,6 +511,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                 }
             }
             .frame(minHeight: 72)
+            .scaleEffect(x: 1, y: isRevealDragging && !reduceMotion ? 1.01 : 1)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.15),
+                value: isRevealDragging
+            )
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .gesture(
                 DragGesture(minimumDistance: 4)
@@ -488,6 +534,17 @@ struct V2ScreenshotAwakeningFlowView: View {
                         }
                     }
             )
+            .onChange(of: revealProgress) { oldProgress, newProgress in
+                guard !reduceMotion else { return }
+                if oldProgress < 0.25 && newProgress >= 0.25 {
+                    UIImpactFeedbackGenerator(style: .light)
+                        .impactOccurred(intensity: 0.4)
+                }
+                if oldProgress < 0.5 && newProgress >= 0.5 {
+                    UIImpactFeedbackGenerator(style: .light)
+                        .impactOccurred(intensity: 0.6)
+                }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("被遮住的语义")
             .accessibilityValue("\(Int(revealProgress * 100))% 已揭示")
@@ -650,6 +707,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                     .scaledToFit()
                     .frame(width: 164, height: 164)
                     .offset(y: feedbackMascotOffset)
+                    .offset(
+                        y: assessment == .forgot && phase == .feedback && !reduceMotion
+                            ? 4
+                            : 0
+                    )
                     .animation(
                         reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.68),
                         value: phase
@@ -672,7 +734,8 @@ struct V2ScreenshotAwakeningFlowView: View {
                     )
             }
             .frame(width: 230, height: 180)
-            .accessibilityHidden(true)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(feedbackMascotAccessibilityLabel)
 
             Text(feedbackTitle)
                 .font(.system(size: 25, weight: .bold))
@@ -704,6 +767,42 @@ struct V2ScreenshotAwakeningFlowView: View {
         .v2PageColumn()
         .padding(.top, 34)
         .padding(.bottom, 36)
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(
+                    V2Color.primary.opacity(
+                        assessment == .remembered && phase == .feedback ? 0.25 : 0
+                    ),
+                    lineWidth: 2
+                )
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: 0.6),
+                    value: phase
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(
+                    V2Color.textMuted.opacity(
+                        assessment == .fuzzy && phase == .feedback
+                            ? (fuzzyBreathActive ? 0.4 : 0.15)
+                            : 0
+                    ),
+                    lineWidth: 1.5
+                )
+                .animation(
+                    reduceMotion ? nil : .easeInOut(duration: 0.8),
+                    value: fuzzyBreathActive
+                )
+        )
+        .onChange(of: phase) { _, newPhase in
+            if newPhase == .feedback && assessment == .fuzzy {
+                fuzzyBreathActive = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    fuzzyBreathActive = false
+                }
+            }
+        }
     }
 
     private var archiveLanding: some View {
@@ -897,6 +996,15 @@ struct V2ScreenshotAwakeningFlowView: View {
         return -10
     }
 
+    private var feedbackMascotAccessibilityLabel: String {
+        switch assessment {
+        case .remembered: "记忆反馈：记得"
+        case .fuzzy: "记忆反馈：模糊"
+        case .forgot: "记忆反馈：忘记"
+        case nil: "记忆反馈：处理中"
+        }
+    }
+
     private var feedbackTitle: String {
         switch phase {
         case .failure: "结果还没有保存"
@@ -1016,6 +1124,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             pendingAssessment = nil
             assessmentError = ""
             variantFeedback = ""
+            fuzzyBreathActive = false
         }
         UISelectionFeedbackGenerator().selectionChanged()
     }
@@ -1032,7 +1141,10 @@ struct V2ScreenshotAwakeningFlowView: View {
     ) async -> Bool {
         try? await Task.sleep(nanoseconds: nanoseconds)
         guard !Task.isCancelled, phase == .summoning else { return false }
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+        let spring: Animation = nextStage == .cue
+            ? .spring(response: 0.28, dampingFraction: 0.68)
+            : .spring(response: 0.32, dampingFraction: 0.78)
+        withAnimation(spring) {
             summonStage = nextStage
         }
         return true
