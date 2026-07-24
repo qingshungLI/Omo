@@ -9,6 +9,7 @@ import {
 
 test("detects supported TikHub content platforms without treating arbitrary sites as supported", () => {
   assert.equal(detectTikHubContentPlatform("https://v.douyin.com/demo/"), "douyin");
+  assert.equal(detectTikHubContentPlatform("https://www.iesdouyin.com/share/video/123"), "douyin");
   assert.equal(detectTikHubContentPlatform("https://www.xiaohongshu.com/explore/abc"), "xiaohongshu");
   assert.equal(detectTikHubContentPlatform("https://mp.weixin.qq.com/s/demo"), "wechat");
   assert.equal(detectTikHubContentPlatform("https://www.zhihu.com/question/1/answer/2"), "zhihu");

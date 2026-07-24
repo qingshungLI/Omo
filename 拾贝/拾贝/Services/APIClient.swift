@@ -118,7 +118,7 @@ struct APIClient {
         return try await send("/api/sources/preflight", method: "POST", body: request, acceptsFailureBody: true)
     }
 
-    func analyzeBilibiliScreenshot(
+    func analyzeScreenshot(
         imageData: Data,
         mimeType: String = "image/jpeg",
         sourceUrl: String? = nil

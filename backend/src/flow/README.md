@@ -2,13 +2,13 @@
 
 This directory is the single orchestration boundary for the screenshot flow:
 
-`screenshot -> Qwen vision identity -> strict Bilibili match -> transcript -> core review + video overview`
+`screenshot -> Qwen vision identity -> strict platform match -> source text/transcript -> core review`
 
 ## Files
 
 - `index.js`: orchestrates the complete flow and exposes `runImageFlow`.
 - `vision.js`: sends the original screenshot to the configured Qwen vision model and returns a bounded source identity.
-- `search.js`: searches Bilibili through TikHub and normalizes link candidates. Douyin/Xiaohongshu adapters remain disabled extension points.
+- `search.js`: searches Bilibili, Douyin, or Xiaohongshu through TikHub and normalizes platform-tagged candidates.
 - `source.js`: stable adapter to the existing article/video platform extractors.
 - `review.js`: stable adapter to the fast one-call summary and question generator.
 - `cli.mjs`: local command-line entry for end-to-end testing.
@@ -20,9 +20,10 @@ test/development compatibility input and is not the app's primary path.
 
 ## Video behavior
 
-The flow only exposes the screenshot identity (`title`, `account`, and an explicit
-player timestamp). It rejects a weak title match instead of summarizing an unrelated
-video. One full transcript powers two output sections:
+The flow only exposes a bounded screenshot identity (`platform`, `contentKind`,
+`title`, `account`, and an explicit player timestamp). It rejects a weak or
+cross-platform ambiguous match instead of summarizing unrelated content. For videos,
+one full transcript powers two output sections:
 
 - `review`: cards and a core summary from the timestamp window, or from visible screenshot terms
   matched against timestamped transcript blocks when the player time is absent.
@@ -37,7 +38,8 @@ with `SHIBEI_PUBLIC_BASE_URL` download the audio once, create a random short-liv
 `faster-whisper` fallback is for local development or background work on long
 videos, not a seconds-level request.
 
-`CAPTURE_PLATFORMS=bilibili` is the production default. Enabling another adapter
-requires adding that platform to the environment value and passing its own
-integration tests; retaining adapter code does not mean the product currently
-claims support for it.
+`CAPTURE_PLATFORMS=bilibili,douyin,xiaohongshu` is the production default. A known
+platform is searched only through its own adapter. Cross-platform search is allowed
+only when the visual model returns `unknown`, and similarly scored results from
+different platforms are treated as ambiguous and rejected. Xiaohongshu image notes
+use the public-text adapter instead of the video pipeline.

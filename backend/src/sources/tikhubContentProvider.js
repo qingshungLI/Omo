@@ -1,10 +1,10 @@
 import { normalizeSubtitleTracks } from "../media/platformSubtitles.js";
 
-const DEFAULT_TIKHUB_BASE_URL = process.env.TIKHUB_BASE_URL || "https://api.tikhub.io";
+const DEFAULT_TIKHUB_BASE_URL = process.env.TIKHUB_BASE_URL || "https://api.tikhub.dev";
 const DEFAULT_TIKHUB_TIMEOUT_MS = readPositiveInt(process.env.TIKHUB_TIMEOUT_MS, 30_000);
 
 const PLATFORM_HOSTS = Object.freeze({
-  douyin: ["douyin.com"],
+  douyin: ["douyin.com", "iesdouyin.com"],
   xiaohongshu: ["xiaohongshu.com", "xhslink.com"],
   wechat: ["mp.weixin.qq.com"],
   zhihu: ["zhihu.com"]
@@ -226,11 +226,11 @@ function normalizeDouyin(payload, sourceUrl) {
       const rightWidth = Number(right?.play_addr?.width || 1920);
       return Math.abs(leftWidth - 1080) - Math.abs(rightWidth - 1080);
     });
-  const mediaUrls = uniqueUrls(
+  const mediaUrls = rankDouyinMediaUrls(uniqueUrls(
     compatibleStreams.flatMap((stream) => stream?.play_addr?.url_list || []),
     root?.video?.play_addr?.url_list,
     root?.video?.download_addr?.url_list
-  );
+  ));
   const contentId = stringValue(root?.aweme_id || root?.id);
   const description = cleanText(root?.desc || root?.caption);
   return {
@@ -529,6 +529,23 @@ function uniqueUrls(...values) {
     }
   }
   return result;
+}
+
+function rankDouyinMediaUrls(urls) {
+  return [...urls].sort((left, right) => douyinMediaUrlScore(right) - douyinMediaUrlScore(left));
+}
+
+function douyinMediaUrlScore(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    let score = 0;
+    if (/douyinvod|douyinpic|bytecdn|snssdk|amemv/.test(hostname)) score += 4;
+    if (/aweme|video|play/.test(value)) score += 2;
+    if (/localhost|127\.0\.0\.1|example\.com/.test(hostname)) score -= 10;
+    return score;
+  } catch {
+    return -20;
+  }
 }
 
 function firstUrl(...values) {

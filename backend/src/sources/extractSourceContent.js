@@ -56,10 +56,25 @@ export async function extractSourceContent(input, {
   const sourceUrl = normalizeUrl(input.sourceUrl || input.rawText);
   const platform = detectTikHubContentPlatform(sourceUrl);
   let tikhubError = null;
-  if (shouldUseTikHubArticleSource(platform, { env })) {
+  if (shouldUseTikHubArticleSource(platform, {
+    env,
+    force: input?.forceTikHubContent === true
+  })) {
     try {
       const content = await fetchTikHubContentSource({ sourceUrl });
-      return buildTikHubArticleSource(content, sourceUrl);
+      const screenshotText = input?.forceTikHubContent
+        ? cleanExtractedText(input?.screenshotText)
+        : "";
+      const enrichedContent = screenshotText
+        ? {
+            ...content,
+            text: [content?.text, screenshotText]
+              .map((value) => cleanExtractedText(value))
+              .filter((value, index, values) => value && values.indexOf(value) === index)
+              .join("\n\n")
+          }
+        : content;
+      return buildTikHubArticleSource(enrichedContent, sourceUrl);
     } catch (error) {
       tikhubError = error;
     }
@@ -99,6 +114,7 @@ export function isVideoUrl(value) {
     "m.youtube.com",
     "youtu.be",
     "v.douyin.com",
+    "iesdouyin.com",
     "douyin.com",
     "www.douyin.com",
     "xiaohongshu.com",
@@ -121,9 +137,9 @@ function isWechatArticleUrl(value) {
   return hostname === "mp.weixin.qq.com";
 }
 
-function shouldUseTikHubArticleSource(platform, { env = process.env } = {}) {
+function shouldUseTikHubArticleSource(platform, { env = process.env, force = false } = {}) {
   return isTikHubArticlePlatform(platform)
-    && readBooleanFlag(env.TIKHUB_CONTENT_ENABLED, false)
+    && (force || readBooleanFlag(env.TIKHUB_CONTENT_ENABLED, false))
     && Boolean(String(env.TIKHUB_API_KEY || "").trim());
 }
 

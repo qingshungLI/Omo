@@ -235,6 +235,7 @@ test("hydrates a title-less TikHub Bilibili result before strict matching", asyn
   let calls = 0;
   const result = await searchLinks("巫师财经 全球股市年度排名", {
     tikhubApiKey: "test-key",
+    platform: "bilibili",
     fetchImpl: async (url) => {
       calls += 1;
       if (String(url).includes("fetch_general_search")) {
@@ -247,6 +248,52 @@ test("hydrates a title-less TikHub Bilibili result before strict matching", asyn
   assert.equal(calls, 2);
   assert.equal(result.results[0].title, "【巫师】全球股市年度排名，谁是神");
   assert.equal(result.results[0].account, "巫师财经");
+});
+
+test("adds Bilibili creator posts when general search misses the exact title", async () => {
+  const requestedUrls = [];
+  const result = await searchLinks("记忆研究所 间隔重复", {
+    tikhubApiKey: "test-key",
+    platform: "bilibili",
+    enabledPlatforms: ["bilibili"],
+    account: "记忆研究所",
+    creatorFallback: true,
+    fetchImpl: async (url) => {
+      requestedUrls.push(String(url));
+      if (String(url).includes("fetch_general_search")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              result: [{
+                bvid: "BVolder",
+                title: "另一条视频",
+                author: "记忆研究所",
+                mid: "42"
+              }]
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          data: {
+            data: {
+              item: [{
+                bvid: "BVexact",
+                title: "间隔重复的三个误区",
+                author: "记忆研究所"
+              }]
+            }
+          }
+        })
+      };
+    }
+  });
+  assert.equal(requestedUrls.length, 2);
+  assert.match(requestedUrls[1], /bilibili\/app\/fetch_user_videos/);
+  assert.equal(result.results.find((item) => item.discovery === "creator_posts")?.url, "https://www.bilibili.com/video/BVexact");
 });
 
 test("normalizes TikHub Douyin video search results", async () => {
@@ -268,9 +315,11 @@ test("normalizes TikHub Douyin video search results", async () => {
   assert.equal(result.provider, "tikhub");
   assert.equal(result.results[0].url, "https://www.douyin.com/video/123456");
   assert.equal(result.results[0].title, "AI 学习方法");
+  assert.equal(result.results[0].platform, "douyin");
+  assert.equal(result.results[0].contentKind, "video");
 });
 
-test("keeps non-Bilibili TikHub adapters disabled by default", async () => {
+test("honors an explicit adapter allowlist", async () => {
   let called = false;
   const result = await searchLinks("抖音 AI 学习", {
     tikhubApiKey: "test-key",
@@ -285,7 +334,7 @@ test("keeps non-Bilibili TikHub adapters disabled by default", async () => {
   assert.deepEqual(result.platforms, []);
 });
 
-test("uses direct visual identity and rejects unsupported platforms before search", async () => {
+test("rejects a visual platform whose adapter is disabled before search", async () => {
   let searched = false;
   const result = await runImageFlow({
     imageBase64: "aGVsbG8=",
@@ -294,21 +343,267 @@ test("uses direct visual identity and rejects unsupported platforms before searc
       provider: "qwen-vision",
       model: "qwen3.7-plus-2026-05-26",
       identity: {
-        platform: "unknown",
-        title: "其他平台标题",
+        platform: "douyin",
+        contentKind: "video",
+        title: "抖音平台标题",
         account: "其他作者",
         timestampSeconds: null,
         locatorTerms: [],
         confidence: 0.8
       },
-      lines: ["其他平台标题"]
+      lines: ["抖音平台标题"]
     }),
     searcher: async () => {
       searched = true;
       return { provider: "tikhub", results: [] };
-    }
+    },
+    enabledPlatforms: ["bilibili"]
   });
   assert.equal(searched, false);
   assert.equal(result.status, "platform_not_supported");
   assert.equal(result.capture.provider, "qwen-vision");
+});
+
+test("uses only the Douyin adapter for a Douyin screenshot", async () => {
+  let searchOptions = null;
+  let extractionInput = null;
+  const result = await runImageFlow({
+    imageBase64: "aGVsbG8=",
+    mimeType: "image/png",
+    analyzeImage: async () => ({
+      provider: "qwen-vision",
+      identity: {
+        platform: "douyin",
+        contentKind: "video",
+        title: "三个主动回忆的方法",
+        account: "记忆研究所",
+        timestampSeconds: 12,
+        locatorTerms: ["主动回忆"],
+        confidence: 0.92
+      },
+      lines: ["记忆研究所", "三个主动回忆的方法"]
+    }),
+    searcher: async (query, options) => {
+      searchOptions = options;
+      return {
+        provider: "tikhub",
+        query,
+        platforms: ["douyin"],
+        results: [{
+          platform: "douyin",
+          contentKind: "video",
+          title: "三个主动回忆的方法",
+          account: "记忆研究所",
+          url: "https://www.douyin.com/video/123"
+        }]
+      };
+    },
+    extract: async (input) => {
+      extractionInput = input;
+      return {
+        sourceTitle: input.sourceTitle,
+        sourceUrl: input.sourceUrl,
+        sourceAccount: "记忆研究所",
+        platform: "douyin",
+        rawText: "主动回忆比重复阅读更有效。",
+        overviewText: "完整视频内容。",
+        blocks: [{ id: "dy-1", text: "主动回忆比重复阅读更有效。" }],
+        focus: {}
+      };
+    },
+    generate: async () => ({ summaryCard: { text: "主动回忆" }, units: [] }),
+    generateOverview: async () => ({ summary: "完整概览", highlights: [] })
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(searchOptions.platform, "douyin");
+  assert.deepEqual(searchOptions.enabledPlatforms, ["bilibili", "douyin", "xiaohongshu"]);
+  assert.equal(extractionInput.sourceType, "video_link");
+});
+
+test("routes a Xiaohongshu image note through the article adapter", async () => {
+  let extractionInput = null;
+  const result = await runImageFlow({
+    imageBase64: "aGVsbG8=",
+    mimeType: "image/png",
+    analyzeImage: async () => ({
+      provider: "qwen-vision",
+      identity: {
+        platform: "xiaohongshu",
+        contentKind: "image_text",
+        title: "如何建立个人知识系统",
+        account: "小林的笔记",
+        timestampSeconds: null,
+        locatorTerms: ["知识系统"],
+        confidence: 0.9
+      },
+      lines: ["小林的笔记", "如何建立个人知识系统"]
+    }),
+    searcher: async (query, options) => ({
+      provider: "tikhub",
+      query,
+      platforms: [options.platform],
+      results: [{
+        platform: "xiaohongshu",
+        contentKind: "image_text",
+        title: "如何建立个人知识系统",
+        account: "小林的笔记",
+        url: "https://www.xiaohongshu.com/explore/xhs1"
+      }]
+    }),
+    extract: async (input) => {
+      extractionInput = input;
+      return {
+        sourceTitle: input.sourceTitle,
+        sourceUrl: input.sourceUrl,
+        sourceAccount: "小林的笔记",
+        platform: "xiaohongshu",
+        rawText: "先从稳定的收集入口开始。",
+        blocks: [{ id: "xhs-1", text: "先从稳定的收集入口开始。" }],
+        focus: {}
+      };
+    },
+    generate: async () => ({ summaryCard: { text: "知识系统" }, units: [] })
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(extractionInput.sourceType, "article_link");
+  assert.equal(extractionInput.forceTikHubContent, true);
+  assert.match(extractionInput.screenshotText, /如何建立个人知识系统/);
+  assert.equal(result.videoOverview, undefined);
+});
+
+test("rejects a supplied URL from a different platform than the screenshot", async () => {
+  const result = await runImageFlow({
+    imageBase64: "aGVsbG8=",
+    mimeType: "image/png",
+    sourceUrl: "https://www.bilibili.com/video/BVwrong",
+    analyzeImage: async () => ({
+      provider: "qwen-vision",
+      identity: {
+        platform: "douyin",
+        contentKind: "video",
+        title: "同名内容",
+        account: "同名作者",
+        timestampSeconds: null,
+        locatorTerms: [],
+        confidence: 0.9
+      },
+      lines: ["同名内容"]
+    })
+  });
+  assert.equal(result.status, "source_platform_mismatch");
+});
+
+test("rejects an ambiguous cross-platform match when the platform is unknown", async () => {
+  const result = await runImageFlow({
+    imageBase64: "aGVsbG8=",
+    mimeType: "image/png",
+    analyzeImage: async () => ({
+      provider: "qwen-vision",
+      identity: {
+        platform: "unknown",
+        contentKind: "unknown",
+        title: "间隔重复的三个误区",
+        account: "学习实验室",
+        timestampSeconds: null,
+        locatorTerms: [],
+        confidence: 0.65
+      },
+      lines: ["学习实验室", "间隔重复的三个误区"]
+    }),
+    searcher: async (query, options) => ({
+      provider: "tikhub",
+      query,
+      platforms: options.enabledPlatforms,
+      results: [
+        {
+          platform: "bilibili",
+          contentKind: "video",
+          title: "间隔重复的三个误区",
+          account: "学习实验室",
+          url: "https://www.bilibili.com/video/BVsame"
+        },
+        {
+          platform: "douyin",
+          contentKind: "video",
+          title: "间隔重复的三个误区",
+          account: "学习实验室",
+          url: "https://www.douyin.com/video/456"
+        }
+      ]
+    })
+  });
+  assert.equal(result.status, "search_match_low_confidence");
+  assert.equal(result.link, undefined);
+});
+
+test("normalizes current Douyin business_data search responses", async () => {
+  const result = await searchLinks("主动回忆", {
+    tikhubApiKey: "test-key",
+    platform: "douyin",
+    enabledPlatforms: ["bilibili", "douyin", "xiaohongshu"],
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          business_data: [{
+            data: {
+              aweme_info: {
+                aweme_id: "789",
+                desc: "主动回忆入门",
+                author: { nickname: "记忆研究所" }
+              }
+            }
+          }]
+        }
+      })
+    })
+  });
+  assert.deepEqual(result.platforms, ["douyin"]);
+  assert.equal(result.results[0].url, "https://www.douyin.com/video/789");
+  assert.equal(result.results[0].account, "记忆研究所");
+});
+
+test("normalizes Xiaohongshu image-note search results", async () => {
+  const result = await searchLinks("知识系统", {
+    tikhubApiKey: "test-key",
+    platform: "xiaohongshu",
+    enabledPlatforms: ["bilibili", "douyin", "xiaohongshu"],
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        data: {
+          data: {
+            items: [{
+              note_card: {
+                note_id: "xhs-2",
+                type: "normal",
+                display_title: "知识系统搭建",
+                user: { nickname: "小林的笔记" },
+                cover: { url: "https://example.com/cover.jpg" }
+              }
+            }]
+          }
+        }
+      })
+    })
+  });
+  assert.deepEqual(result.platforms, ["xiaohongshu"]);
+  assert.equal(result.results[0].platform, "xiaohongshu");
+  assert.equal(result.results[0].contentKind, "image_text");
+  assert.equal(result.results[0].url, "https://www.xiaohongshu.com/explore/xhs-2");
+});
+
+test("searches every enabled adapter only when cross-platform search is explicit", async () => {
+  const requestedUrls = [];
+  const result = await searchLinks("间隔重复", {
+    tikhubApiKey: "test-key",
+    searchAllPlatforms: true,
+    enabledPlatforms: ["bilibili", "douyin", "xiaohongshu"],
+    fetchImpl: async (url) => {
+      requestedUrls.push(String(url));
+      return { ok: true, json: async () => ({ data: {} }) };
+    }
+  });
+  assert.deepEqual(result.platforms, ["bilibili", "douyin", "xiaohongshu"]);
+  assert.equal(requestedUrls.length, 3);
 });

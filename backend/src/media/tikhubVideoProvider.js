@@ -9,7 +9,7 @@ import { fetchTikHubContentSource } from "../sources/tikhubContentProvider.js";
 export async function fetchTikHubVideoSource({
   sourceUrl,
   apiKey = process.env.TIKHUB_API_KEY || "",
-  baseUrl = process.env.TIKHUB_BASE_URL || "https://api.tikhub.io",
+  baseUrl = process.env.TIKHUB_BASE_URL || "https://api.tikhub.dev",
   fetchImpl = fetch,
   timeoutMs = readPositiveInt(process.env.TIKHUB_TIMEOUT_MS, 30_000)
 } = {}) {
@@ -55,6 +55,10 @@ export async function fetchTikHubVideoSource({
     account: content.account,
     sourceUrl: content.sourceUrl || url.href,
     mediaUrl: content.mediaUrl,
+    mediaAlternativeUrls: (content.mediaUrls || []).filter((item) => item && item !== content.mediaUrl),
+    mediaRequestHeaders: platform === "douyin"
+      ? { "user-agent": "Mozilla/5.0", referer: "https://www.douyin.com/" }
+      : {},
     coverUrl: content.coverUrl,
     durationSeconds: content.durationSeconds,
     subtitles: content.subtitles

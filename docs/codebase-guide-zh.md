@@ -18,16 +18,16 @@
 
 这是当前截图输入的唯一编排目录，入口是 `index.js`：
 
-- `index.js` / `runImageFlow(options)`：原图 -> Qwen 视觉理解 -> B站候选搜索 -> 视频取源 -> 快速摘要和 3 道练习；候选不可信时停止，避免为错误来源生成卡片。
-- `vision.js` / `analyzeScreenshotImage(options)`：把 JPEG、PNG 或 WebP 原图直接发送给 `qwen3.7-plus-2026-05-26`，只返回 B站标题、UP主、播放器时间和字幕定位词。
+- `index.js` / `runImageFlow(options)`：原图 -> Qwen 视觉理解 -> B站/抖音/小红书候选搜索 -> 图文或视频取源 -> 快速摘要和 3 道练习；候选不可信或跨平台歧义时停止。
+- `vision.js` / `analyzeScreenshotImage(options)`：把 JPEG、PNG 或 WebP 原图直接发送给 `qwen3.7-plus-2026-05-26`，只返回平台、内容类型、标题、作者、播放器时间和定位词。
 - `index.js` / `buildSearchQuery(input)`：把视觉模型返回的标题和 UP主压缩成单个高信号查询。
-- `search.js` / `searchLinks(query)`：默认只启用 B站 TikHub 搜索并统一返回标题、URL、UP主和摘要；抖音/小红书 adapter 暂时保留但默认关闭。
+- `search.js` / `searchLinks(query, options)`：通过 TikHub 搜索 B站、抖音或小红书并统一返回平台、内容类型、标题、URL、作者和摘要。
 - `imageFlowJobs.js`：保存短期异步进度，任务必须绑定提交截图的 `deviceId`，其他设备即使得到 UUID 也不能读取结果。
 
 本地验证：
 
 ```bash
-CAPTURE_PLATFORMS=bilibili npm --prefix backend run image-flow -- image.jpg
+CAPTURE_PLATFORMS=bilibili,douyin,xiaohongshu npm --prefix backend run image-flow -- image.jpg
 ```
 
 HTTP 客户端使用 `POST /api/sources/image-flow`，传 `imageBase64` 和 `mimeType`。iOS 不执行 Apple Vision OCR；生产环境也不接受服务器本地图片路径。`ocrText`/`ocrLines` 只保留给单元测试和开发诊断。

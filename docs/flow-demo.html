@@ -92,7 +92,7 @@
       <div class="brand"><span class="mark">拾</span>拾贝</div>
       <p class="eyebrow">截图收藏</p>
       <h1>把当下看到的内容，变成以后记得住的内容。</h1>
-      <p class="hint">上传 B站截图。Qwen 会读取标题、UP主与播放位置，严格匹配来源后生成复习。</p>
+      <p class="hint">上传 B站、抖音或小红书截图。Qwen 会读取平台、标题、作者与播放位置，严格匹配来源后生成复习。</p>
       <label class="upload" for="imageInput">选择截图<input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp"></label>
       <p id="fileName" class="file-name">尚未选择文件</p>
       <button id="submit" class="primary" type="button" disabled>开始整理</button>
@@ -106,7 +106,7 @@
       <div class="topline"><p>截图 → 精确来源 → 可复习的记忆点</p><span id="status" class="status">等待截图</span></div>
       <section id="empty" class="empty">
         <h2>从一张截图开始</h2>
-        <p>当前版本只处理 B站内容页。截图清楚包含标题和 UP主时，来源匹配更稳定。</p>
+        <p>当前版本处理 B站、抖音和小红书公开内容。截图清楚包含标题和作者时，来源匹配更稳定。</p>
         <div class="placeholder"><div>视觉模型读取<br>标题 · UP主 · 时间</div><div>严格匹配后才继续<br>避免把错内容存进来</div><div>截图附近的要点<br>与全片知识地图分开保存</div></div>
       </section>
       <section id="result" class="result" aria-live="polite">
@@ -150,7 +150,7 @@
 
     submit.addEventListener('click', async () => {
       if (!imageData) return;
-      setBusy(true, '正在理解 B站截图');
+      setBusy(true, '正在理解截图平台与来源');
       empty.style.display = 'none'; result.style.display = 'none'; hideNotice();
       try {
         const response = await fetch(imageFlowUrl, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ imageBase64:imageData, async:true }) });
@@ -193,7 +193,7 @@
 
     function setFlowProgress(progress, elapsedMs) {
       const stage = progress.stage || 'queued';
-      const activeIndex = stage === 'ocr' || stage === 'queued' ? 0 : stage === 'search' ? 1 : 2;
+      const activeIndex = stage === 'vision' || stage === 'ocr' || stage === 'queued' ? 0 : stage === 'search' ? 1 : 2;
       const elapsed = formatElapsed(elapsedMs);
       status.textContent = `${progress.message || '正在处理'}${elapsed ? ` · ${elapsed}` : ''}`;
       status.className = 'status working';
@@ -202,7 +202,7 @@
 
     function render(data) {
       const source = data.source || {};
-      const identity = data.ocr?.identity || {};
+      const identity = data.capture?.identity || {};
       document.querySelector('#sourceTitle').textContent = source.title || data.link?.title || identity.title || '已保存内容';
       document.querySelector('#sourceMeta').textContent = [source.account || identity.account, source.platform, identity.timestampSeconds != null ? `截图位置 ${formatTime(identity.timestampSeconds)}` : '已按字幕文本定位'].filter(Boolean).join(' · ');
       const link = document.querySelector('#sourceLink'); link.href = source.url || data.link?.url || '#';

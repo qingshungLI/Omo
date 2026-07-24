@@ -1,5 +1,5 @@
 import { analyzeScreenshotImage } from "./vision.js";
-import { searchLinks } from "./search.js";
+import { enabledCapturePlatforms, searchLinks } from "./search.js";
 import { extractFocusedSourceContent, isVideoUrl } from "./source.js";
 import { generateQuickReviewPath, generateVideoOverview } from "./review.js";
 
@@ -17,10 +17,11 @@ export async function runImageFlow({
   analyzeImage = analyzeScreenshotImage,
   extract = extractFocusedSourceContent,
   generate = generateQuickReviewPath,
-  generateOverview = generateVideoOverview
+  generateOverview = generateVideoOverview,
+  enabledPlatforms = enabledCapturePlatforms(process.env.CAPTURE_PLATFORMS)
 } = {}) {
   const flowStartedAt = Date.now();
-  reportProgress(onProgress, { stage: "vision", message: "正在理解 B站截图中的标题与 UP主", percent: 5 });
+  reportProgress(onProgress, { stage: "vision", message: "正在理解截图中的平台、标题与作者", percent: 5 });
   const timings = {};
   if (!imagePath && !imageBase64 && !ocrText) throw flowError("screenshot_image_missing", "缺少截图内容。");
   const analysisStartedAt = Date.now();
@@ -29,32 +30,73 @@ export async function runImageFlow({
     : await analyzeImage({ imagePath, imageBase64, mimeType });
   timings.visionMs = Date.now() - analysisStartedAt;
   const identity = captureAnalysis.identity || extractScreenshotIdentity(captureAnalysis.lines || captureAnalysis.text);
-  const sourceIsBilibili = isBilibiliUrl(sourceUrl);
-  if (sourceUrl && !sourceIsBilibili) {
+  const sourcePlatform = platformFromUrl(sourceUrl);
+  const allowedPlatforms = new Set(normalizeEnabledPlatforms(enabledPlatforms));
+  if (sourceUrl && !sourcePlatform) {
     timings.totalMs = Date.now() - flowStartedAt;
     return {
       status: "platform_not_supported",
-      message: "当前版本只接受 B站来源链接。",
+      message: "当前截图流程只接受 B站、抖音或小红书来源链接。",
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
   }
-  if (!sourceIsBilibili && captureAnalysis.provider !== "provided-text" && identity.platform !== "bilibili") {
+  if (sourcePlatform && !allowedPlatforms.has(sourcePlatform)) {
     timings.totalMs = Date.now() - flowStartedAt;
     return {
       status: "platform_not_supported",
-      message: "当前版本先支持 B站截图，其他平台将在后续版本开放。",
+      message: `${platformLabel(sourcePlatform)}截图 adapter 当前未启用。`,
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
   }
-  reportProgress(onProgress, { stage: "search", message: "截图理解完成，正在用 TikHub 核对 B站来源", percent: 20 });
+  if (identity.platform && identity.platform !== "unknown" && !allowedPlatforms.has(identity.platform)) {
+    timings.totalMs = Date.now() - flowStartedAt;
+    return {
+      status: "platform_not_supported",
+      message: `${platformLabel(identity.platform)}截图 adapter 当前未启用。`,
+      capture: serializeCaptureAnalysis(captureAnalysis, identity),
+      timings
+    };
+  }
+  if (sourcePlatform && isKnownPlatform(identity.platform) && sourcePlatform !== identity.platform) {
+    timings.totalMs = Date.now() - flowStartedAt;
+    return {
+      status: "source_platform_mismatch",
+      message: `截图识别为${platformLabel(identity.platform)}，但指定链接来自${platformLabel(sourcePlatform)}，已停止处理。`,
+      capture: serializeCaptureAnalysis(captureAnalysis, identity),
+      timings
+    };
+  }
+  reportProgress(onProgress, { stage: "search", message: "截图理解完成，正在用 TikHub 核对内容来源", percent: 20 });
   const queries = buildSearchQueries(identity);
   const query = queries[0] || "";
   const searchStartedAt = Date.now();
   const resolvedSearch = sourceUrl
-    ? { search: { provider: "input", query, results: [{ title: "用户指定链接", url: sourceUrl, snippet: "" }] }, candidate: { title: "用户指定链接", url: sourceUrl, snippet: "" } }
-    : await searchScreenshotSource({ identity, queries, searcher });
+    ? {
+        search: {
+          provider: "input",
+          query,
+          platforms: [sourcePlatform],
+          results: [{
+            title: identity.title || "用户指定链接",
+            url: sourceUrl,
+            account: identity.account || "",
+            snippet: "",
+            platform: sourcePlatform,
+            contentKind: identity.contentKind || "unknown"
+          }]
+        },
+        candidate: {
+          title: identity.title || "用户指定链接",
+          url: sourceUrl,
+          account: identity.account || "",
+          snippet: "",
+          platform: sourcePlatform,
+          contentKind: identity.contentKind || "unknown"
+        }
+      }
+    : await searchScreenshotSource({ identity, queries, searcher, enabledPlatforms: [...allowedPlatforms] });
   timings.searchMs = Date.now() - searchStartedAt;
   const search = resolvedSearch.search;
   const candidate = resolvedSearch.candidate;
@@ -80,14 +122,14 @@ export async function runImageFlow({
       ...result,
       status: search.errorCode || "search_match_low_confidence",
       message: search.errorCode
-        ? "已理解截图，但尚未配置可用的 B站搜索 API。"
+        ? "已理解截图，但尚未配置可用的来源搜索 API。"
         : "没有找到标题和博主均可信的来源链接，已停止生成，避免保存错误内容。"
     };
   }
 
   result.link = candidate;
   reportProgress(onProgress, { stage: "extract", message: "已找到来源，正在并发转写代表片段；少量片段成功后立即继续", percent: 40 });
-  const sourceType = isVideoUrl(candidate.url) ? "video_link" : "article_link";
+  const sourceType = sourceTypeForCandidate(candidate, identity);
   try {
     const extractionStartedAt = Date.now();
     const source = await extract({
@@ -97,7 +139,15 @@ export async function runImageFlow({
       rawText: candidate.snippet,
       timestampSeconds: identity.timestampSeconds,
       locatorTerms: identity.locatorTerms,
-      publicMediaBaseUrl
+      publicMediaBaseUrl,
+      screenshotText: String(
+        captureAnalysis.text
+        || captureAnalysis.lines?.join("\n")
+        || identity.visibleTextLines?.join("\n")
+        || ""
+      ).trim(),
+      forceTikHubContent: sourceType === "article_link"
+        && (candidate.platform || identity.platform) === "xiaohongshu"
     });
     timings.sourceExtractionMs = Date.now() - extractionStartedAt;
     result.source = {
@@ -206,21 +256,63 @@ export function buildSearchQueries(identity) {
   const rawTitle = title.replace(/【[^】]*】/g, "").trim();
   const titleSegments = rawTitle.split(/[：:，,。！？!?]+/).map((item) => item.trim()).filter(Boolean);
   const plainTitle = titleSegments.join(" ");
-  const anchorTitle = titleSegments[0]?.length >= 6
-    ? titleSegments.slice(0, 2).join(" ")
-    : titleSegments[0] || plainTitle;
+  const firstTitleSegment = (titleSegments[0] || plainTitle).slice(0, 24);
+  const edition = rawTitle.match(/第[一二三四五六七八九十0-9]+季|第\d+[期集]|[上下]集/)?.[0] || "";
+  const anchorTitle = [firstTitleSegment, firstTitleSegment.includes(edition) ? "" : edition].filter(Boolean).join(" ");
   // One concise account + title-anchor query is faster and proved more stable
   // than firing several long variants at TikHub. Candidate ranking still uses
   // the complete OCR title and account below.
   return [[account, anchorTitle].filter(Boolean).join(" ") || title || plainTitle].filter(Boolean);
 }
 
-async function searchScreenshotSource({ identity, queries, searcher }) {
+async function searchScreenshotSource({ identity, queries, searcher, enabledPlatforms }) {
   const [primaryQuery] = queries;
-  const primarySearch = await searcher(primaryQuery);
+  const preferredPlatform = isKnownPlatform(identity?.platform) ? identity.platform : "";
+  const primarySearch = await searcher(primaryQuery, {
+    platform: preferredPlatform,
+    searchAllPlatforms: !preferredPlatform,
+    enabledPlatforms
+  });
   const primaryCandidate = pickCandidate(primarySearch.results, identity);
   const attempts = [{ query: primaryQuery, resultCount: Array.isArray(primarySearch.results) ? primarySearch.results.length : 0, matched: Boolean(primaryCandidate) }];
-  return { search: { ...primarySearch, query: primaryQuery, attempts }, candidate: primaryCandidate };
+  if (primaryCandidate) {
+    return { search: { ...primarySearch, query: primaryQuery, attempts }, candidate: primaryCandidate };
+  }
+  if (preferredPlatform === "bilibili" && identity?.account) {
+    try {
+      const creatorSearch = await searcher(primaryQuery, {
+        platform: "bilibili",
+        enabledPlatforms,
+        account: identity.account,
+        creatorFallback: true
+      });
+      const creatorResults = (creatorSearch.results || []).filter((item) => item.discovery === "creator_posts");
+      const creatorCandidate = pickCandidate(creatorResults, identity);
+      attempts.push({
+        query: `${identity.account}（UP主投稿兜底）`,
+        resultCount: creatorResults.length,
+        matched: Boolean(creatorCandidate)
+      });
+      if (creatorCandidate) {
+        return {
+          search: {
+            ...creatorSearch,
+            query: primaryQuery,
+            results: dedupeSearchResults([...(primarySearch.results || []), ...creatorResults]),
+            attempts
+          },
+          candidate: creatorCandidate
+        };
+      }
+    } catch {
+      attempts.push({ query: `${identity.account}（UP主投稿兜底）`, resultCount: 0, matched: false });
+    }
+  }
+  return { search: { ...primarySearch, query: primaryQuery, attempts }, candidate: null };
+}
+
+function dedupeSearchResults(items) {
+  return items.filter((item, index) => item?.url && items.findIndex((candidate) => candidate?.url === item.url) === index);
 }
 
 function normalizeSearchTitle(value) {
@@ -240,7 +332,8 @@ export function extractScreenshotIdentity(input) {
     title: title?.line || "",
     account,
     timestampSeconds: findPlayerTimestamp(cleaned),
-    platform: inferPlatform(cleaned),
+    platform: inferPlatform(cleaned) || "unknown",
+    contentKind: inferContentKind(cleaned),
     locatorTerms: usable.filter((line) => line !== title?.line && line !== account).slice(0, 8),
     confidence: title?.line ? Math.min(1, title.score / 20) : 0
   };
@@ -288,22 +381,30 @@ function findPlayerTimestamp(lines) {
 
 function inferPlatform(lines) {
   const text = lines.join(" ");
-  if (/bilibili|哔哩|B站/i.test(text)) return "bilibili";
-  if (/小红书|xhs/i.test(text)) return "xiaohongshu";
+  if (/bilibili|bilbili|\bbili\b|哔哩|B站|充电|弹幕/i.test(text)) return "bilibili";
+  if (/小红书|xiaohongshu|xhs|发现\s*关注\s*消息/i.test(text)) return "xiaohongshu";
   if (/抖音|douyin/i.test(text)) return "douyin";
+  if (/首页[:：]?\s*朋友.*消息.*我|发同款|的原声|\b热点\b/i.test(text)) return "douyin";
   if (/youtube/i.test(text)) return "youtube";
   return "";
 }
 
-function isBilibiliUrl(value) {
+function inferContentKind(lines) {
+  const text = lines.join(" ");
+  if (findPlayerTimestamp(lines) !== null || /弹幕|发同款|的原声|播放中/i.test(text)) return "video";
+  if (/图文|笔记|第\s*\d+\s*张|共\s*\d+\s*张/i.test(text)) return "image_text";
+  return "unknown";
+}
+
+function platformFromUrl(value) {
   try {
     const hostname = new URL(String(value || "")).hostname.toLowerCase();
-    return hostname === "b23.tv"
-      || hostname.endsWith(".b23.tv")
-      || hostname === "bilibili.com"
-      || hostname.endsWith(".bilibili.com");
+    if (hostname === "b23.tv" || hostname.endsWith(".b23.tv") || hostname === "bilibili.com" || hostname.endsWith(".bilibili.com")) return "bilibili";
+    if (hostname === "douyin.com" || hostname.endsWith(".douyin.com") || hostname === "iesdouyin.com" || hostname.endsWith(".iesdouyin.com")) return "douyin";
+    if (hostname === "xiaohongshu.com" || hostname.endsWith(".xiaohongshu.com") || hostname === "xhslink.com" || hostname.endsWith(".xhslink.com")) return "xiaohongshu";
+    return "";
   } catch {
-    return false;
+    return "";
   }
 }
 
@@ -314,12 +415,23 @@ export function pickCandidate(results, identity) {
   const ranked = items.map((item) => ({ ...item, matchScore: scoreCandidate(item, identity) }))
     .sort((a, b) => b.matchScore - a.matchScore);
   const best = ranked[0];
-  return best && best.matchScore >= 0.68 ? best : null;
+  if (!best || best.matchScore < 0.68) return null;
+  if (!isKnownPlatform(identity?.platform)) {
+    const bestPlatform = best.platform || platformFromUrl(best.url);
+    const competing = ranked.find((item, index) => (
+      index > 0
+      && (item.platform || platformFromUrl(item.url)) !== bestPlatform
+      && item.matchScore >= 0.68
+      && best.matchScore - item.matchScore < 0.08
+    ));
+    if (!bestPlatform || competing) return null;
+  }
+  return best;
 }
 
 function candidateMatchesPlatform(item, identity) {
-  if (identity?.platform !== "bilibili") return true;
-  return isBilibiliUrl(item?.url);
+  if (!isKnownPlatform(identity?.platform)) return true;
+  return (item?.platform || platformFromUrl(item?.url)) === identity.platform;
 }
 
 function candidateMatchesAccount(item, identity) {
@@ -334,8 +446,35 @@ function scoreCandidate(item, identity) {
   const accountScore = identity?.account
     ? textSimilarity([item?.account, item?.snippet].filter(Boolean).join(" "), identity.account)
     : 0;
-  const platformScore = identity?.platform && String(item?.url || "").toLowerCase().includes(identity.platform) ? 1 : 0;
+  const candidatePlatform = item?.platform || platformFromUrl(item?.url);
+  const platformScore = isKnownPlatform(identity?.platform) && candidatePlatform === identity.platform ? 1 : 0;
   return titleScore * 0.82 + accountScore * 0.13 + platformScore * 0.05;
+}
+
+function sourceTypeForCandidate(candidate, identity) {
+  const contentKind = ["video", "image_text"].includes(candidate?.contentKind)
+    ? candidate.contentKind
+    : identity?.contentKind;
+  if (contentKind === "image_text") return "article_link";
+  if (contentKind === "video") return "video_link";
+  return isVideoUrl(candidate?.url) ? "video_link" : "article_link";
+}
+
+function isKnownPlatform(value) {
+  return ["bilibili", "douyin", "xiaohongshu"].includes(String(value || ""));
+}
+
+function normalizeEnabledPlatforms(platforms) {
+  const values = Array.isArray(platforms) ? platforms : [];
+  return [...new Set(values.map((item) => String(item || "").trim().toLowerCase()).filter(isKnownPlatform))];
+}
+
+function platformLabel(platform) {
+  return {
+    bilibili: "B站",
+    douyin: "抖音",
+    xiaohongshu: "小红书"
+  }[platform] || "未知平台";
 }
 
 function textSimilarity(left, right) {

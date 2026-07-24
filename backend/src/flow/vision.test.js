@@ -17,6 +17,7 @@ test("sends the screenshot directly to the configured vision model", async () =>
       request = input;
       return {
         platform: "bilibili",
+        contentKind: "video",
         title: "如何建立长期记忆",
         account: "学习博主",
         timestampSeconds: 42,
@@ -33,12 +34,14 @@ test("sends the screenshot directly to the configured vision model", async () =>
   assert.match(request.imageDataUrl, /^data:image\/png;base64,/);
   assert.equal(result.provider, "qwen-vision");
   assert.equal(result.identity.platform, "bilibili");
+  assert.equal(result.identity.contentKind, "video");
   assert.equal(result.identity.timestampSeconds, 42);
 });
 
-test("normalizes uncertain platforms without inventing source details", () => {
+test("normalizes Douyin screenshots without inventing source details", () => {
   const identity = normalizeScreenshotIdentity({
     platform: "douyin",
+    contentKind: "video",
     title: "可见标题",
     account: "",
     timestampSeconds: "invalid",
@@ -46,7 +49,8 @@ test("normalizes uncertain platforms without inventing source details", () => {
     visibleTextLines: ["可见标题"],
     confidence: 2
   });
-  assert.equal(identity.platform, "unknown");
+  assert.equal(identity.platform, "douyin");
+  assert.equal(identity.contentKind, "video");
   assert.equal(identity.timestampSeconds, null);
   assert.equal(identity.confidence, 1);
 });
@@ -54,6 +58,7 @@ test("normalizes uncertain platforms without inventing source details", () => {
 test("allows an unknown platform without inventing a title", () => {
   const identity = normalizeScreenshotIdentity({
     platform: "unknown",
+    contentKind: "unknown",
     title: "",
     account: "",
     timestampSeconds: null,

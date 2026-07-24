@@ -26,3 +26,17 @@ test("service health exposes production-critical V2 capabilities", () => {
   assert.equal(capabilities.sources.sourceEnrichment.blocking, false);
   assert.equal(capabilities.sources.sourceEnrichment.platforms.xiaohongshu.enabled, true);
 });
+
+test("enables all completed screenshot adapters by default", () => {
+  const capabilities = buildServiceCapabilities({});
+  assert.equal(capabilities.screenshotCapture.platforms.bilibili.enabled, true);
+  assert.equal(capabilities.screenshotCapture.platforms.douyin.enabled, true);
+  assert.equal(capabilities.screenshotCapture.platforms.xiaohongshu.enabled, true);
+});
+
+test("allows deployments to disable every screenshot adapter explicitly", () => {
+  const capabilities = buildServiceCapabilities({ CAPTURE_PLATFORMS: "" });
+  assert.equal(capabilities.screenshotCapture.platforms.bilibili.enabled, false);
+  assert.equal(capabilities.screenshotCapture.platforms.douyin.enabled, false);
+  assert.equal(capabilities.screenshotCapture.platforms.xiaohongshu.enabled, false);
+});
