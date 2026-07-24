@@ -186,6 +186,7 @@ struct V2ScreenshotAwakeningFlowView: View {
     @State private var masteryBefore = V2MemoryMasteryStage.sealed
     @State private var masteryAfter = V2MemoryMasteryStage.sealed
     @State private var currentSchedule: ImageFlowReviewSchedule?
+    @State private var presentationReviewCycleKey = ""
     @State private var pendingAssessment: V2PendingScreenshotAssessment?
     @State private var variantFeedback = ""
     @State private var assessmentError = ""
@@ -201,6 +202,7 @@ struct V2ScreenshotAwakeningFlowView: View {
     @AppStorage("recallo.v06.scratchPaths") private var persistedScratchPaths = ""
     @AppStorage("recallo.v06.coveredCells") private var persistedCoveredCells = ""
     @AppStorage("recallo.v06.assessedReviewCycles") private var persistedAssessedReviewCycles = ""
+    @AppStorage("recallo.v06.presentationReviewCycleKey") private var persistedPresentationReviewCycleKey = ""
     @AppStorage("recallo.v06.assessment") private var persistedAssessment = ""
     @AppStorage("recallo.v06.masteryBefore") private var persistedMasteryBefore = 0
     @AppStorage("recallo.v06.masteryAfter") private var persistedMasteryAfter = 0
@@ -248,6 +250,9 @@ struct V2ScreenshotAwakeningFlowView: View {
         .task(id: summonTaskID) {
             guard phase == .summoning else { return }
             currentSchedule = currentCard.schedule
+            if presentationReviewCycleKey.isEmpty {
+                presentationReviewCycleKey = currentCard.reviewCycleKey(scheduleOverride: currentSchedule)
+            }
             summonStage = .compress
             if reduceMotion {
                 try? await Task.sleep(nanoseconds: 180_000_000)
@@ -1298,12 +1303,14 @@ struct V2ScreenshotAwakeningFlowView: View {
                     pendingAssessment.attemptId
                 )
                 guard !Task.isCancelled else { return }
+                let canonicalAssessment = response.canonicalAssessment(fallback: pendingAssessment.assessment)
                 currentSchedule = response.schedule
+                assessment = canonicalAssessment
                 if let serverMastery = response.mastery {
                     masteryBefore = V2MemoryMasteryStage(rawServerValue: serverMastery.before)
                         ?? currentCard.masteryStage
                     masteryAfter = V2MemoryMasteryStage(rawServerValue: serverMastery.after)
-                        ?? currentCard.masteryStage.applying(pendingAssessment.assessment)
+                        ?? currentCard.masteryStage.applying(canonicalAssessment)
                 }
                 self.pendingAssessment = nil
                 withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.24)) {
@@ -1338,6 +1345,8 @@ struct V2ScreenshotAwakeningFlowView: View {
             isRevealDragging = false
             assessment = nil
             currentSchedule = session.cards[currentIndex].schedule
+            presentationReviewCycleKey = session.cards[currentIndex]
+                .reviewCycleKey(scheduleOverride: currentSchedule)
             pendingAssessment = nil
             assessmentError = ""
             variantFeedback = ""
@@ -1350,7 +1359,9 @@ struct V2ScreenshotAwakeningFlowView: View {
     }
 
     private var currentReviewCycleKey: String {
-        currentCard.reviewCycleKey(scheduleOverride: currentSchedule)
+        presentationReviewCycleKey.isEmpty
+            ? currentCard.reviewCycleKey(scheduleOverride: currentSchedule)
+            : presentationReviewCycleKey
     }
 
     private var assessedReviewCycles: Set<String> {
@@ -1386,6 +1397,7 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private func persistPresentationState() {
         persistedCardID = currentCard.id
+        persistedPresentationReviewCycleKey = currentReviewCycleKey
         persistedCurrentIndex = currentIndex
         persistedPhase = stablePhase(for: phase).rawValue
         persistedRevealCoverage = Double(revealProgress)
@@ -1407,14 +1419,17 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private func restorePersistedState() {
         let restoredIndex = min(max(0, persistedCurrentIndex), session.cards.count - 1)
-        guard persistedCardID == session.cards[restoredIndex].id else {
-            currentIndex = 0
-            phase = .summoning
-            currentSchedule = currentCard.schedule
+        let restoredCard = session.cards[restoredIndex]
+        guard restoredCard.matchesPersistedPresentation(
+            cardID: persistedCardID,
+            reviewCycleKey: persistedPresentationReviewCycleKey
+        ) else {
+            resetPresentationForCurrentCycle()
             return
         }
 
         currentIndex = restoredIndex
+        presentationReviewCycleKey = persistedPresentationReviewCycleKey
         currentSchedule = persistedScheduleNextReviewAt.isEmpty
             ? currentCard.schedule
             : ImageFlowReviewSchedule(
@@ -1452,8 +1467,31 @@ struct V2ScreenshotAwakeningFlowView: View {
         phaseBeforePause = phase
     }
 
+    private func resetPresentationForCurrentCycle() {
+        currentIndex = 0
+        let card = session.cards[0]
+        currentSchedule = card.schedule
+        presentationReviewCycleKey = card.reviewCycleKey(scheduleOverride: card.schedule)
+        phase = .summoning
+        phaseBeforePause = .recall
+        summonStage = .compress
+        isRevealed = false
+        revealProgress = 0
+        isRevealDragging = false
+        assessment = nil
+        masteryBefore = card.masteryStage
+        masteryAfter = card.masteryStage
+        pendingAssessment = nil
+        assessmentError = ""
+        variantFeedback = ""
+        fuzzyBreathActive = false
+        scratchPaths = []
+        coveredScratchCells = []
+    }
+
     private func clearPersistedPresentation() {
         persistedCardID = ""
+        persistedPresentationReviewCycleKey = ""
         persistedCurrentIndex = 0
         persistedPhase = V2RecallPresentationPhase.home.rawValue
         persistedRevealCoverage = 0

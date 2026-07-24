@@ -85,6 +85,13 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         return "\(id)-\(nextReviewAt)"
     }
 
+    func matchesPersistedPresentation(
+        cardID: String,
+        reviewCycleKey: String
+    ) -> Bool {
+        cardID == id && reviewCycleKey == self.reviewCycleKey()
+    }
+
     func isEligible(for pool: V2MemoryPool, now: Date = Date()) -> Bool {
         guard card.state == .formal, disposition == .createCard else {
             return false
@@ -96,6 +103,39 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
             capturedAt <= now.addingTimeInterval(-30 * 24 * 60 * 60)
         case .fading:
             lastAssessment == .fuzzy || lastAssessment == .forgot
+        }
+    }
+}
+
+extension CaptureMemoryCardAssessmentResponse {
+    func canonicalAssessment(fallback: V2MemoryAssessment) -> V2MemoryAssessment {
+        V2MemoryAssessment(rawValue: assessment.assessment) ?? fallback
+    }
+}
+
+enum V2ScreenshotPersistence {
+    static let keys = [
+        "recallo.v06.currentCardID",
+        "recallo.v06.currentIndex",
+        "recallo.v06.phase",
+        "recallo.v06.revealCoverage",
+        "recallo.v06.isRevealed",
+        "recallo.v06.scratchPaths",
+        "recallo.v06.coveredCells",
+        "recallo.v06.assessedReviewCycles",
+        "recallo.v06.presentationReviewCycleKey",
+        "recallo.v06.assessment",
+        "recallo.v06.masteryBefore",
+        "recallo.v06.masteryAfter",
+        "recallo.v06.scheduleNextReviewAt",
+        "recallo.v06.scheduleIntervalDays",
+        "recallo.v06.scheduleState",
+        "recallo.v06.scheduleStatus"
+    ]
+
+    static func clear(from defaults: UserDefaults = .standard) {
+        for key in keys {
+            defaults.removeObject(forKey: key)
         }
     }
 }

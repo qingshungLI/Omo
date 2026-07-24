@@ -131,6 +131,24 @@ const checks = [
     "Assessment responses may omit mastery for old servers, but server-owned mastery must win when present."
   ),
   check(
+    "capture_assessment_uses_server_canonical_value",
+    source.screenshotMemoryModels.includes("func canonicalAssessment(fallback: V2MemoryAssessment)")
+      && source.v2Root.includes("let canonicalAssessment = response.canonicalAssessment(fallback: assessment)")
+      && source.v2Root.includes("screenshotCards[index].apply(\n                canonicalAssessment,")
+      && source.screenshotAwakeningViews.includes("assessment = canonicalAssessment"),
+    "A repeated attempt must apply the assessment returned by the server, not a conflicting retry value."
+  ),
+  check(
+    "checkpoint_resume_is_scoped_to_input_review_cycle",
+    source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.presentationReviewCycleKey")')
+      && source.screenshotAwakeningViews.includes("persistedPresentationReviewCycleKey = currentReviewCycleKey")
+      && source.screenshotAwakeningViews.includes("restoredCard.matchesPersistedPresentation(")
+      && source.screenshotAwakeningViews.includes("resetPresentationForCurrentCycle()")
+      && source.screenshotMemoryModels.includes("func matchesPersistedPresentation(")
+      && source.apiClientTests.includes("testPresentationResumeRejectsDifferentReviewCycle"),
+    "Persisted scratch and reveal state must be discarded when the card advances to a different review cycle."
+  ),
+  check(
     "fragments_are_saved_but_never_reviewed",
     source.screenshotMemoryModels.includes("guard card.state == .formal, disposition == .createCard")
       && source.v2Root.includes("guard disposition == .createCard, memoryCard.state == .formal")
@@ -149,11 +167,24 @@ const checks = [
     "Knowledge-library deletion must be confirmed and local state may change only after a successful DELETE response."
   ),
   check(
+    "account_deletion_clears_capture_state_before_refresh",
+    /_ = try await apiClient\.deleteAccount\(\)[\s\S]*?clearCaptureMemoryStateAfterAccountDeletion\(\)[\s\S]*?await refreshBackendContentAfterAccountChange\(\)/.test(source.v2Root)
+      && /clearCaptureMemoryStateAfterAccountDeletion\(\)[\s\S]*?screenshotAnalysisTask\?\.cancel\(\)[\s\S]*?screenshotCards\.removeAll\(\)[\s\S]*?screenshotDrawSession = nil[\s\S]*?V2ScreenshotPersistence\.clear\(\)/.test(source.v2Root)
+      && source.screenshotMemoryModels.includes('"recallo.v06.scratchPaths"')
+      && source.screenshotMemoryModels.includes('"recallo.v06.assessedReviewCycles"')
+      && source.screenshotMemoryModels.includes('"recallo.v06.presentationReviewCycleKey"')
+      && source.apiClientTests.includes("testAccountDeletionClearsPersistedScreenshotRecallState"),
+    "A successful account deletion must erase in-memory and persisted capture state before any best-effort refresh."
+  ),
+  check(
     "ios_capture_contract_tests_cover_new_boundaries",
     source.apiClientTests.includes("testOptionalScheduleProducesStableInitialReviewCycleKey")
       && source.apiClientTests.includes("testServerMasteryOverridesLegacyClientProgression")
       && source.apiClientTests.includes("testFragmentsNeverEnterFormalReviewPools")
       && source.apiClientTests.includes("testDecodesCaptureMemoryCardDeletionContract")
+      && source.apiClientTests.includes("canonicalAssessment(fallback: .forgot)")
+      && source.apiClientTests.includes("testPresentationResumeRejectsDifferentReviewCycle")
+      && source.apiClientTests.includes("testAccountDeletionClearsPersistedScreenshotRecallState")
       && source.apiClientTests.includes("XCTAssertNil(response.mastery)"),
     "Swift contract tests must retain optional schedule, server mastery, legacy response, fragment eligibility, and delete decoding coverage."
   ),

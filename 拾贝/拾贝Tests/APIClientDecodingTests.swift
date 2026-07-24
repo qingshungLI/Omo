@@ -634,7 +634,7 @@ final class APIClientDecodingTests: XCTestCase {
                 "attemptId": "attempt-server-mastery",
                 "assessment": "remembered",
                 "assessedAt": "2026-07-25T10:00:00.000Z",
-                "repeated": false
+                "repeated": true
               },
               "mastery": {
                 "before": "awakened",
@@ -656,13 +656,16 @@ final class APIClientDecodingTests: XCTestCase {
             card: makeScreenshotMemoryCard(id: "capture-card-1"),
             screenshotData: Data()
         )
-        card.apply(.remembered, schedule: response.schedule, serverMastery: response.mastery)
+        let canonicalAssessment = response.canonicalAssessment(fallback: .forgot)
+        card.apply(canonicalAssessment, schedule: response.schedule, serverMastery: response.mastery)
 
         XCTAssertEqual(response.mastery?.before, "awakened")
         XCTAssertEqual(response.mastery?.after, "solidified")
         XCTAssertEqual(card.masteryStage, .solidified)
         XCTAssertEqual(card.successfulRecallCount, 7)
         XCTAssertEqual(card.reviewCount, 11)
+        XCTAssertEqual(card.lastAssessment, .remembered)
+        XCTAssertEqual(canonicalAssessment, .remembered)
         XCTAssertEqual(V2MemoryMasteryStage(rawServerValue: "stable"), .solidified)
     }
 
@@ -674,6 +677,48 @@ final class APIClientDecodingTests: XCTestCase {
 
         XCTAssertEqual(card.reviewCycleKey(), "unscheduled-initial")
         XCTAssertEqual(card.reviewCycleKey(), card.reviewCycleKey())
+    }
+
+    func testPresentationResumeRejectsDifferentReviewCycle() {
+        let initial = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "cycle-card"),
+            screenshotData: Data(),
+            schedule: schedule(at: Date(timeIntervalSince1970: 2_000_000_000), days: 1)
+        )
+        let persistedKey = initial.reviewCycleKey()
+        let nextCycle = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "cycle-card"),
+            screenshotData: Data(),
+            schedule: schedule(at: Date(timeIntervalSince1970: 2_000_086_400), days: 3)
+        )
+
+        XCTAssertTrue(initial.matchesPersistedPresentation(
+            cardID: initial.id,
+            reviewCycleKey: persistedKey
+        ))
+        XCTAssertFalse(nextCycle.matchesPersistedPresentation(
+            cardID: initial.id,
+            reviewCycleKey: persistedKey
+        ))
+    }
+
+    func testAccountDeletionClearsPersistedScreenshotRecallState() throws {
+        let suiteName = "recallo.tests.account-deletion.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        for key in V2ScreenshotPersistence.keys {
+            defaults.set("private-capture-state", forKey: key)
+        }
+
+        V2ScreenshotPersistence.clear(from: defaults)
+
+        XCTAssertFalse(V2ScreenshotPersistence.keys.isEmpty)
+        for key in V2ScreenshotPersistence.keys {
+            XCTAssertNil(defaults.object(forKey: key), key)
+        }
+        XCTAssertTrue(V2ScreenshotPersistence.keys.contains("recallo.v06.scratchPaths"))
+        XCTAssertTrue(V2ScreenshotPersistence.keys.contains("recallo.v06.presentationReviewCycleKey"))
+        XCTAssertTrue(V2ScreenshotPersistence.keys.contains("recallo.v06.assessedReviewCycles"))
     }
 
     func testDecodesCaptureAnalysisV2WithTypedVariantsAndPartialSource() throws {

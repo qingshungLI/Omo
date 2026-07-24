@@ -1681,9 +1681,10 @@ struct V2RootView: View {
             assessment: assessment.rawValue,
             attemptId: attemptID
         )
+        let canonicalAssessment = response.canonicalAssessment(fallback: assessment)
         if let index = screenshotCards.firstIndex(where: { $0.id == cardID }) {
             screenshotCards[index].apply(
-                assessment,
+                canonicalAssessment,
                 schedule: response.schedule,
                 serverMastery: response.mastery
             )
@@ -1854,6 +1855,7 @@ struct V2RootView: View {
         accountMessage = ""
         do {
             _ = try await apiClient.deleteAccount()
+            clearCaptureMemoryStateAfterAccountDeletion()
             account = nil
             accountMessage = "账号数据已删除，当前设备会继续以匿名模式使用。"
             await refreshBackendContentAfterAccountChange()
@@ -1861,6 +1863,16 @@ struct V2RootView: View {
             accountMessage = userFacingErrorMessage(error, fallback: "删除账号失败，请稍后重试。")
         }
         isAccountLoading = false
+    }
+
+    private func clearCaptureMemoryStateAfterAccountDeletion() {
+        screenshotAnalysisTask?.cancel()
+        screenshotAnalysisTask = nil
+        screenshotCards.removeAll()
+        screenshotDrawSession = nil
+        screenshotAnalysisState = .idle
+        pendingAIProcessingConsent = nil
+        V2ScreenshotPersistence.clear()
     }
 
     @MainActor
