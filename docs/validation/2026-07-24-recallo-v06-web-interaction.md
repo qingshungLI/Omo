@@ -2,7 +2,7 @@
 
 Validation date: 2026-07-24
 
-Execution environment: `bridge-amax:/data1/yuxiao/recallo-v062-kimi`
+Final execution environment: `bridge-amax:/data1/yuxiao/recallo-v062-integration`
 
 ## DECISIONS
 
@@ -42,12 +42,18 @@ PASS inline-script-parse 2/2
 
 ```text
 PASS {
+  "viewport": "375x812",
   "overflow": 0,
+  "keyboard": true,
+  "touch": true,
+  "mouseButtons": true,
   "firstMs": 1450,
   "nextMs": 700,
   "reducedMs": 180,
-  "coverageRestored": 0.14285714285714285
+  "restoredCoverage": 0.14285714285714285,
+  "completedAndIncompleteStow": true,
+  "threeTabs": true
 }
 ```
 
-The browser flow covered keyboard summon, scratch reveal, remembered/fuzzy feedback, checkpoint, next card, completed stow, incomplete stow, three-tab navigation, reload restoration, and Reduce Motion.
+The browser flow covered mouse, keyboard, and touch completion paths; scratch reveal; remembered, fuzzy, and forgotten feedback; checkpoint; next card; completed stow; incomplete stow; three-tab navigation; reload restoration; and Reduce Motion.
