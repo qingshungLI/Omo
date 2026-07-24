@@ -12,7 +12,7 @@
   -> iOS 完成判断题/选择题并记录错题
 ```
 
-当前生产链路没有 Claude。截图流用于快速收藏：OCR 只取标题、博主和播放位置；TikHub 严格核对来源后，字幕优先、ASR 兜底，分别生成截图附近的记忆卡和全片概览。
+当前生产链路没有 Claude。截图流第一阶段只支持 B站：Qwen 视觉模型直接读取原图中的标题、UP主、字幕和播放位置；TikHub 严格核对来源后，字幕优先、ASR 兜底，分别生成截图附近的记忆卡和全片概览。其他平台 adapter 保留扩展边界，但默认不启用。
 
 ## 目录
 
@@ -35,8 +35,9 @@ QWEN_API=replace_me
 BASE_URL=https://example.com/v1
 AI_MODEL=qwen3.7-plus-2026-05-26
 
-# 可选：TikHub 用于抖音、小红书等平台元数据/媒体地址
+# B站截图来源恢复
 TIKHUB_API_KEY=
+CAPTURE_PLATFORMS=bilibili
 VIDEO_LINK_ENABLED=1
 
 # 默认关闭。只有字幕无法表达关键画面时再显式开启。
@@ -53,7 +54,7 @@ npm run check
 
 后端默认地址为 `http://127.0.0.1:5173`。正式 iOS 工程是 `拾贝/拾贝.xcodeproj`。
 
-本地截图流程演示页是 `http://127.0.0.1:5173/demo`。上传截图后会调用同一个 `POST /api/sources/image-flow` 接口；没有找到标题和博主均可信的 TikHub 结果时，流程会停止，不会生成错误卡片。
+本地截图流程演示页是 `http://127.0.0.1:5173/demo`。上传原图后会调用同一个 `POST /api/sources/image-flow` 接口；图片直接发送给配置的 Qwen 视觉模型，不经过 Apple Vision 或 Paddle OCR。没有找到标题和 UP主均可信的 B站结果时，流程会停止，不会生成错误卡片。
 
 部署后请设置 `SHIBEI_PUBLIC_BASE_URL=https://你的后端域名`。无字幕长视频时，后端会下载音频，生成一个仅供 Qwen ASR 读取的短期 HTTPS 地址；转写结束立即失效。本地 `localhost` 不会公开临时媒体，仍使用本地 Whisper 兜底。
 

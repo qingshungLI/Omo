@@ -92,7 +92,7 @@
       <div class="brand"><span class="mark">拾</span>拾贝</div>
       <p class="eyebrow">截图收藏</p>
       <h1>把当下看到的内容，变成以后记得住的内容。</h1>
-      <p class="hint">上传平台截图。服务会提取标题、博主与播放位置，严格匹配来源后生成复习。</p>
+      <p class="hint">上传 B站截图。Qwen 会读取标题、UP主与播放位置，严格匹配来源后生成复习。</p>
       <label class="upload" for="imageInput">选择截图<input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp"></label>
       <p id="fileName" class="file-name">尚未选择文件</p>
       <button id="submit" class="primary" type="button" disabled>开始整理</button>
@@ -106,8 +106,8 @@
       <div class="topline"><p>截图 → 精确来源 → 可复习的记忆点</p><span id="status" class="status">等待截图</span></div>
       <section id="empty" class="empty">
         <h2>从一张截图开始</h2>
-        <p>优先处理 B 站、抖音、小红书、YouTube 等内容页。截图清楚包含标题和博主时，来源匹配更稳定。</p>
-        <div class="placeholder"><div>OCR 只提取<br>标题 · 博主 · 时间</div><div>严格匹配后才继续<br>避免把错内容存进来</div><div>截图附近的要点<br>与全片知识地图分开保存</div></div>
+        <p>当前版本只处理 B站内容页。截图清楚包含标题和 UP主时，来源匹配更稳定。</p>
+        <div class="placeholder"><div>视觉模型读取<br>标题 · UP主 · 时间</div><div>严格匹配后才继续<br>避免把错内容存进来</div><div>截图附近的要点<br>与全片知识地图分开保存</div></div>
       </section>
       <section id="result" class="result" aria-live="polite">
         <div class="source"><div><h2 id="sourceTitle"></h2><p id="sourceMeta"></p></div><a id="sourceLink" target="_blank" rel="noreferrer">打开原内容 ↗</a></div>
@@ -150,7 +150,7 @@
 
     submit.addEventListener('click', async () => {
       if (!imageData) return;
-      setBusy(true, '正在识别截图');
+      setBusy(true, '正在理解 B站截图');
       empty.style.display = 'none'; result.style.display = 'none'; hideNotice();
       try {
         const response = await fetch(imageFlowUrl, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ imageBase64:imageData, async:true }) });

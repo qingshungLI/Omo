@@ -7,19 +7,39 @@ export async function searchLinks(query, {
   timeoutMs = Number(process.env.SEARCH_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
   apiUrl = process.env.SEARCH_API_URL || "",
   tikhubApiKey = process.env.TIKHUB_API_KEY || "",
-  tikhubBaseUrl = process.env.TIKHUB_BASE_URL || DEFAULT_TIKHUB_BASE_URL
+  tikhubBaseUrl = process.env.TIKHUB_BASE_URL || DEFAULT_TIKHUB_BASE_URL,
+  enabledPlatforms = enabledCapturePlatforms(process.env.CAPTURE_PLATFORMS)
 } = {}) {
   const cleanQuery = String(query || "").trim();
   if (!cleanQuery) return { provider: "none", query: "", results: [] };
   if (apiUrl) return callGenericSearch(cleanQuery, { apiUrl, maxResults, fetchImpl, timeoutMs });
-  if (tikhubApiKey) return callTikHub(cleanQuery, { apiKey: tikhubApiKey, baseUrl: tikhubBaseUrl, maxResults, fetchImpl, timeoutMs });
+  if (tikhubApiKey) {
+    return callTikHub(cleanQuery, {
+      apiKey: tikhubApiKey,
+      baseUrl: tikhubBaseUrl,
+      maxResults,
+      fetchImpl,
+      timeoutMs,
+      enabledPlatforms
+    });
+  }
   if (process.env.TAVILY_API_KEY) return callTavily(cleanQuery, { maxResults, fetchImpl, timeoutMs });
   if (process.env.SERPER_API_KEY) return callSerper(cleanQuery, { maxResults, fetchImpl, timeoutMs });
   return { provider: "none", query: cleanQuery, results: [], errorCode: "search_provider_missing" };
 }
 
 async function callTikHub(query, options) {
-  const platforms = detectTikHubSearchPlatforms(query);
+  const enabled = new Set(normalizeEnabledPlatforms(options.enabledPlatforms));
+  const platforms = detectTikHubSearchPlatforms(query).filter((platform) => enabled.has(platform));
+  if (platforms.length === 0) {
+    return {
+      provider: "tikhub",
+      query,
+      platforms: [],
+      results: [],
+      errorCode: "platform_not_enabled"
+    };
+  }
   const settled = await Promise.allSettled(
     platforms.map((platform) => callTikHubPlatform(platform, query, options))
   );
@@ -76,6 +96,23 @@ function detectTikHubSearchPlatforms(query) {
   if (/小红书|xiaohongshu|xhs/i.test(value)) return ["xiaohongshu"];
   if (/抖音|douyin/i.test(value)) return ["douyin"];
   return ["bilibili", "douyin", "xiaohongshu"];
+}
+
+export function enabledCapturePlatforms(value = process.env.CAPTURE_PLATFORMS) {
+  const platforms = String(value || "bilibili")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  return normalizeEnabledPlatforms(platforms);
+}
+
+function normalizeEnabledPlatforms(platforms) {
+  const supported = new Set(["bilibili", "douyin", "xiaohongshu"]);
+  return [...new Set(
+    (Array.isArray(platforms) ? platforms : [])
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter((item) => supported.has(item))
+  )];
 }
 
 function normalizeTikHubResults(platform, payload) {

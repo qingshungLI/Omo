@@ -1,4 +1,4 @@
-import { recognizeImage } from "./ocr.js";
+import { analyzeScreenshotImage } from "./vision.js";
 import { searchLinks } from "./search.js";
 import { extractFocusedSourceContent, isVideoUrl } from "./source.js";
 import { generateQuickReviewPath, generateVideoOverview } from "./review.js";
@@ -6,6 +6,7 @@ import { generateQuickReviewPath, generateVideoOverview } from "./review.js";
 export async function runImageFlow({
   imagePath = "",
   imageBase64 = "",
+  mimeType = "",
   ocrText = "",
   ocrLines = [],
   sourceUrl = "",
@@ -13,25 +14,41 @@ export async function runImageFlow({
   includeDetails = false,
   onProgress = null,
   searcher = searchLinks,
-  ocr = recognizeImage,
+  analyzeImage = analyzeScreenshotImage,
   extract = extractFocusedSourceContent,
   generate = generateQuickReviewPath,
   generateOverview = generateVideoOverview
 } = {}) {
   const flowStartedAt = Date.now();
-  reportProgress(onProgress, { stage: "ocr", message: "正在识别截图中的标题与博主", percent: 5 });
+  reportProgress(onProgress, { stage: "vision", message: "正在理解 B站截图中的标题与 UP主", percent: 5 });
   const timings = {};
-  const inputStartedAt = Date.now();
-  const path = imagePath || (imageBase64 ? await materializeImage(imageBase64) : "");
-  timings.inputPreparationMs = Date.now() - inputStartedAt;
-  if (!path && !ocrText) throw new Error("缺少截图内容或 OCR 文本。");
-  const ocrStartedAt = Date.now();
-  const ocrResult = ocrText
-    ? { provider: "apple-vision", text: String(ocrText).trim(), lines: Array.isArray(ocrLines) && ocrLines.length > 0 ? ocrLines : String(ocrText).split(/\r?\n/) }
-    : await ocr(path);
-  timings.ocrMs = Date.now() - ocrStartedAt;
-  const identity = extractScreenshotIdentity(ocrResult.lines || ocrResult.text);
-  reportProgress(onProgress, { stage: "search", message: "截图识别完成，正在用 TikHub 核对来源", percent: 20 });
+  if (!imagePath && !imageBase64 && !ocrText) throw flowError("screenshot_image_missing", "缺少截图内容。");
+  const analysisStartedAt = Date.now();
+  const captureAnalysis = ocrText
+    ? buildProvidedTextAnalysis(ocrText, ocrLines)
+    : await analyzeImage({ imagePath, imageBase64, mimeType });
+  timings.visionMs = Date.now() - analysisStartedAt;
+  const identity = captureAnalysis.identity || extractScreenshotIdentity(captureAnalysis.lines || captureAnalysis.text);
+  const sourceIsBilibili = isBilibiliUrl(sourceUrl);
+  if (sourceUrl && !sourceIsBilibili) {
+    timings.totalMs = Date.now() - flowStartedAt;
+    return {
+      status: "platform_not_supported",
+      message: "当前版本只接受 B站来源链接。",
+      capture: serializeCaptureAnalysis(captureAnalysis, identity),
+      timings
+    };
+  }
+  if (!sourceIsBilibili && captureAnalysis.provider !== "provided-text" && identity.platform !== "bilibili") {
+    timings.totalMs = Date.now() - flowStartedAt;
+    return {
+      status: "platform_not_supported",
+      message: "当前版本先支持 B站截图，其他平台将在后续版本开放。",
+      capture: serializeCaptureAnalysis(captureAnalysis, identity),
+      timings
+    };
+  }
+  reportProgress(onProgress, { stage: "search", message: "截图理解完成，正在用 TikHub 核对 B站来源", percent: 20 });
   const queries = buildSearchQueries(identity);
   const query = queries[0] || "";
   const searchStartedAt = Date.now();
@@ -42,22 +59,17 @@ export async function runImageFlow({
   const search = resolvedSearch.search;
   const candidate = resolvedSearch.candidate;
   const result = {
-    status: "ocr_completed",
-    ocr: {
-      provider: ocrResult.provider,
-      latencyMs: ocrResult.latencyMs || null,
-      fallback: ocrResult.fallback || null,
-      identity
-    },
+    status: "vision_completed",
+    capture: serializeCaptureAnalysis(captureAnalysis, identity),
     query,
     search,
     timings
   };
   if (includeDetails) {
     result.details = {
-      ocr: {
-        text: ocrResult.text || "",
-        lines: Array.isArray(ocrResult.lines) ? ocrResult.lines : []
+      capture: {
+        text: captureAnalysis.text || "",
+        lines: Array.isArray(captureAnalysis.lines) ? captureAnalysis.lines : []
       },
       searchQueries: queries
     };
@@ -68,7 +80,7 @@ export async function runImageFlow({
       ...result,
       status: search.errorCode || "search_match_low_confidence",
       message: search.errorCode
-        ? "已识别截图，但尚未配置可用的搜索 API。"
+        ? "已理解截图，但尚未配置可用的 B站搜索 API。"
         : "没有找到标题和博主均可信的来源链接，已停止生成，避免保存错误内容。"
     };
   }
@@ -130,7 +142,13 @@ export async function runImageFlow({
     result.status = "completed";
     reportProgress(onProgress, { stage: "completed", message: "复习卡已生成", percent: 100 });
   } catch (error) {
-    if (timings.sourceExtractionMs === undefined) timings.sourceExtractionMs = Date.now() - (flowStartedAt + timings.inputPreparationMs + timings.ocrMs + timings.searchMs);
+    if (timings.sourceExtractionMs === undefined) {
+      timings.sourceExtractionMs = Date.now() - (
+        flowStartedAt
+        + timings.visionMs
+        + timings.searchMs
+      );
+    }
     result.error = { code: error?.code || "source_extract_failed", message: error?.message || "来源内容提取失败。", provider: error?.provider || null };
     result.status = result.error.code;
     reportProgress(onProgress, { stage: "failed", message: result.error.message, percent: 100 });
@@ -141,6 +159,29 @@ export async function runImageFlow({
 
 function reportProgress(handler, progress) {
   try { handler?.(progress); } catch { /* progress reporting must not break the flow */ }
+}
+
+function buildProvidedTextAnalysis(ocrText, ocrLines) {
+  const lines = Array.isArray(ocrLines) && ocrLines.length > 0
+    ? ocrLines
+    : String(ocrText || "").split(/\r?\n/);
+  return {
+    provider: "provided-text",
+    model: null,
+    text: String(ocrText || "").trim(),
+    lines,
+    identity: extractScreenshotIdentity(lines),
+    latencyMs: 0
+  };
+}
+
+function serializeCaptureAnalysis(analysis, identity) {
+  return {
+    provider: analysis.provider,
+    model: analysis.model || null,
+    latencyMs: analysis.latencyMs || null,
+    identity
+  };
 }
 
 async function measureAsync(timings, key, operation) {
@@ -254,12 +295,38 @@ function inferPlatform(lines) {
   return "";
 }
 
+function isBilibiliUrl(value) {
+  try {
+    const hostname = new URL(String(value || "")).hostname.toLowerCase();
+    return hostname === "b23.tv"
+      || hostname.endsWith(".b23.tv")
+      || hostname === "bilibili.com"
+      || hostname.endsWith(".bilibili.com");
+  } catch {
+    return false;
+  }
+}
+
 export function pickCandidate(results, identity) {
-  const items = Array.isArray(results) ? results : [];
+  const items = (Array.isArray(results) ? results : [])
+    .filter((item) => candidateMatchesPlatform(item, identity))
+    .filter((item) => candidateMatchesAccount(item, identity));
   const ranked = items.map((item) => ({ ...item, matchScore: scoreCandidate(item, identity) }))
     .sort((a, b) => b.matchScore - a.matchScore);
   const best = ranked[0];
   return best && best.matchScore >= 0.68 ? best : null;
+}
+
+function candidateMatchesPlatform(item, identity) {
+  if (identity?.platform !== "bilibili") return true;
+  return isBilibiliUrl(item?.url);
+}
+
+function candidateMatchesAccount(item, identity) {
+  const account = String(identity?.account || "").trim();
+  if (!account) return true;
+  const candidateText = [item?.account, item?.snippet].filter(Boolean).join(" ");
+  return textSimilarity(candidateText, account) >= 0.45;
 }
 
 function scoreCandidate(item, identity) {
@@ -291,10 +358,8 @@ function ngrams(value) {
   return new Set(Array.from({ length: value.length - 1 }, (_, index) => value.slice(index, index + 2)));
 }
 
-async function materializeImage(imageBase64) {
-  if (!imageBase64) return "";
-  const data = String(imageBase64).replace(/^data:image\/[^;]+;base64,/, "");
-  const path = `/tmp/shibei-image-${Date.now()}.jpg`;
-  await import("node:fs/promises").then(({ writeFile }) => writeFile(path, Buffer.from(data, "base64")));
-  return path;
+function flowError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }

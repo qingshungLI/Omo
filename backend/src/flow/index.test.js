@@ -40,10 +40,21 @@ test("builds bounded title search variants for a platform screenshot", () => {
   ]);
 });
 
-test("returns OCR/search result without a search provider", async () => {
+test("returns visual/search result without a search provider", async () => {
   const result = await runImageFlow({
     imagePath: "/tmp/test.jpg",
-    ocr: async () => ({ provider: "test", lines: ["巫师财经", "中国财经年度盘点Top10"] }),
+    analyzeImage: async () => ({
+      provider: "test-vision",
+      identity: {
+        platform: "bilibili",
+        title: "中国财经年度盘点Top10",
+        account: "巫师财经",
+        timestampSeconds: null,
+        locatorTerms: [],
+        confidence: 0.9
+      },
+      lines: ["巫师财经", "中国财经年度盘点Top10"]
+    }),
     searcher: async (query) => ({ provider: "none", query, results: [], errorCode: "search_provider_missing" })
   });
   assert.equal(result.status, "search_provider_missing");
@@ -105,6 +116,24 @@ test("rejects a search result whose title does not match the screenshot", async 
   assert.equal(result.review, undefined);
 });
 
+test("rejects the same Bilibili title when the UP account does not match", async () => {
+  const result = await runImageFlow({
+    ocrText: "巫师财经\n【巫师】财经跨年：中国财经年度盘点Top10",
+    searcher: async (query) => ({
+      provider: "tikhub",
+      query,
+      results: [{
+        title: "【巫师】财经跨年：中国财经年度盘点Top10",
+        url: "https://www.bilibili.com/video/BVwrong",
+        account: "另一个账号",
+        snippet: "无关账号"
+      }]
+    })
+  });
+  assert.equal(result.status, "search_match_low_confidence");
+  assert.equal(result.link, undefined);
+});
+
 test("returns a timestamp-focused review and a whole-video overview", async () => {
   const result = await runImageFlow({
     includeDetails: true,
@@ -135,11 +164,11 @@ test("returns a timestamp-focused review and a whole-video overview", async () =
   assert.equal(result.status, "completed");
   assert.equal(result.review.summaryCard.text, "核心内容总结");
   assert.equal(result.videoOverview.summary, "全片概览");
-  assert.equal(result.details.ocr.text.includes("财经跨年"), true);
+  assert.equal(result.details.capture.text.includes("财经跨年"), true);
   assert.equal(result.details.source.overviewText.includes("完整视频转写"), true);
   assert.equal(result.details.source.transcriptSegments.length, 1);
   assert.equal(result.details.source.extractionMeta.fastPath, "platform_subtitle");
-  assert.equal(Number.isFinite(result.timings.ocrMs), true);
+  assert.equal(Number.isFinite(result.timings.visionMs), true);
   assert.equal(Number.isFinite(result.timings.searchMs), true);
   assert.equal(Number.isFinite(result.timings.sourceExtractionMs), true);
   assert.equal(Number.isFinite(result.timings.reviewGenerationMs), true);
@@ -223,6 +252,7 @@ test("hydrates a title-less TikHub Bilibili result before strict matching", asyn
 test("normalizes TikHub Douyin video search results", async () => {
   const result = await searchLinks("抖音 AI 学习", {
     tikhubApiKey: "test-key",
+    enabledPlatforms: ["douyin"],
     fetchImpl: async (_url, options) => {
       assert.equal(options.method, "POST");
       return {
@@ -238,4 +268,47 @@ test("normalizes TikHub Douyin video search results", async () => {
   assert.equal(result.provider, "tikhub");
   assert.equal(result.results[0].url, "https://www.douyin.com/video/123456");
   assert.equal(result.results[0].title, "AI 学习方法");
+});
+
+test("keeps non-Bilibili TikHub adapters disabled by default", async () => {
+  let called = false;
+  const result = await searchLinks("抖音 AI 学习", {
+    tikhubApiKey: "test-key",
+    enabledPlatforms: ["bilibili"],
+    fetchImpl: async () => {
+      called = true;
+      return { ok: true, json: async () => ({}) };
+    }
+  });
+  assert.equal(called, false);
+  assert.equal(result.errorCode, "platform_not_enabled");
+  assert.deepEqual(result.platforms, []);
+});
+
+test("uses direct visual identity and rejects unsupported platforms before search", async () => {
+  let searched = false;
+  const result = await runImageFlow({
+    imageBase64: "aGVsbG8=",
+    mimeType: "image/png",
+    analyzeImage: async () => ({
+      provider: "qwen-vision",
+      model: "qwen3.7-plus-2026-05-26",
+      identity: {
+        platform: "unknown",
+        title: "其他平台标题",
+        account: "其他作者",
+        timestampSeconds: null,
+        locatorTerms: [],
+        confidence: 0.8
+      },
+      lines: ["其他平台标题"]
+    }),
+    searcher: async () => {
+      searched = true;
+      return { provider: "tikhub", results: [] };
+    }
+  });
+  assert.equal(searched, false);
+  assert.equal(result.status, "platform_not_supported");
+  assert.equal(result.capture.provider, "qwen-vision");
 });

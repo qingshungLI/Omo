@@ -3,11 +3,17 @@ import { randomUUID } from "node:crypto";
 const jobs = new Map();
 const DEFAULT_TTL_MS = 60 * 60 * 1000;
 
-export function createImageFlowJob(operation, { now = Date.now(), ttlMs = DEFAULT_TTL_MS } = {}) {
+export function createImageFlowJob(operation, {
+  ownerId,
+  now = Date.now(),
+  ttlMs = DEFAULT_TTL_MS
+} = {}) {
+  const normalizedOwnerId = normalizeOwnerId(ownerId);
   purgeImageFlowJobs(now);
   const id = randomUUID();
   const job = {
     id,
+    ownerId: normalizedOwnerId,
     status: "running",
     progress: { stage: "queued", message: "任务已创建", percent: 0 },
     result: null,
@@ -40,10 +46,11 @@ export function createImageFlowJob(operation, { now = Date.now(), ttlMs = DEFAUL
   return serializeImageFlowJob(job);
 }
 
-export function getImageFlowJob(id, { now = Date.now() } = {}) {
+export function getImageFlowJob(id, { ownerId, now = Date.now() } = {}) {
+  const normalizedOwnerId = normalizeOwnerId(ownerId);
   purgeImageFlowJobs(now);
   const job = jobs.get(String(id || ""));
-  return job ? serializeImageFlowJob(job) : null;
+  return job?.ownerId === normalizedOwnerId ? serializeImageFlowJob(job) : null;
 }
 
 export function purgeImageFlowJobs(now = Date.now()) {
@@ -61,4 +68,10 @@ function serializeImageFlowJob(job) {
     createdAt: job.createdAt,
     updatedAt: job.updatedAt
   };
+}
+
+function normalizeOwnerId(value) {
+  const ownerId = String(value || "").trim();
+  if (!ownerId) throw new Error("image flow job requires an owner id");
+  return ownerId;
 }

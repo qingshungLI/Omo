@@ -450,6 +450,7 @@ test("splits long audio and merges concurrent ASR timestamps", async () => {
   const mediaUrls = [];
   const learningSource = await extractVideoLearningSource({
     sourceUrl: "https://www.bilibili.com/video/BV1parallel",
+    maxDurationSeconds: 1_200,
     publicMediaBaseUrl: "https://api.example.com",
     provider: {
       fetchVideoSource: async () => ({

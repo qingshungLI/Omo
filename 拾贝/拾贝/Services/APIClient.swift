@@ -118,8 +118,16 @@ struct APIClient {
         return try await send("/api/sources/preflight", method: "POST", body: request, acceptsFailureBody: true)
     }
 
-    func analyzeImage(ocr: ImageOCRResult, sourceUrl: String? = nil) async throws -> ImageFlowResponse {
-        let request = ImageFlowRequest(ocrText: ocr.keyText, ocrLines: ocr.lines, sourceUrl: sourceUrl)
+    func analyzeBilibiliScreenshot(
+        imageData: Data,
+        mimeType: String = "image/jpeg",
+        sourceUrl: String? = nil
+    ) async throws -> ImageFlowResponse {
+        let request = ImageFlowRequest(
+            imageBase64: imageData.base64EncodedString(),
+            mimeType: mimeType,
+            sourceUrl: sourceUrl
+        )
         return try await send("/api/sources/image-flow", method: "POST", body: request, acceptsFailureBody: true)
     }
 
@@ -564,8 +572,8 @@ struct ChapterCreateRequest: Codable {
 }
 
 struct ImageFlowRequest: Codable {
-    var ocrText: String
-    var ocrLines: [String]
+    var imageBase64: String
+    var mimeType: String
     var sourceUrl: String?
 }
 

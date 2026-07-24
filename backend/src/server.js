@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, normalize, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import "./env.js";
 import { STATUS_TEXT } from "./generation/types.js";
@@ -259,21 +259,23 @@ async function handleImageFlow(req, res) {
   const body = await readBody(req);
   const input = {
     imageBase64: body.imageBase64 || body.image || "",
+    mimeType: body.mimeType || "",
     imagePath: process.env.NODE_ENV === "development" ? body.imagePath || "" : "",
-    ocrText: body.ocrText || "",
-    ocrLines: body.ocrLines || [],
     sourceUrl: body.sourceUrl || "",
     publicMediaBaseUrl: process.env.SHIBEI_PUBLIC_BASE_URL || requestBaseUrl(req),
     includeDetails: body.includeDetails === true
   };
   if (body.async === true) {
-    const job = createImageFlowJob((onProgress) => runImageFlow({ ...input, onProgress }));
+    const job = createImageFlowJob(
+      (onProgress) => runImageFlow({ ...input, onProgress }),
+      { ownerId: getDeviceId(req) }
+    );
     sendJson(res, 202, job);
     return;
   }
   try {
     const result = await runImageFlow(input);
-    sendJson(res, result.status === "completed" || result.status === "ocr_completed" ? 200 : 422, result);
+    sendJson(res, result.status === "completed" || result.status === "vision_completed" ? 200 : 422, result);
   } catch (error) {
     sendJson(res, 422, {
       status: "failed",
@@ -2283,7 +2285,7 @@ const server = createServer(async (req, res) => {
 
   const imageFlowJobMatch = pathname.match(/^\/api\/sources\/image-flow\/jobs\/([0-9a-f-]{36})$/i);
   if (req.method === "GET" && imageFlowJobMatch) {
-    const job = getImageFlowJob(imageFlowJobMatch[1]);
+    const job = getImageFlowJob(imageFlowJobMatch[1], { ownerId: getDeviceId(req) });
     sendJson(res, job ? 200 : 404, job || { errorCode: "image_flow_job_not_found", message: "任务不存在或已过期。" });
     return;
   }
