@@ -10,7 +10,7 @@
 >
 > 当前执行路线：[`roadmap-recallo-2-10h-mvp-v0.2.md`](./roadmap-recallo-2-10h-mvp-v0.2.md)
 >
-> 2026-07-25 集成注记：M0 的代码侧 secret gates 与加密备份已完成，但外部 key 轮换、旧 key 失效验证和 history cleanup 仍阻断；M1 已完成版本化迁移与首个持久实体纵切片，但 durable job、完整 V3 API 和 Gate B 仍未完成。M0、M1 均不得标记为完成。
+> 2026-07-25 集成注记：实现验证基线 `9436bbb9552f06c07d4e0c71c5790cee7054d209` 上，Backend 167 / 167、Security 17 / 17、UI guard 30 / 30、iOS guard 8 / 8 通过。M0 的代码侧 secret gates 与加密备份已完成，但外部 key 轮换、旧 key 失效验证和 history cleanup 仍阻断；M1 已完成版本化迁移、首个持久实体纵切片与 migration 002 epoch 删除竞态围栏，iOS 也完成 canonical assessment、review-cycle 隔离和账号删除后的截图召回状态清理，但 durable job、完整 V3 API、live Postgres、Xcode/Simulator、真实 API 验证和 Gate B 仍未完成。M0、M1 均不得标记为完成。
 
 ## 1. Roadmap 目标
 
@@ -145,10 +145,11 @@ Alpha 的判断标准不是页面数量，而是这条链路可恢复、可验�
 
 ### 5.3 后端工作项
 
-> 状态（2026-07-25）：**Step 1A 代码纵切片已集成，M1 未完成。** 迁移和核心持久实体已落地；进程内 job 尚未 durable 化，完整 `/v3` API、live Postgres 验证和 Gate B 仍待完成。
+> 状态（2026-07-25）：**Step 1A 代码纵切片与确定性删除竞态围栏已集成，M1 未完成。** migration 002 在设备行保留单调 epoch；模型前领取 token，持久化事务锁定并核对 epoch，设备删除和账号多设备删除在同一事务内先递增 epoch 再删除 capture，旧任务明确取消且不得回写。以上由 Fixture/Repository/API 测试覆盖，不代表已经做过 live Postgres 迁移或真实数据库并发验证。进程内 job 尚未 durable 化，完整 `/v3` API、任务恢复和 Gate B 仍待完成。
 
 - [x] 引入版本化数据库迁移机制；
 - [x] 建立首个持久实体纵切片：`Capture`、`EvidenceRegion`、`SourceBinding`、`MemoryCard`、`RecallAttempt` 及必要索引；
+- [x] 建立设备 epoch 持久化围栏，并以确定性测试覆盖任务领取 token、设备/账号删除、旧 token 取消且零卡片回写；
 - [ ] 补齐完整 V3 表、版本实体、抽取会话、反馈实体与索引；
 - [ ] 用 Postgres 持久任务替换 `imageFlowJobs.js` 的进程内 `Map`；
 - [ ] 完成 `pg-boss` spike；
