@@ -1,15 +1,26 @@
 import SwiftUI
 import UIKit
 
+private enum V2ScreenshotSummonPhase: Equatable {
+    case summoning
+    case recall
+    case archived
+}
+
 struct V2ScreenshotAwakeningFlowView: View {
     let session: V2ScreenshotDrawSession
+    let onAssessment: (String, V2MemoryAssessment) -> Void
     let onClose: () -> Void
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
     @State private var currentIndex = 0
+    @State private var phase = V2ScreenshotSummonPhase.summoning
     @State private var isRevealed = false
     @State private var revealProgress: CGFloat = 0
+    @State private var assessment: V2MemoryAssessment?
+    @State private var masteryBefore = V2MemoryMasteryStage.sealed
+    @State private var masteryAfter = V2MemoryMasteryStage.sealed
 
     private var currentCard: V2CapturedMemoryCard {
         session.cards[min(currentIndex, session.cards.count - 1)]
@@ -20,18 +31,37 @@ struct V2ScreenshotAwakeningFlowView: View {
             V2Color.pageGreenBackground
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                topBar
-                ScrollView(showsIndicators: false) {
-                    if currentCard.card.state == .formal {
-                        formalCard
-                    } else {
-                        fragmentCard
+            if phase == .summoning {
+                summonTransition
+                    .transition(.opacity)
+            } else {
+                VStack(spacing: 0) {
+                    topBar
+                    ScrollView(showsIndicators: false) {
+                        if phase == .archived {
+                            archiveLanding
+                        } else if currentCard.card.state == .formal {
+                            formalCard
+                        } else {
+                            fragmentCard
+                        }
                     }
                 }
             }
         }
         .interactiveDismissDisabled()
+        .task(id: currentIndex) {
+            guard phase == .summoning else { return }
+            if reduceMotion {
+                phase = .recall
+                return
+            }
+            try? await Task.sleep(nanoseconds: 850_000_000)
+            guard !Task.isCancelled, phase == .summoning else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                phase = .recall
+            }
+        }
     }
 
     private var topBar: some View {
@@ -43,11 +73,15 @@ struct V2ScreenshotAwakeningFlowView: View {
                     .frame(width: 42, height: 42)
                     .background(Circle().fill(V2Color.surfaceCream))
             }
-            .accessibilityLabel("退出抽卡")
+            .accessibilityLabel("退出召回")
 
             Spacer()
 
-            Text(session.mode == .single ? "唤醒一张记忆" : "\(currentIndex + 1) / \(session.cards.count)")
+            Text(phase == .archived
+                 ? "记忆收藏册"
+                 : session.mode == .single
+                    ? "唤醒一张记忆"
+                    : "\(currentIndex + 1) / \(session.cards.count)")
                 .font(V2Typography.sectionTitle)
                 .foregroundStyle(V2Color.topTitle)
 
@@ -61,12 +95,94 @@ struct V2ScreenshotAwakeningFlowView: View {
         .padding(.bottom, 16)
     }
 
+    private var summonTransition: some View {
+        VStack(spacing: 28) {
+            VStack(spacing: 8) {
+                Text(session.pool.title)
+                    .font(V2Typography.captionEmphasis)
+                    .foregroundStyle(V2Color.textMuted)
+                Text("正在从你的过去召回")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(V2Color.textPrimary)
+            }
+
+            ZStack {
+                ForEach(0..<2, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
+                        .fill(V2Color.surfaceCream.opacity(index == 0 ? 0.5 : 0.72))
+                        .frame(width: 238, height: 318)
+                        .rotationEffect(.degrees(index == 0 ? -6 : 5))
+                        .offset(x: index == 0 ? -16 : 18, y: index == 0 ? 17 : 12)
+                        .v2Shadow()
+                }
+
+                if !reduceMotion {
+                    Capsule()
+                        .fill(rarityColor.opacity(0.34))
+                        .frame(width: 330, height: 10)
+                        .rotationEffect(.degrees(-24))
+                        .offset(x: 75, y: -62)
+                        .blur(radius: 4)
+                        .transition(.opacity)
+                }
+
+                VStack(spacing: 18) {
+                    rarityBadge
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 42, weight: .light))
+                        .foregroundStyle(V2Color.primary)
+                    Text("一段记忆正在苏醒")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(V2Color.textPrimary)
+                    Text(currentCard.masteryStage.title)
+                        .font(V2Typography.caption)
+                        .foregroundStyle(V2Color.textMuted)
+                }
+                .frame(width: 238, height: 318)
+                .background(
+                    RoundedRectangle(cornerRadius: 25, style: .continuous)
+                        .fill(V2Color.surfaceCream)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 25, style: .continuous)
+                                .stroke(rarityColor.opacity(0.56), lineWidth: 1.5)
+                        )
+                        .v2Shadow()
+                )
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.76).combined(with: .opacity))
+            }
+            .frame(height: 350)
+
+            Button("跳过过场") {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                    phase = .recall
+                }
+            }
+            .font(V2Typography.bodySmallEmphasis)
+            .foregroundStyle(V2Color.textSecondary)
+            .accessibilityHint("直接进入主动回忆")
+        }
+        .v2PageColumn()
+    }
+
     private var formalCard: some View {
         VStack(spacing: 18) {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     rarityBadge
                     Spacer()
+                    Text(currentCard.masteryStage.title)
+                        .font(V2Typography.captionEmphasis)
+                        .foregroundStyle(V2Color.primary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule()
+                                .fill(V2Color.pageGreenBackground.opacity(0.45))
+                                .overlay(
+                                    Capsule()
+                                        .stroke(V2Color.primary.opacity(0.35), lineWidth: 1)
+                                )
+                        )
                     sourceStatusLabel
                 }
 
@@ -238,16 +354,20 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .foregroundStyle(V2Color.textSecondary)
 
             HStack(spacing: 8) {
-                assessmentButton("想起来了", color: V2Color.primary)
-                assessmentButton("有点印象", color: Color(hex: 0xD3A34A))
-                assessmentButton("没想起来", color: V2Color.feedbackWrongBorder)
+                assessmentButton("想起来了", assessment: .remembered, color: V2Color.primary)
+                assessmentButton("有点印象", assessment: .fuzzy, color: Color(hex: 0xD3A34A))
+                assessmentButton("没想起来", assessment: .forgot, color: V2Color.feedbackWrongBorder)
             }
         }
     }
 
-    private func assessmentButton(_ title: String, color: Color) -> some View {
+    private func assessmentButton(
+        _ title: String,
+        assessment: V2MemoryAssessment,
+        color: Color
+    ) -> some View {
         Button {
-            advanceOrClose()
+            completeAssessment(assessment)
         } label: {
             Text(title)
                 .font(V2Typography.label)
@@ -264,6 +384,108 @@ struct V2ScreenshotAwakeningFlowView: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    private var archiveLanding: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(V2Color.pageGreenBackground)
+                    Image(systemName: session.pool.symbolName)
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(V2Color.primary)
+                }
+                .frame(width: 76, height: 92)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    rarityBadge
+                    Text(currentCard.card.hiddenSemantic ?? currentCard.card.coreKnowledge)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(V2Color.textPrimary)
+                        .lineLimit(3)
+                    Text("已收入个人收藏")
+                        .font(V2Typography.caption)
+                        .foregroundStyle(V2Color.textMuted)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 19, style: .continuous)
+                    .fill(V2Color.surfaceCream)
+                    .v2Shadow()
+            )
+
+            Text("记忆已修复并入册")
+                .font(.system(size: 25, weight: .bold))
+                .foregroundStyle(V2Color.textPrimary)
+
+            Text(assessment == .remembered
+                 ? "你完成了一次主动重建。它会在新的时间窗口再次出现。"
+                 : "记忆没有被惩罚或摧毁，系统只会让它更早再次出现。")
+                .font(V2Typography.bodySmall)
+                .foregroundStyle(V2Color.textSecondary)
+                .multilineTextAlignment(.center)
+
+            VStack(spacing: 14) {
+                HStack(spacing: 4) {
+                    ForEach(V2MemoryMasteryStage.allCases, id: \.rawValue) { stage in
+                        masteryStep(stage)
+                    }
+                }
+
+                Text("\(masteryBefore.title) → \(masteryAfter.title) · \(assessment == .remembered ? "3 天后再次召回" : "明天优先召回")")
+                    .font(V2Typography.captionEmphasis)
+                    .foregroundStyle(V2Color.primary)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .fill(V2Color.surfaceCream)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .stroke(V2Color.primary.opacity(0.22), lineWidth: 1)
+                    )
+            )
+
+            V2PrimaryActionButton(title: archiveActionTitle) {
+                advanceOrClose()
+            }
+
+            Button("回到首页", action: onClose)
+                .font(V2Typography.bodySmallEmphasis)
+                .foregroundStyle(V2Color.textSecondary)
+        }
+        .v2PageColumn()
+        .padding(.bottom, 36)
+        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func masteryStep(_ stage: V2MemoryMasteryStage) -> some View {
+        VStack(spacing: 6) {
+            Circle()
+                .fill(stage.rawValue <= masteryAfter.rawValue ? V2Color.primary : V2Color.surfaceCream)
+                .overlay(
+                    Circle()
+                        .stroke(
+                            stage.rawValue <= masteryAfter.rawValue
+                                ? V2Color.primary
+                                : V2Color.primary.opacity(0.22),
+                            lineWidth: 2
+                        )
+                )
+                .frame(width: 14, height: 14)
+            Text(stage.title)
+                .font(.system(size: 9, weight: stage == masteryAfter ? .bold : .regular))
+                .foregroundStyle(stage.rawValue <= masteryAfter.rawValue ? V2Color.primary : V2Color.textMuted)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var archiveActionTitle: String {
+        currentIndex + 1 < session.cards.count ? "继续召回" : "完成本次召回"
     }
 
     private var fragmentCard: some View {
@@ -325,6 +547,17 @@ struct V2ScreenshotAwakeningFlowView: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
+    private func completeAssessment(_ value: V2MemoryAssessment) {
+        masteryBefore = currentCard.masteryStage
+        masteryAfter = currentCard.masteryStage.applying(value)
+        assessment = value
+        onAssessment(currentCard.id, value)
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) {
+            phase = .archived
+        }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+    }
+
     private func advanceOrClose() {
         guard currentIndex + 1 < session.cards.count else {
             onClose()
@@ -333,8 +566,10 @@ struct V2ScreenshotAwakeningFlowView: View {
         let animation: Animation? = reduceMotion ? nil : .easeOut(duration: 0.18)
         withAnimation(animation) {
             currentIndex += 1
+            phase = .summoning
             isRevealed = false
             revealProgress = 0
+            assessment = nil
         }
         UISelectionFeedbackGenerator().selectionChanged()
     }

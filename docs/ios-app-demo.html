@@ -340,6 +340,72 @@
       font-size: 14px;
     }
 
+    .memory-pools {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+      margin: auto 0 24px;
+    }
+
+    .memory-pool {
+      min-height: 226px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 17px 8px;
+      border: 1px solid rgba(152, 168, 78, 0.24);
+      border-radius: 19px;
+      color: var(--text);
+      background: rgba(253, 250, 242, 0.7);
+      box-shadow: 0 4px 12px rgba(112, 120, 62, 0.08);
+      cursor: pointer;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .memory-pool:nth-child(1) { transform: rotate(-3deg) translateY(9px); }
+    .memory-pool:nth-child(3) { transform: rotate(3deg) translateY(9px); }
+    .memory-pool:hover { border-color: rgba(152, 168, 78, 0.7); }
+    .memory-pool.selected {
+      border-color: var(--primary);
+      background: var(--cream);
+      box-shadow: 0 7px 20px rgba(112, 120, 62, 0.18);
+      transform: translateY(-5px);
+    }
+
+    .pool-symbol {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(152, 168, 78, 0.28);
+      border-radius: 14px;
+      color: var(--primary);
+      background: rgba(232, 235, 189, 0.42);
+      font-size: 20px;
+    }
+
+    .pool-title {
+      font-size: 14px;
+      font-weight: 750;
+      line-height: 1.25;
+    }
+
+    .pool-copy {
+      min-height: 32px;
+      color: var(--muted);
+      font-size: 9px;
+      line-height: 1.45;
+    }
+
+    .pool-count {
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
     .card-stack {
       position: relative;
       width: 280px;
@@ -752,6 +818,130 @@
       text-align: center;
     }
 
+    .summon-stage {
+      position: relative;
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      padding: 42px 24px 72px;
+      text-align: center;
+    }
+
+    .summon-copy {
+      position: absolute;
+      z-index: 5;
+      top: 40px;
+      left: 24px;
+      right: 24px;
+    }
+
+    .summon-copy p {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .summon-copy h2 {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .summon-stack {
+      position: relative;
+      width: 240px;
+      height: 330px;
+    }
+
+    .summon-shadow-card,
+    .summoned-card {
+      position: absolute;
+      inset: 0;
+      border: 1px solid var(--border);
+      border-radius: 25px;
+      background: var(--cream);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .summon-shadow-card:nth-child(1) {
+      opacity: 0.5;
+      transform: translate(-16px, 17px) rotate(-6deg);
+    }
+
+    .summon-shadow-card:nth-child(2) {
+      opacity: 0.72;
+      transform: translate(18px, 12px) rotate(5deg);
+    }
+
+    .summoned-card {
+      z-index: 3;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      animation: summon-card 780ms cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .summoned-card .rarity {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+    }
+
+    .summoned-card strong {
+      font-size: 21px;
+      line-height: 1.35;
+    }
+
+    .summoned-card span:last-child {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .summon-trail {
+      position: absolute;
+      z-index: 2;
+      width: 330px;
+      height: 10px;
+      top: 44%;
+      left: 43%;
+      border-radius: 999px;
+      background: rgba(79, 135, 185, 0.34);
+      box-shadow: 0 0 24px rgba(79, 135, 185, 0.55);
+      transform: rotate(-24deg);
+      animation: summon-trail 780ms ease-out both;
+    }
+
+    .summon-trail.r { background: rgba(103, 103, 103, 0.26); }
+    .summon-trail.sr { background: rgba(79, 135, 185, 0.36); }
+    .summon-trail.ssr {
+      background: rgba(217, 133, 44, 0.38);
+      box-shadow: 0 0 28px rgba(217, 133, 44, 0.5);
+    }
+
+    .skip-summon {
+      position: absolute;
+      z-index: 6;
+      bottom: 42px;
+      padding: 7px 0;
+      border: 0;
+      border-bottom: 1px solid currentColor;
+      color: var(--text-2);
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    @keyframes summon-card {
+      from { opacity: 0; transform: translate(90px, -52px) rotate(12deg) scale(.72); }
+      to { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); }
+    }
+
+    @keyframes summon-trail {
+      from { opacity: 0; transform: translate(110px, -75px) rotate(-24deg) scaleX(.25); }
+      40% { opacity: 1; }
+      to { opacity: 0; transform: translate(-110px, 55px) rotate(-24deg) scaleX(1); }
+    }
+
     .draw-content {
       padding: 4px 24px 38px;
     }
@@ -807,6 +997,17 @@
       width: 15px;
       height: 15px;
       fill: currentColor;
+    }
+
+    .mastery-chip {
+      margin-left: auto;
+      padding: 5px 9px;
+      border: 1px solid rgba(152, 168, 78, 0.35);
+      border-radius: 999px;
+      color: var(--primary);
+      background: rgba(232, 235, 189, 0.3);
+      font-size: 10px;
+      font-weight: 750;
     }
 
     .prompt-label {
@@ -1026,18 +1227,54 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 42px 34px 70px;
+      padding: 34px 24px 38px;
       text-align: center;
     }
 
-    .complete-content img {
-      width: 166px;
-      height: 166px;
-      object-fit: contain;
+    .archive-card {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 76px 1fr;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 19px;
+      background: var(--cream);
+      box-shadow: var(--soft-shadow);
+      text-align: left;
+      animation: archive-in 380ms cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .archive-thumb {
+      min-height: 90px;
+      display: grid;
+      place-items: center;
+      border-radius: 13px;
+      color: var(--primary);
+      background: var(--page);
+      font-size: 24px;
+    }
+
+    .archive-card h3 {
+      margin: 7px 0 5px;
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .archive-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    @keyframes archive-in {
+      from { opacity: 0; transform: translateY(25px) scale(.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     .complete-content h2 {
-      margin: 22px 0 9px;
+      margin: 18px 0 7px;
       font-size: 25px;
     }
 
@@ -1051,14 +1288,45 @@
 
     .memory-change {
       width: 100%;
-      margin: 27px 0;
-      padding: 15px;
+      margin: 18px 0;
+      padding: 16px;
       border: 1px solid var(--border);
       border-radius: 15px;
       background: var(--cream);
+    }
+
+    .mastery-track {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+    }
+
+    .mastery-step {
+      position: relative;
+      display: grid;
+      gap: 5px;
+      justify-items: center;
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    .mastery-step::before {
+      content: "";
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--border);
+      border-radius: 50%;
+      background: var(--cream);
+    }
+
+    .mastery-step.active {
       color: var(--primary);
-      font-size: 14px;
-      font-weight: 650;
+      font-weight: 750;
+    }
+
+    .mastery-step.active::before {
+      border-color: var(--primary);
+      background: var(--primary);
     }
 
     .complete-actions {
@@ -1169,11 +1437,12 @@
         <span>Recallo · iOS MVP</span>
       </div>
       <h1 id="preview-title">把刷过的内容，变成会再次想起的记忆。</h1>
-      <p>这是当前 iOS 方向的 Web 交互预览。你可以完整体验截图导入、AI 分析、抽卡、拖拽揭晓和记忆自评。</p>
+      <p>这是当前 iOS 方向的 Web 交互预览。你可以从自己的过去选择记忆池，体验召回、主动回忆、修复与入册。</p>
       <ol class="steps">
         <li><span class="step-number">1</span><span>点击手机底部的 <strong>+</strong>，选择自己的截图，或载入内置 B站演示截图。</span></li>
-        <li><span class="step-number">2</span><span>体验一张截图只提炼一个记忆点，降低碎片学习的启动压力。</span></li>
-        <li><span class="step-number">3</span><span>向右拖动卡片上的控制条，主动回忆后再看答案，最后进行自评。</span></li>
+        <li><span class="step-number">2</span><span>选择“今日待唤醒 / 时间胶囊 / 快要遗忘”，召回一定来自自己的内容。</span></li>
+        <li><span class="step-number">3</span><span>先回忆再揭晓；R/SR/SSR 表示内容价值，封存到铭刻表示你的掌握程度。</span></li>
+        <li><span class="step-number">4</span><span>向右拖动卡片上的控制条，主动回忆后再看答案，最后进行自评。</span></li>
       </ol>
       <div class="preview-note">Web 页只演示产品交互，不会上传图片或调用模型；正式 iOS 流程由 Qwen 视觉模型分析内容。</div>
       <button class="reset-button" id="desktop-reset" type="button">重置体验</button>
@@ -1227,19 +1496,54 @@
       }
     ];
 
+    const memoryPools = {
+      due: {
+        title: "今日待唤醒",
+        copy: "今天最值得再次想起",
+        symbol: "✦",
+        cardIndexes: [0, 1, 2]
+      },
+      time_capsule: {
+        title: "时间胶囊",
+        copy: "来自更久以前的自己",
+        symbol: "⌛",
+        cardIndexes: [2, 0]
+      },
+      fading: {
+        title: "快要遗忘",
+        copy: "优先修复模糊的记忆",
+        symbol: "◒",
+        cardIndexes: [1]
+      }
+    };
+
+    const masteryLabels = {
+      sealed: "封存",
+      awakened: "唤醒",
+      solidified: "稳固",
+      engraved: "铭刻"
+    };
+
     const state = {
       screen: "home",
       selectedImageUrl: "",
       selectedFileName: "",
+      selectedPool: "due",
       currentCard: 0,
       drawMode: "single",
       continuousLimit: 1,
+      sessionCards: [0],
+      sessionPosition: 0,
       revealed: false,
       revealProgress: 0,
       lastAssessment: "",
+      masteryByCard: ["sealed", "sealed", "awakened"],
+      masteryBefore: "sealed",
+      masteryAfter: "sealed",
       cardCount: 5,
       toastTimer: null,
-      analysisTimer: null
+      analysisTimer: null,
+      summonTimer: null
     };
 
     const app = document.getElementById("app");
@@ -1254,7 +1558,7 @@
     }
 
     function navItem(tab, label, asset, selectedAsset, extraClass = "") {
-      const selected = state.screen === tab || (tab === "home" && ["draw", "complete"].includes(state.screen));
+      const selected = state.screen === tab || (tab === "home" && ["summon", "draw", "complete"].includes(state.screen));
       const src = `/app-demo-assets/${selected ? selectedAsset : asset}`;
       return `
         <button class="nav-button ${selected ? "active" : ""} ${extraClass}" data-nav="${tab}" type="button" aria-label="${label}">
@@ -1289,6 +1593,20 @@
     }
 
     function homeScreen() {
+      const pools = Object.entries(memoryPools).map(([key, pool]) => `
+        <button
+          class="memory-pool ${state.selectedPool === key ? "selected" : ""}"
+          data-pool="${key}"
+          type="button"
+          aria-pressed="${state.selectedPool === key}"
+        >
+          <span class="pool-symbol" aria-hidden="true">${pool.symbol}</span>
+          <span class="pool-title">${pool.title}</span>
+          <span class="pool-copy">${pool.copy}</span>
+          <span class="pool-count">${pool.cardIndexes.length} 张</span>
+        </button>
+      `).join("");
+      const selectedPool = memoryPools[state.selectedPool];
       return `
         ${statusBar()}
         <section class="screen" data-screen="home">
@@ -1296,23 +1614,15 @@
           <div class="screen-scroll">
             <div class="home-content">
               <h2>今天，唤醒一点记忆</h2>
-              <p class="home-subtitle">从你刷过的内容里，抽一张回来</p>
-              <div class="card-stack" aria-label="待唤醒记忆卡">
-                <div class="stack-card"></div>
-                <div class="stack-card"></div>
-                <div class="stack-card front">
-                  <div class="stack-card-content">
-                    ${icons.sparkle}
-                    <span class="stack-title">记忆卡</span>
-                    <span class="stack-subtitle">轻轻抽取一张</span>
-                  </div>
-                </div>
+              <p class="home-subtitle">从自己的过去，召回一段正在消失的记忆</p>
+              <div class="memory-pools" aria-label="选择记忆池">
+                ${pools}
               </div>
               <div class="button-row">
-                <button class="primary-button" id="draw-one" type="button">抽 1 张</button>
-                <button class="secondary-button" id="draw-many" type="button">连续抽取</button>
+                <button class="primary-button" id="draw-one" type="button">召回 1 张</button>
+                <button class="secondary-button" id="draw-many" type="button">连续召回</button>
               </div>
-              <p class="helper-copy">已收集 ${state.cardCount} 张截图记忆 · 连续抽取也可随时退出</p>
+              <p class="helper-copy">${selectedPool.title} · ${selectedPool.cardIndexes.length} 张可召回 · 连续模式可随时退出</p>
             </div>
           </div>
           <img class="bg-deco left" src="/app-demo-assets/bg-deco-left-hill-plant.svg" alt="">
@@ -1396,10 +1706,38 @@
       `;
     }
 
+    function summonScreen() {
+      const card = cards[state.currentCard];
+      const pool = memoryPools[state.selectedPool];
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="summon">
+          <div class="summon-stage">
+            <div class="summon-copy">
+              <p>${pool.title}</p>
+              <h2>正在从你的过去召回</h2>
+            </div>
+            <div class="summon-stack" aria-label="正在召回一张 ${card.rarity} 记忆卡">
+              <div class="summon-shadow-card"></div>
+              <div class="summon-shadow-card"></div>
+              <div class="summon-trail ${card.rarity.toLowerCase()}"></div>
+              <div class="summoned-card">
+                <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
+                ${icons.sparkle}
+                <strong>一段记忆正在苏醒</strong>
+                <span>${masteryLabels[state.masteryByCard[state.currentCard]]}</span>
+              </div>
+            </div>
+            <button class="skip-summon" id="skip-summon" type="button">跳过过场</button>
+          </div>
+        </section>
+      `;
+    }
+
     function drawScreen() {
       const card = cards[state.currentCard];
       const progressText = state.drawMode === "continuous"
-        ? `${state.currentCard + 1} / ${state.continuousLimit}`
+        ? `${state.sessionPosition + 1} / ${state.continuousLimit}`
         : "唤醒一张记忆";
       const answer = state.revealed
         ? `<div class="answer" id="answer">
@@ -1431,7 +1769,7 @@
         ${statusBar()}
         <section class="screen" data-screen="draw">
           <header class="flow-top">
-            <button class="circle-button" id="close-draw" type="button" aria-label="退出抽卡">${icons.close}</button>
+            <button class="circle-button" id="close-draw" type="button" aria-label="退出召回">${icons.close}</button>
             <div class="top-title">${progressText}</div>
             <span></span>
           </header>
@@ -1440,6 +1778,7 @@
               <article class="memory-card">
                 <div class="card-meta">
                   <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
+                  <span class="mastery-chip">${masteryLabels[state.masteryByCard[state.currentCard]]}</span>
                   <span class="source-status">${icons.seal}演示来源已关联</span>
                 </div>
                 <p class="prompt-label">先别看答案</p>
@@ -1454,21 +1793,38 @@
     }
 
     function completeScreen() {
-      const transition = state.lastAssessment === "想起来了" ? "待唤醒 → 已稳固" : "待唤醒 → 需加固";
+      const card = cards[state.currentCard];
+      const transition = `${masteryLabels[state.masteryBefore]} → ${masteryLabels[state.masteryAfter]}`;
       const detail = state.lastAssessment === "想起来了"
-        ? "这张记忆卡会稍后再出现，帮助你确认它真的留了下来。"
-        : "没关系，系统会缩短它的再次出现间隔。";
+        ? "你完成了一次主动重建。它会在新的时间窗口再次出现。"
+        : "记忆没有被惩罚或摧毁，系统只会让它更早再次出现。";
+      const masteryOrder = ["sealed", "awakened", "solidified", "engraved"];
+      const activeIndex = masteryOrder.indexOf(state.masteryAfter);
+      const masteryTrack = masteryOrder.map((stage, index) =>
+        `<span class="mastery-step ${index <= activeIndex ? "active" : ""}">${masteryLabels[stage]}</span>`
+      ).join("");
+      const hasNext = state.drawMode === "continuous" && state.sessionPosition + 1 < state.continuousLimit;
       return `
         ${statusBar()}
         <section class="screen" data-screen="complete">
           <div class="screen-scroll">
             <div class="complete-content">
-              <img src="/app-demo-assets/mascot-completion.svg" alt="">
-              <h2>这张记忆，收下了</h2>
+              <div class="archive-card">
+                <div class="archive-thumb">${memoryPools[state.selectedPool].symbol}</div>
+                <div>
+                  <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
+                  <h3>${card.answer}</h3>
+                  <p>${card.source} · 已收入个人收藏</p>
+                </div>
+              </div>
+              <h2>记忆已修复并入册</h2>
               <p>${detail}</p>
-              <div class="memory-change">${transition}</div>
+              <div class="memory-change">
+                <div class="mastery-track">${masteryTrack}</div>
+                <p class="helper-copy">${transition} · ${state.lastAssessment === "想起来了" ? "3 天后再次召回" : "明天优先召回"}</p>
+              </div>
               <div class="complete-actions">
-                <button class="primary-button" id="draw-again" type="button">再抽一张</button>
+                <button class="primary-button" id="draw-again" type="button">${hasNext ? "继续召回" : "再召回一张"}</button>
                 <button class="secondary-button" id="back-home" type="button">回到首页</button>
               </div>
             </div>
@@ -1483,6 +1839,7 @@
         home: homeScreen,
         upload: uploadScreen,
         analyzing: analyzingScreen,
+        summon: summonScreen,
         draw: drawScreen,
         complete: completeScreen
       };
@@ -1490,6 +1847,7 @@
       bindCommonEvents();
       if (state.screen === "home") bindHomeEvents();
       if (state.screen === "upload") bindUploadEvents();
+      if (state.screen === "summon") bindSummonEvents();
       if (state.screen === "draw") bindDrawEvents();
       if (state.screen === "complete") bindCompleteEvents();
     }
@@ -1504,8 +1862,18 @@
     }
 
     function bindHomeEvents() {
+      app.querySelectorAll("[data-pool]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.selectedPool = button.dataset.pool;
+          render();
+        });
+      });
       document.getElementById("draw-one").addEventListener("click", () => startDraw("single"));
       document.getElementById("draw-many").addEventListener("click", () => startDraw("continuous"));
+    }
+
+    function bindSummonEvents() {
+      document.getElementById("skip-summon").addEventListener("click", finishSummon);
     }
 
     function bindUploadEvents() {
@@ -1581,7 +1949,16 @@
 
     function bindCompleteEvents() {
       document.getElementById("draw-again").addEventListener("click", () => {
-        state.currentCard = (state.currentCard + 1) % cards.length;
+        const hasNext = state.drawMode === "continuous" && state.sessionPosition + 1 < state.continuousLimit;
+        if (hasNext) {
+          state.sessionPosition += 1;
+          state.currentCard = state.sessionCards[state.sessionPosition];
+          startDraw("continuous", false);
+          return;
+        }
+        const poolCards = memoryPools[state.selectedPool].cardIndexes;
+        const currentPoolPosition = Math.max(0, poolCards.indexOf(state.currentCard));
+        state.currentCard = poolCards[(currentPoolPosition + 1) % poolCards.length];
         startDraw("single", false);
       });
       document.getElementById("back-home").addEventListener("click", () => navigate("home"));
@@ -1589,6 +1966,7 @@
 
     function navigate(target) {
       if (target === "home" || target === "upload") {
+        clearTimeout(state.summonTimer);
         state.screen = target;
         state.revealed = false;
         state.revealProgress = 0;
@@ -1619,16 +1997,32 @@
       state.analysisTimer = setTimeout(() => {
         state.cardCount += 1;
         state.currentCard = 0;
+        state.selectedPool = "due";
         startDraw("single");
       }, 1650);
     }
 
     function startDraw(mode, resetIndex = true) {
+      clearTimeout(state.summonTimer);
       state.drawMode = mode;
-      state.continuousLimit = mode === "continuous" ? cards.length : 1;
-      if (resetIndex) state.currentCard = mode === "continuous" ? 0 : state.currentCard % cards.length;
+      const poolCards = memoryPools[state.selectedPool].cardIndexes;
+      state.sessionCards = mode === "continuous" ? [...poolCards].slice(0, 10) : [poolCards[0]];
+      state.continuousLimit = state.sessionCards.length;
+      if (resetIndex) {
+        state.sessionPosition = 0;
+        state.currentCard = state.sessionCards[0];
+      }
       state.revealed = false;
       state.revealProgress = 0;
+      state.screen = "summon";
+      render();
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      state.summonTimer = setTimeout(finishSummon, reduceMotion ? 20 : 900);
+    }
+
+    function finishSummon() {
+      if (state.screen !== "summon") return;
+      clearTimeout(state.summonTimer);
       state.screen = "draw";
       render();
     }
@@ -1653,16 +2047,19 @@
 
     function assess(value) {
       state.lastAssessment = value;
-      if (state.drawMode === "continuous" && state.currentCard + 1 < state.continuousLimit) {
-        state.currentCard += 1;
-        state.revealed = false;
-        state.revealProgress = 0;
-        render();
-        showToast(`${value} · 下一张`);
-        return;
-      }
+      state.masteryBefore = state.masteryByCard[state.currentCard];
+      state.masteryAfter = nextMastery(state.masteryBefore, value);
+      state.masteryByCard[state.currentCard] = state.masteryAfter;
       state.screen = "complete";
       render();
+    }
+
+    function nextMastery(current, assessment) {
+      if (current === "sealed") return "awakened";
+      if (assessment !== "想起来了") return current;
+      if (current === "awakened") return "solidified";
+      if (current === "solidified") return "engraved";
+      return "engraved";
     }
 
     function showToast(message) {
@@ -1678,17 +2075,24 @@
 
     function resetExperience() {
       clearTimeout(state.analysisTimer);
+      clearTimeout(state.summonTimer);
       if (state.selectedImageUrl) URL.revokeObjectURL(state.selectedImageUrl);
       Object.assign(state, {
         screen: "home",
         selectedImageUrl: "",
         selectedFileName: "",
+        selectedPool: "due",
         currentCard: 0,
         drawMode: "single",
         continuousLimit: 1,
+        sessionCards: [0],
+        sessionPosition: 0,
         revealed: false,
         revealProgress: 0,
         lastAssessment: "",
+        masteryByCard: ["sealed", "sealed", "awakened"],
+        masteryBefore: "sealed",
+        masteryAfter: "sealed",
         cardCount: 5
       });
       render();

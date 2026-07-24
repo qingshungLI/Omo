@@ -8,7 +8,7 @@
 >
 > 目标：做出可以在 iPhone 上完整演示的产品闭环，不在 10 小时内追求生产级可靠性
 >
-> 对应 PRD：[`prd-recallo-2-screenshot-awakening-v0.4.md`](./prd-recallo-2-screenshot-awakening-v0.4.md)
+> 对应 PRD：[`prd-recallo-2-screenshot-awakening-v0.5.md`](./prd-recallo-2-screenshot-awakening-v0.5.md)
 
 ## 1. 10 小时后必须能演示什么
 

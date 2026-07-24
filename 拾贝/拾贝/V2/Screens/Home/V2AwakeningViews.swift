@@ -10,9 +10,11 @@ struct V2AwakeningHomeView: View {
     let onOpenNotifications: () -> Void
     let onOpenProfile: () -> Void
     let screenshotCardCount: Int
-    let onDrawScreenshot: () -> Void
-    let onContinuousScreenshotDraw: () -> Void
+    let screenshotPoolCounts: [V2MemoryPool: Int]
+    let onDrawScreenshot: (V2MemoryPool) -> Void
+    let onContinuousScreenshotDraw: (V2MemoryPool) -> Void
     let onDraw: () -> Void
+    @State private var selectedMemoryPool = V2MemoryPool.due
 
     var body: some View {
         GeometryReader { geometry in
@@ -88,25 +90,38 @@ struct V2AwakeningHomeView: View {
 
                 Spacer(minLength: 24)
 
-                V2MemoryCardStack(isActive: !isLoading)
-                    .frame(width: 280, height: 350)
+                if screenshotCardCount > 0 {
+                    V2MemoryPoolSelector(
+                        selectedPool: $selectedMemoryPool,
+                        counts: screenshotPoolCounts
+                    )
+                    .v2PageColumn()
+                } else {
+                    V2MemoryCardStack(isActive: !isLoading)
+                        .frame(width: 280, height: 350)
+                }
 
                 Spacer(minLength: 20)
 
                 if screenshotCardCount > 0 {
                     HStack(spacing: 12) {
-                        V2PrimaryActionButton(title: "抽 1 张") {
+                        V2PrimaryActionButton(
+                            title: "召回 1 张",
+                            tone: selectedPoolCount > 0 ? .normal : .disabled
+                        ) {
+                            guard selectedPoolCount > 0 else { return }
                             V2AwakeningHaptics.selection()
-                            onDrawScreenshot()
+                            onDrawScreenshot(selectedMemoryPool)
                         }
 
                         Button {
+                            guard selectedPoolCount > 0 else { return }
                             V2AwakeningHaptics.selection()
-                            onContinuousScreenshotDraw()
+                            onContinuousScreenshotDraw(selectedMemoryPool)
                         } label: {
-                            Text("连续抽取")
+                            Text("连续召回")
                                 .font(V2Typography.bodyEmphasis)
-                                .foregroundStyle(V2Color.primary)
+                                .foregroundStyle(selectedPoolCount > 0 ? V2Color.primary : V2Color.textMuted)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 53)
                                 .background(
@@ -119,6 +134,7 @@ struct V2AwakeningHomeView: View {
                                 )
                         }
                         .buttonStyle(.plain)
+                        .disabled(selectedPoolCount == 0)
                     }
                     .v2PageColumn()
                 } else {
@@ -133,7 +149,7 @@ struct V2AwakeningHomeView: View {
                 }
 
                 Text(screenshotCardCount > 0
-                     ? "已收集 \(screenshotCardCount) 张截图记忆 · 连续抽取也可随时退出"
+                     ? "\(selectedMemoryPool.title) · \(selectedPoolCount) 张可召回 · 连续模式可随时退出"
                      : "一张就好，随时可以停下")
                     .font(V2Typography.caption)
                     .foregroundStyle(V2Color.textMuted)
@@ -151,9 +167,13 @@ struct V2AwakeningHomeView: View {
         return response?.hasActiveCard == true ? "继续这张" : "抽一张"
     }
 
+    private var selectedPoolCount: Int {
+        screenshotPoolCounts[selectedMemoryPool, default: 0]
+    }
+
     private var homeSubtitle: String {
         if screenshotCardCount > 0 {
-            return "从你保存过的截图里，随机唤醒一个知识点"
+            return "从自己的过去，召回一段正在消失的记忆"
         }
         if response?.hasActiveCard == true {
             return "这张记忆还在等你"
@@ -182,6 +202,70 @@ struct V2AwakeningHomeView: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+    }
+}
+
+private struct V2MemoryPoolSelector: View {
+    @Binding var selectedPool: V2MemoryPool
+    let counts: [V2MemoryPool: Int]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            ForEach(V2MemoryPool.allCases) { pool in
+                let count = counts[pool, default: 0]
+                Button {
+                    selectedPool = pool
+                } label: {
+                    VStack(spacing: 8) {
+                        Image(systemName: pool.symbolName)
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(V2Color.primary)
+                            .frame(width: 42, height: 42)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(V2Color.pageGreenBackground.opacity(0.58))
+                            )
+
+                        Text(pool.title)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(V2Color.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+
+                        Text(pool.subtitle)
+                            .font(.system(size: 9))
+                            .foregroundStyle(V2Color.textMuted)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .frame(height: 28)
+
+                        Text("\(count) 张")
+                            .font(V2Typography.captionEmphasis)
+                            .foregroundStyle(count > 0 ? V2Color.primary : V2Color.textMuted)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+                    .padding(.horizontal, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 19, style: .continuous)
+                            .fill(V2Color.surfaceCream.opacity(selectedPool == pool ? 1 : 0.72))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                    .stroke(
+                                        selectedPool == pool ? V2Color.primary : V2Color.primary.opacity(0.22),
+                                        lineWidth: selectedPool == pool ? 1.5 : 1
+                                    )
+                            )
+                            .v2Shadow()
+                    )
+                    .offset(y: selectedPool == pool ? -5 : 7)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(pool.title)，\(count) 张可召回")
+                .accessibilityValue(selectedPool == pool ? "已选择" : "未选择")
+            }
+        }
+        .frame(height: 238)
     }
 }
 

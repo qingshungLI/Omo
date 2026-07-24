@@ -91,6 +91,15 @@ struct V2RootView: View {
         allowsMockDataToggle && usesMockData
     }
 
+    private var screenshotPoolCounts: [V2MemoryPool: Int] {
+        let now = Date()
+        return Dictionary(
+            uniqueKeysWithValues: V2MemoryPool.allCases.map { pool in
+                (pool, screenshotCards.filter { $0.isEligible(for: pool, now: now) }.count)
+            }
+        )
+    }
+
     private var hasUnreadNotifications: Bool {
         backendNotifications.contains { !$0.dismissed && !$0.read }
     }
@@ -162,6 +171,9 @@ struct V2RootView: View {
         .fullScreenCover(item: $screenshotDrawSession) { session in
             V2ScreenshotAwakeningFlowView(
                 session: session,
+                onAssessment: { cardID, assessment in
+                    applyScreenshotAssessment(cardID: cardID, assessment: assessment)
+                },
                 onClose: {
                     screenshotDrawSession = nil
                 }
@@ -206,11 +218,12 @@ struct V2RootView: View {
                 onOpenNotifications: { pushRoute(.notifications) },
                 onOpenProfile: { pushRoute(.profile) },
                 screenshotCardCount: screenshotCards.count,
-                onDrawScreenshot: {
-                    openScreenshotDraw(mode: .single)
+                screenshotPoolCounts: screenshotPoolCounts,
+                onDrawScreenshot: { pool in
+                    openScreenshotDraw(mode: .single, pool: pool)
                 },
-                onContinuousScreenshotDraw: {
-                    openScreenshotDraw(mode: .continuous)
+                onContinuousScreenshotDraw: { pool in
+                    openScreenshotDraw(mode: .continuous, pool: pool)
                 },
                 onDraw: {
                     Task {
@@ -1593,7 +1606,11 @@ struct V2RootView: View {
                         : "来源还不能确认，已先保存为记忆碎片。"
                 )
                 selectedTab = .learning
-                screenshotDrawSession = V2ScreenshotDrawSession.make(mode: .single, from: [captured])
+                screenshotDrawSession = V2ScreenshotDrawSession.make(
+                    mode: .single,
+                    from: [captured],
+                    pool: .due
+                )
             } catch is CancellationError {
                 return
             } catch {
@@ -1602,11 +1619,22 @@ struct V2RootView: View {
         }
     }
 
-    private func openScreenshotDraw(mode: V2ScreenshotDrawMode) {
-        guard let session = V2ScreenshotDrawSession.make(mode: mode, from: screenshotCards) else {
+    private func openScreenshotDraw(mode: V2ScreenshotDrawMode, pool: V2MemoryPool) {
+        guard let session = V2ScreenshotDrawSession.make(
+            mode: mode,
+            from: screenshotCards,
+            pool: pool
+        ) else {
             return
         }
         screenshotDrawSession = session
+    }
+
+    private func applyScreenshotAssessment(cardID: String, assessment: V2MemoryAssessment) {
+        guard let index = screenshotCards.firstIndex(where: { $0.id == cardID }) else {
+            return
+        }
+        screenshotCards[index].apply(assessment)
     }
 
     private func startV2GenerationAfterConsent(sourceText: String) {

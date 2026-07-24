@@ -572,6 +572,59 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertEqual(Set(session?.cards.map(\.id) ?? []).count, 10)
     }
 
+    func testScreenshotMemoryPoolsUseTransparentEligibilityRules() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let oldCard = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "old"),
+            screenshotData: Data(),
+            capturedAt: now.addingTimeInterval(-31 * 24 * 60 * 60)
+        )
+        let fadingCard = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "fading"),
+            screenshotData: Data(),
+            lastAssessment: .forgot,
+            capturedAt: now
+        )
+
+        let timeCapsule = V2ScreenshotDrawSession.make(
+            mode: .continuous,
+            from: [oldCard, fadingCard],
+            pool: .timeCapsule,
+            now: now,
+            shuffle: { $0 }
+        )
+        let fading = V2ScreenshotDrawSession.make(
+            mode: .continuous,
+            from: [oldCard, fadingCard],
+            pool: .fading,
+            now: now,
+            shuffle: { $0 }
+        )
+
+        XCTAssertEqual(timeCapsule?.cards.map(\.id), ["old"])
+        XCTAssertEqual(fading?.cards.map(\.id), ["fading"])
+    }
+
+    func testScreenshotMasteryAdvancesFromRecallEvidenceWithoutRegressing() {
+        var card = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "mastery"),
+            screenshotData: Data()
+        )
+
+        card.apply(.fuzzy)
+        XCTAssertEqual(card.masteryStage, .awakened)
+
+        card.apply(.forgot)
+        XCTAssertEqual(card.masteryStage, .awakened)
+
+        card.apply(.remembered)
+        XCTAssertEqual(card.masteryStage, .solidified)
+
+        card.apply(.remembered)
+        XCTAssertEqual(card.masteryStage, .engraved)
+        XCTAssertEqual(card.successfulRecallCount, 2)
+    }
+
     func testScreenshotImageProcessorProducesBoundedJPEG() throws {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 3_000, height: 1_500))
         let image = renderer.image { context in
@@ -585,6 +638,22 @@ final class APIClientDecodingTests: XCTestCase {
 
         XCTAssertLessThanOrEqual(prepared.count, V2ScreenshotImageProcessor.maximumBytes)
         XCTAssertLessThanOrEqual(max(decoded.size.width, decoded.size.height), V2ScreenshotImageProcessor.maximumEdge)
+    }
+
+    private func makeScreenshotMemoryCard(id: String) -> ImageFlowMemoryCard {
+        ImageFlowMemoryCard(
+            id: id,
+            state: .formal,
+            coreKnowledge: "知识",
+            recallCue: "问题",
+            hiddenSemantic: "答案",
+            explanation: "解释",
+            rarity: .r,
+            rarityReason: "原因",
+            sourceTitle: nil,
+            sourceUrl: nil,
+            sourceStatus: .verified
+        )
     }
 
     private func fixtureData(named name: String) throws -> Data {

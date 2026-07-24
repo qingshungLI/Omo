@@ -2,7 +2,7 @@
 
 日期：2026-07-24
 
-对应产品基线：`tasks/prd-recallo-2-screenshot-awakening-v0.4.md`
+对应产品基线：`tasks/prd-recallo-2-screenshot-awakening-v0.5.md`
 
 研究方式：GitHub 当前元数据与补丁核对、官方 Apple 文档、开源仓库许可证与活跃度核对、同行评审研究检索
 

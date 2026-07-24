@@ -1,6 +1,6 @@
 ﻿# PRD：拾贝 iOS MVP
 
-> **状态说明（2026-07-24）：** 本文保留为 V2 文字/链接/章节流程的历史规格。截图捕获、来源恢复、一截图一卡、单张/连续抽取、R/SR/SSR 和语义刮开的当前统一规格，以 [`prd-recallo-2-screenshot-awakening-v0.4.md`](./prd-recallo-2-screenshot-awakening-v0.4.md) 为准；本文中冲突条款不再作为实现依据。
+> **状态说明（2026-07-24）：** 本文保留为 V2 文字/链接/章节流程的历史规格。截图捕获、来源恢复、一截图一卡、单张/连续召回、R/SR/SSR、掌握状态和语义刮开的当前统一规格，以 [`prd-recallo-2-screenshot-awakening-v0.5.md`](./prd-recallo-2-screenshot-awakening-v0.5.md) 为准；本文中冲突条款不再作为实现依据。
 
 > 版本：v0.3（2026-07-24）
 >
