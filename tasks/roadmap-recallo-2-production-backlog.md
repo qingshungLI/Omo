@@ -2,13 +2,15 @@
 
 > 原 Roadmap 版本：v0.1
 >
-> 日期：2026-07-24
+> 日期：2026-07-25
 >
 > 对应 PRD：[`prd-recallo-2-screenshot-awakening-v0.6.md`](./prd-recallo-2-screenshot-awakening-v0.6.md)
 >
 > 状态：已从当前交付计划移出，仅保留为 10 小时 MVP 之后的生产化参考
 >
 > 当前执行路线：[`roadmap-recallo-2-10h-mvp-v0.2.md`](./roadmap-recallo-2-10h-mvp-v0.2.md)
+>
+> 2026-07-25 集成注记：M0 的代码侧 secret gates 与加密备份已完成，但外部 key 轮换、旧 key 失效验证和 history cleanup 仍阻断；M1 已完成版本化迁移与首个持久实体纵切片，但 durable job、完整 V3 API 和 Gate B 仍未完成。M0、M1 均不得标记为完成。
 
 ## 1. Roadmap 目标
 
@@ -81,6 +83,8 @@ Alpha 的判断标准不是页面数量，而是这条链路可恢复、可验�
 
 ### 4.2 工作项
 
+> 状态（2026-07-25）：**代码侧安全门已完成，M0 仍阻断。** 当前树 secret scan、自动测试门、允许工作树策略和加密备份已建立；外部 key 轮换、旧 key 失效验证与 PR 历史清理尚未完成。
+
 - [ ] 在 TikHub 控制台轮换 PR #1 中出现过的 key；
 - [ ] 用只读 capability 请求验证旧 key 已失效；
 - [ ] 扫描 `main`、PR 分支、GitHub Actions 日志和服务器部署环境；
@@ -141,8 +145,11 @@ Alpha 的判断标准不是页面数量，而是这条链路可恢复、可验�
 
 ### 5.3 后端工作项
 
-- [ ] 引入版本化数据库迁移机制；
-- [ ] 建立 V3 表与索引；
+> 状态（2026-07-25）：**Step 1A 代码纵切片已集成，M1 未完成。** 迁移和核心持久实体已落地；进程内 job 尚未 durable 化，完整 `/v3` API、live Postgres 验证和 Gate B 仍待完成。
+
+- [x] 引入版本化数据库迁移机制；
+- [x] 建立首个持久实体纵切片：`Capture`、`EvidenceRegion`、`SourceBinding`、`MemoryCard`、`RecallAttempt` 及必要索引；
+- [ ] 补齐完整 V3 表、版本实体、抽取会话、反馈实体与索引；
 - [ ] 用 Postgres 持久任务替换 `imageFlowJobs.js` 的进程内 `Map`；
 - [ ] 完成 `pg-boss` spike；
 - [ ] 明确 Node 版本：升级最低要求或锁定兼容队列版本；
