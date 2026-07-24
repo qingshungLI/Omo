@@ -11,8 +11,11 @@ const files = {
   awakeningViews: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Home/V2AwakeningViews.swift"),
   awakeningModels: resolve(repoRoot, "拾贝/拾贝/V2/Models/V2AwakeningModels.swift"),
   screenshotAwakeningViews: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Home/V2ScreenshotAwakeningViews.swift"),
+  screenshotMemoryModels: resolve(repoRoot, "拾贝/拾贝/V2/Models/V2ScreenshotMemoryModels.swift"),
+  tabScreens: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Tabs/V2TabScreens.swift"),
   v2Root: resolve(repoRoot, "拾贝/拾贝/V2/V2RootView.swift"),
-  apiClient: resolve(repoRoot, "拾贝/拾贝/Services/APIClient.swift")
+  apiClient: resolve(repoRoot, "拾贝/拾贝/Services/APIClient.swift"),
+  apiClientTests: resolve(repoRoot, "拾贝/拾贝Tests/APIClientDecodingTests.swift")
 };
 
 const source = Object.fromEntries(
@@ -111,6 +114,48 @@ const checks = [
       && source.screenshotAwakeningViews.includes('@AppStorage("recallo.v06.assessedReviewCycles")')
       && !source.screenshotAwakeningViews.includes('attemptId: "ios-capture-assessment-\\(currentCard.id)"'),
     "Assessment idempotency must be stable for retries but change when the card enters a later review cycle."
+  ),
+  check(
+    "optional_capture_schedule_has_stable_cycle_key",
+    source.screenshotMemoryModels.includes('?? "initial"')
+      && source.screenshotAwakeningViews.includes("currentCard.reviewCycleKey(scheduleOverride: currentSchedule)")
+      && !source.screenshotAwakeningViews.includes("currentCard.schedule.nextReviewAt"),
+    "Optional capture schedules must compile safely and use a deterministic initial review-cycle key."
+  ),
+  check(
+    "capture_assessment_prefers_server_mastery",
+    /struct Mastery: Decodable, Equatable[\s\S]*before: String[\s\S]*after: String[\s\S]*successfulRecallCount: Int[\s\S]*reviewCount: Int/.test(source.apiClient)
+      && source.screenshotMemoryModels.includes("if let serverMastery")
+      && source.v2Root.includes("serverMastery: response.mastery")
+      && source.screenshotAwakeningViews.includes("if let serverMastery = response.mastery"),
+    "Assessment responses may omit mastery for old servers, but server-owned mastery must win when present."
+  ),
+  check(
+    "fragments_are_saved_but_never_reviewed",
+    source.screenshotMemoryModels.includes("guard card.state == .formal, disposition == .createCard")
+      && source.v2Root.includes("guard disposition == .createCard, memoryCard.state == .formal")
+      && source.v2Root.includes("selectedTab = .materials")
+      && source.tabScreens.includes('case .archiveOnly:\n            "已保存碎片"')
+      && source.tabScreens.includes('case .needsConfirmation:\n            "待确认"')
+      && source.tabScreens.includes("if isFormalReviewCard, let schedule = captured.schedule"),
+    "Archive-only and confirmation-needed captures must remain visible fragments without mastery, scheduling, or draw eligibility."
+  ),
+  check(
+    "capture_delete_waits_for_server_success",
+    /func deleteCaptureMemoryCard\(id: String\)[\s\S]*?\/api\/memory-cards\/[\s\S]*?method: "DELETE"/.test(source.apiClient)
+      && /let response = try await apiClient\.deleteCaptureMemoryCard\(id: id\)[\s\S]*?guard response\.deleted[\s\S]*?screenshotCards\.removeAll/.test(source.v2Root)
+      && source.tabScreens.includes("删除这条记忆？")
+      && source.tabScreens.includes("pendingMemoryCardDeletion"),
+    "Knowledge-library deletion must be confirmed and local state may change only after a successful DELETE response."
+  ),
+  check(
+    "ios_capture_contract_tests_cover_new_boundaries",
+    source.apiClientTests.includes("testOptionalScheduleProducesStableInitialReviewCycleKey")
+      && source.apiClientTests.includes("testServerMasteryOverridesLegacyClientProgression")
+      && source.apiClientTests.includes("testFragmentsNeverEnterFormalReviewPools")
+      && source.apiClientTests.includes("testDecodesCaptureMemoryCardDeletionContract")
+      && source.apiClientTests.includes("XCTAssertNil(response.mastery)"),
+    "Swift contract tests must retain optional schedule, server mastery, legacy response, fragment eligibility, and delete decoding coverage."
   ),
   check(
     "checkpoint_restores_assessment_mastery_and_schedule",

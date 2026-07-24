@@ -91,6 +91,12 @@ struct V2RootView: View {
         allowsMockDataToggle && usesMockData
     }
 
+    private var reviewableScreenshotCards: [V2CapturedMemoryCard] {
+        screenshotCards.filter {
+            $0.card.state == .formal && $0.disposition == .createCard
+        }
+    }
+
     private var screenshotPoolCounts: [V2MemoryPool: Int] {
         let now = Date()
         return Dictionary(
@@ -215,13 +221,13 @@ struct V2RootView: View {
         case .learning:
             V2AwakeningHomeView(
                 response: awakeningResponse,
-                hasReviewableContent: !screenshotCards.isEmpty || usesFixtures || backendChapters.contains(where: isHomeLearningCandidate),
+                hasReviewableContent: !reviewableScreenshotCards.isEmpty || usesFixtures || backendChapters.contains(where: isHomeLearningCandidate),
                 isLoading: isAwakeningLoading,
                 selectedTab: $selectedTab,
                 showsUnreadNotificationBadge: hasUnreadNotifications,
                 onOpenNotifications: { pushRoute(.notifications) },
                 onOpenProfile: { selectedTab = .notes },
-                screenshotCardCount: screenshotCards.count,
+                screenshotCardCount: reviewableScreenshotCards.count,
                 screenshotPoolCounts: screenshotPoolCounts,
                 onDrawScreenshot: { pool in
                     openScreenshotDraw(mode: .single, pool: pool)
@@ -250,7 +256,10 @@ struct V2RootView: View {
                 generatedChapter: backendReviewChapter,
                 screenshotCards: screenshotCards,
                 openGeneratingChapter: openGeneratingChapter(id:),
-                openChapter: openBackendChapter
+                openChapter: openBackendChapter,
+                deleteMemoryCard: { cardID in
+                    try await deleteScreenshotMemoryCard(id: cardID)
+                }
             )
         case .upload:
             V2UploadView(
@@ -1603,16 +1612,8 @@ struct V2RootView: View {
                 let response = try await apiClient.analyzeScreenshot(imageData: preparedData)
                 try Task.checkCancellation()
                 let captureAnalysis = response.captureAnalysis
-                if captureAnalysis?.disposition == .archiveOnly {
-                    screenshotAnalysisState = .generated("这条内容已仅存档，不生成复习卡。")
-                    selectedTab = .materials
-                    return
-                }
-                if captureAnalysis?.disposition == .needsConfirmation {
-                    screenshotAnalysisState = .generated("证据不足，需要确认来源后再生成卡片。")
-                    selectedTab = .upload
-                    return
-                }
+                let disposition = captureAnalysis?.disposition
+                    ?? (response.memoryCard?.state == .formal ? .createCard : .archiveOnly)
                 guard var memoryCard = captureAnalysis?.memoryCard ?? response.memoryCard else {
                     throw V2ScreenshotAnalysisError.missingMemoryCard
                 }
@@ -1622,17 +1623,27 @@ struct V2RootView: View {
                 let captured = V2CapturedMemoryCard(
                     card: memoryCard,
                     screenshotData: preparedData,
-                    schedule: captureAnalysis?.schedule ?? response.schedule
+                    schedule: disposition == .createCard
+                        ? (captureAnalysis?.schedule ?? response.schedule)
+                        : nil,
+                    disposition: disposition
                 )
                 if let index = screenshotCards.firstIndex(where: { $0.id == captured.id }) {
                     screenshotCards[index] = captured
                 } else {
                     screenshotCards.append(captured)
                 }
+                guard disposition == .createCard, memoryCard.state == .formal else {
+                    screenshotAnalysisState = .generated(
+                        disposition == .needsConfirmation
+                            ? "证据不足，已保存为待确认碎片。"
+                            : "这条内容已保存为碎片，不进入复习。"
+                    )
+                    selectedTab = .materials
+                    return
+                }
                 screenshotAnalysisState = .generated(
-                    memoryCard.state == .formal
-                        ? "记忆卡已生成，正在打开。"
-                        : "来源还不能确认，已先保存为记忆碎片。"
+                    "记忆卡已生成，正在打开。"
                 )
                 selectedTab = .learning
                 screenshotDrawSession = V2ScreenshotDrawSession.make(
@@ -1651,7 +1662,7 @@ struct V2RootView: View {
     private func openScreenshotDraw(mode: V2ScreenshotDrawMode, pool: V2MemoryPool) {
         guard let session = V2ScreenshotDrawSession.make(
             mode: mode,
-            from: screenshotCards,
+            from: reviewableScreenshotCards,
             pool: pool
         ) else {
             return
@@ -1664,16 +1675,32 @@ struct V2RootView: View {
         cardID: String,
         assessment: V2MemoryAssessment,
         attemptID: String
-    ) async throws -> ImageFlowReviewSchedule {
+    ) async throws -> CaptureMemoryCardAssessmentResponse {
         let response = try await apiClient.assessCaptureMemoryCard(
             id: cardID,
             assessment: assessment.rawValue,
             attemptId: attemptID
         )
         if let index = screenshotCards.firstIndex(where: { $0.id == cardID }) {
-            screenshotCards[index].apply(assessment, schedule: response.schedule)
+            screenshotCards[index].apply(
+                assessment,
+                schedule: response.schedule,
+                serverMastery: response.mastery
+            )
         }
-        return response.schedule
+        return response
+    }
+
+    @MainActor
+    private func deleteScreenshotMemoryCard(id: String) async throws {
+        let response = try await apiClient.deleteCaptureMemoryCard(id: id)
+        guard response.deleted, response.cardId == id else {
+            throw APIClientError.invalidResponse
+        }
+        screenshotCards.removeAll { $0.id == id }
+        if screenshotDrawSession?.cards.contains(where: { $0.id == id }) == true {
+            screenshotDrawSession = nil
+        }
     }
 
     private func startV2GenerationAfterConsent(sourceText: String) {

@@ -5,8 +5,10 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
     let card: ImageFlowMemoryCard
     let screenshotData: Data
     var schedule: ImageFlowReviewSchedule?
+    let disposition: CaptureAnalysisDisposition
     var masteryStage: V2MemoryMasteryStage
     var successfulRecallCount: Int
+    var reviewCount: Int
     var lastAssessment: V2MemoryAssessment?
     let capturedAt: Date
 
@@ -16,27 +18,37 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         card: ImageFlowMemoryCard,
         screenshotData: Data,
         schedule: ImageFlowReviewSchedule? = nil,
+        disposition: CaptureAnalysisDisposition? = nil,
         masteryStage: V2MemoryMasteryStage = .sealed,
         successfulRecallCount: Int = 0,
+        reviewCount: Int = 0,
         lastAssessment: V2MemoryAssessment? = nil,
         capturedAt: Date = Date()
     ) {
+        let resolvedDisposition = disposition
+            ?? (card.state == .formal ? .createCard : .archiveOnly)
+        let isFormalReviewCard = card.state == .formal && resolvedDisposition == .createCard
         self.card = card
         self.screenshotData = screenshotData
-        self.schedule = schedule
-        self.masteryStage = masteryStage
-        self.successfulRecallCount = successfulRecallCount
-        self.lastAssessment = lastAssessment
+        self.schedule = isFormalReviewCard ? schedule : nil
+        self.disposition = resolvedDisposition
+        self.masteryStage = isFormalReviewCard ? masteryStage : .sealed
+        self.successfulRecallCount = isFormalReviewCard ? successfulRecallCount : 0
+        self.reviewCount = isFormalReviewCard ? reviewCount : 0
+        self.lastAssessment = isFormalReviewCard ? lastAssessment : nil
         self.capturedAt = capturedAt
     }
 
     init(record: CaptureMemoryCardRecord) {
+        let isFormalReviewCard = record.memoryCard.state == .formal && record.disposition == .createCard
         card = record.memoryCard
         screenshotData = Data()
-        schedule = record.schedule
-        masteryStage = V2MemoryMasteryStage(rawServerValue: record.masteryStage) ?? .sealed
-        successfulRecallCount = record.successfulRecallCount ?? 0
-        lastAssessment = record.lastAssessment.flatMap(V2MemoryAssessment.init(rawValue:))
+        schedule = isFormalReviewCard ? record.schedule : nil
+        disposition = record.disposition
+        masteryStage = isFormalReviewCard ? (V2MemoryMasteryStage(rawServerValue: record.masteryStage) ?? .sealed) : .sealed
+        successfulRecallCount = isFormalReviewCard ? (record.successfulRecallCount ?? 0) : 0
+        reviewCount = isFormalReviewCard ? (record.reviewCount ?? 0) : 0
+        lastAssessment = isFormalReviewCard ? record.lastAssessment.flatMap(V2MemoryAssessment.init(rawValue:)) : nil
         capturedAt = V2ScreenshotDateParser.date(from: record.capturedAt)
             ?? V2ScreenshotDateParser.date(from: record.memoryCard.createdAt)
             ?? Date()
@@ -44,17 +56,39 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
 
     mutating func apply(
         _ assessment: V2MemoryAssessment,
-        schedule updatedSchedule: ImageFlowReviewSchedule
+        schedule updatedSchedule: ImageFlowReviewSchedule,
+        serverMastery: CaptureMemoryCardAssessmentResponse.Mastery? = nil
     ) {
+        guard card.state == .formal, disposition == .createCard else {
+            return
+        }
         lastAssessment = assessment
         schedule = updatedSchedule
-        if assessment == .remembered {
-            successfulRecallCount += 1
+        if let serverMastery {
+            masteryStage = V2MemoryMasteryStage(rawServerValue: serverMastery.after)
+                ?? masteryStage.applying(assessment)
+            successfulRecallCount = max(0, serverMastery.successfulRecallCount)
+            reviewCount = max(0, serverMastery.reviewCount)
+        } else {
+            if assessment == .remembered {
+                successfulRecallCount += 1
+            }
+            reviewCount += 1
+            masteryStage = masteryStage.applying(assessment)
         }
-        masteryStage = masteryStage.applying(assessment)
+    }
+
+    func reviewCycleKey(scheduleOverride: ImageFlowReviewSchedule? = nil) -> String {
+        let nextReviewAt = scheduleOverride?.nextReviewAt
+            ?? schedule?.nextReviewAt
+            ?? "initial"
+        return "\(id)-\(nextReviewAt)"
     }
 
     func isEligible(for pool: V2MemoryPool, now: Date = Date()) -> Bool {
+        guard card.state == .formal, disposition == .createCard else {
+            return false
+        }
         switch pool {
         case .due:
             schedule?.isDue(at: now) ?? (lastAssessment == nil)
@@ -140,7 +174,7 @@ enum V2MemoryMasteryStage: Int, CaseIterable, Equatable {
         switch rawServerValue {
         case "sealed": self = .sealed
         case "awakened": self = .awakened
-        case "solidified": self = .solidified
+        case "solidified", "stable": self = .solidified
         case "engraved": self = .engraved
         default: return nil
         }

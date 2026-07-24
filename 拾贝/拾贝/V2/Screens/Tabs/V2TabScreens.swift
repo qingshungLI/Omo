@@ -59,10 +59,23 @@ struct V2MaterialsView: View {
     let screenshotCards: [V2CapturedMemoryCard]
     let openGeneratingChapter: (String?) -> Void
     let openChapter: (String) -> Void
+    let deleteMemoryCard: (String) async throws -> Void
+
+    @State private var pendingMemoryCardDeletion: V2CapturedMemoryCard?
+    @State private var deletingMemoryCardID: String?
+    @State private var memoryCardDeletionError = ""
 
     var body: some View {
         V2TabScaffold(selectedTab: $selectedTab, title: "知识库") {
             VStack(spacing: 16) {
+                if !memoryCardDeletionError.isEmpty {
+                    Text(memoryCardDeletionError)
+                        .font(V2Typography.caption)
+                        .foregroundStyle(V2Color.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("v2.library.delete-error")
+                }
+
                 if !screenshotCards.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("我的记忆卡")
@@ -70,7 +83,11 @@ struct V2MaterialsView: View {
                             .foregroundStyle(V2Color.textPrimary)
 
                         ForEach(screenshotCards) { captured in
-                            V2MemoryLibraryCard(captured: captured)
+                            V2MemoryLibraryCard(
+                                captured: captured,
+                                isDeleting: deletingMemoryCardID == captured.id,
+                                onDelete: { pendingMemoryCardDeletion = captured }
+                            )
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -137,6 +154,27 @@ struct V2MaterialsView: View {
 
             }
         }
+        .alert(item: $pendingMemoryCardDeletion) { captured in
+            Alert(
+                title: Text("删除这条记忆？"),
+                message: Text("删除后，这张卡或碎片会从知识库移除，且无法撤销。"),
+                primaryButton: .destructive(Text("删除")) {
+                    Task { @MainActor in
+                        deletingMemoryCardID = captured.id
+                        memoryCardDeletionError = ""
+                        do {
+                            try await deleteMemoryCard(captured.id)
+                        } catch is CancellationError {
+                            // The view is going away; keep the server as the source of truth.
+                        } catch {
+                            memoryCardDeletionError = error.localizedDescription
+                        }
+                        deletingMemoryCardID = nil
+                    }
+                },
+                secondaryButton: .cancel(Text("取消"))
+            )
+        }
     }
 
     private func listStatus(for chapter: V2BackendChapter) -> V2ChapterReviewStatus {
@@ -146,17 +184,29 @@ struct V2MaterialsView: View {
 
 private struct V2MemoryLibraryCard: View {
     let captured: V2CapturedMemoryCard
+    let isDeleting: Bool
+    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(captured.card.rarity?.rawValue ?? "记忆碎片")
+                Text(libraryStatusTitle)
                     .font(V2Typography.captionEmphasis)
                     .foregroundStyle(V2Color.primary)
                 Spacer()
-                Text(captured.masteryStage.title)
-                    .font(V2Typography.caption)
-                    .foregroundStyle(V2Color.textMuted)
+                if isFormalReviewCard {
+                    Text(captured.masteryStage.title)
+                        .font(V2Typography.caption)
+                        .foregroundStyle(V2Color.textMuted)
+                }
+                Button(action: onDelete) {
+                    Image(systemName: isDeleting ? "hourglass" : "trash")
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(V2Color.textMuted)
+                .disabled(isDeleting)
+                .accessibilityLabel("删除这条记忆")
             }
 
             Text(captured.card.coreKnowledge)
@@ -169,7 +219,7 @@ private struct V2MemoryLibraryCard: View {
                 Text(sourceTitle)
                     .lineLimit(1)
                 Spacer()
-                if let schedule = captured.schedule {
+                if isFormalReviewCard, let schedule = captured.schedule {
                     Text(schedule.displayText)
                         .lineLimit(1)
                 }
@@ -183,9 +233,24 @@ private struct V2MemoryLibraryCard: View {
                 .fill(V2Color.surfaceCream)
                 .v2Shadow()
         )
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(captured.card.coreKnowledge)，\(sourceTitle)")
         .accessibilityIdentifier("v2.library.card.\(captured.id)")
+    }
+
+    private var isFormalReviewCard: Bool {
+        captured.card.state == .formal && captured.disposition == .createCard
+    }
+
+    private var libraryStatusTitle: String {
+        switch captured.disposition {
+        case .archiveOnly:
+            "已保存碎片"
+        case .needsConfirmation:
+            "待确认"
+        case .createCard:
+            captured.card.rarity?.rawValue ?? "记忆卡"
+        }
     }
 
     private var sourceTitle: String {

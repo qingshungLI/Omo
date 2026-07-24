@@ -159,6 +159,15 @@ struct APIClient {
         )
     }
 
+    func deleteCaptureMemoryCard(id: String) async throws -> CaptureMemoryCardDeletionResponse {
+        try await send(
+            "/api/memory-cards/\(encodedPathComponent(id))",
+            method: "DELETE",
+            body: EmptyRequest(),
+            acceptsFailureBody: false
+        )
+    }
+
     func fetchV2Chapter(id: String) async throws -> V2BackendChapter {
         let response: V2BackendChapterResponse = try await get("/api/chapters/\(encodedPathComponent(id))")
         return response.chapter
@@ -833,34 +842,43 @@ struct CaptureMemoryCardsResponse: Decodable, Equatable {
 
 struct CaptureMemoryCardRecord: Decodable, Equatable {
     var memoryCard: ImageFlowMemoryCard
+    var disposition: CaptureAnalysisDisposition
     var schedule: ImageFlowReviewSchedule?
     var masteryStage: String?
     var successfulRecallCount: Int?
+    var reviewCount: Int?
     var lastAssessment: String?
     var capturedAt: String?
 
     private enum CodingKeys: String, CodingKey {
         case memoryCard
         case card
+        case disposition
         case schedule
         case masteryStage
         case successfulRecallCount
+        case reviewCount
         case lastAssessment
         case capturedAt
     }
 
     init(
         memoryCard: ImageFlowMemoryCard,
+        disposition: CaptureAnalysisDisposition? = nil,
         schedule: ImageFlowReviewSchedule?,
         masteryStage: String?,
         successfulRecallCount: Int?,
+        reviewCount: Int? = nil,
         lastAssessment: String?,
         capturedAt: String?
     ) {
         self.memoryCard = memoryCard
+        self.disposition = disposition
+            ?? (memoryCard.state == .formal ? .createCard : .archiveOnly)
         self.schedule = schedule
         self.masteryStage = masteryStage
         self.successfulRecallCount = successfulRecallCount
+        self.reviewCount = reviewCount
         self.lastAssessment = lastAssessment
         self.capturedAt = capturedAt
     }
@@ -873,9 +891,12 @@ struct CaptureMemoryCardRecord: Decodable, Equatable {
         } else {
             memoryCard = try ImageFlowMemoryCard(from: decoder)
         }
+        disposition = try container.decodeIfPresent(CaptureAnalysisDisposition.self, forKey: .disposition)
+            ?? (memoryCard.state == .formal ? .createCard : .archiveOnly)
         schedule = try container.decodeIfPresent(ImageFlowReviewSchedule.self, forKey: .schedule)
         masteryStage = try container.decodeIfPresent(String.self, forKey: .masteryStage)
         successfulRecallCount = try container.decodeIfPresent(Int.self, forKey: .successfulRecallCount)
+        reviewCount = try container.decodeIfPresent(Int.self, forKey: .reviewCount)
         lastAssessment = try container.decodeIfPresent(String.self, forKey: .lastAssessment)
         capturedAt = try container.decodeIfPresent(String.self, forKey: .capturedAt)
             ?? memoryCard.createdAt
@@ -895,10 +916,26 @@ struct CaptureMemoryCardAssessmentResponse: Decodable, Equatable {
         var repeated: Bool
     }
 
+    struct Mastery: Decodable, Equatable {
+        var before: String
+        var after: String
+        var successfulRecallCount: Int
+        var reviewCount: Int
+    }
+
     var schemaVersion: String
     var cardId: String
     var assessment: Assessment
+    var mastery: Mastery?
     var schedule: ImageFlowReviewSchedule
+}
+
+struct CaptureMemoryCardDeletionResponse: Decodable, Equatable {
+    var schemaVersion: String
+    var deleted: Bool
+    var cardId: String
+    var captureId: String
+    var deletedAt: String
 }
 
 struct AttemptRequest: Codable {

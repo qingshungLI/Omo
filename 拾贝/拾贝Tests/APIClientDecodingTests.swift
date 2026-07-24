@@ -624,6 +624,58 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertEqual(card.schedule?.intervalDays, 7)
     }
 
+    func testServerMasteryOverridesLegacyClientProgression() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": "capture_memory_assessment_1",
+              "cardId": "capture-card-1",
+              "assessment": {
+                "attemptId": "attempt-server-mastery",
+                "assessment": "remembered",
+                "assessedAt": "2026-07-25T10:00:00.000Z",
+                "repeated": false
+              },
+              "mastery": {
+                "before": "awakened",
+                "after": "solidified",
+                "successfulRecallCount": 7,
+                "reviewCount": 11
+              },
+              "schedule": {
+                "nextReviewAt": "2026-08-01T10:00:00.000Z",
+                "intervalDays": 7,
+                "state": "scheduled"
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CaptureMemoryCardAssessmentResponse.self, from: data)
+        var card = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "capture-card-1"),
+            screenshotData: Data()
+        )
+        card.apply(.remembered, schedule: response.schedule, serverMastery: response.mastery)
+
+        XCTAssertEqual(response.mastery?.before, "awakened")
+        XCTAssertEqual(response.mastery?.after, "solidified")
+        XCTAssertEqual(card.masteryStage, .solidified)
+        XCTAssertEqual(card.successfulRecallCount, 7)
+        XCTAssertEqual(card.reviewCount, 11)
+        XCTAssertEqual(V2MemoryMasteryStage(rawServerValue: "stable"), .solidified)
+    }
+
+    func testOptionalScheduleProducesStableInitialReviewCycleKey() {
+        let card = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "unscheduled"),
+            screenshotData: Data()
+        )
+
+        XCTAssertEqual(card.reviewCycleKey(), "unscheduled-initial")
+        XCTAssertEqual(card.reviewCycleKey(), card.reviewCycleKey())
+    }
+
     func testDecodesCaptureAnalysisV2WithTypedVariantsAndPartialSource() throws {
         let data = Data(
             """
@@ -741,6 +793,7 @@ final class APIClientDecodingTests: XCTestCase {
         let response = try JSONDecoder().decode(CaptureMemoryCardsResponse.self, from: data)
 
         XCTAssertEqual(response.cards.first?.memoryCard.id, "capture-card-1")
+        XCTAssertEqual(response.cards.first?.disposition, .createCard)
         XCTAssertEqual(response.cards.first?.schedule?.state, "due")
         XCTAssertEqual(response.cards.first?.capturedAt, "2026-07-20T09:00:00.000Z")
     }
@@ -772,6 +825,69 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertEqual(response.assessment.attemptId, "attempt-stable")
         XCTAssertTrue(response.assessment.repeated)
         XCTAssertEqual(response.schedule.intervalDays, 3)
+        XCTAssertNil(response.mastery)
+    }
+
+    func testFragmentsNeverEnterFormalReviewPools() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let fragment = ImageFlowMemoryCard(
+            id: "fragment-archive",
+            state: .fragment,
+            coreKnowledge: "待确认的截图内容",
+            recallCue: "为什么保存它？",
+            hiddenSemantic: nil,
+            explanation: "来源不足",
+            rarity: nil,
+            rarityReason: nil,
+            sourceTitle: nil,
+            sourceUrl: nil,
+            sourceStatus: .unconfirmed
+        )
+        let archived = V2CapturedMemoryCard(
+            card: fragment,
+            screenshotData: Data(),
+            disposition: .archiveOnly,
+            capturedAt: now.addingTimeInterval(-60 * 24 * 60 * 60)
+        )
+        let pending = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "pending-formal-shape"),
+            screenshotData: Data(),
+            disposition: .needsConfirmation,
+            lastAssessment: .forgot,
+            capturedAt: now.addingTimeInterval(-60 * 24 * 60 * 60)
+        )
+
+        for pool in V2MemoryPool.allCases {
+            XCTAssertFalse(archived.isEligible(for: pool, now: now))
+            XCTAssertFalse(pending.isEligible(for: pool, now: now))
+            XCTAssertNil(V2ScreenshotDrawSession.make(mode: .single, from: [archived, pending], pool: pool, now: now))
+        }
+        XCTAssertNil(archived.schedule)
+        XCTAssertNil(pending.schedule)
+        XCTAssertNil(archived.lastAssessment)
+        XCTAssertNil(pending.lastAssessment)
+        XCTAssertEqual(archived.successfulRecallCount, 0)
+        XCTAssertEqual(pending.reviewCount, 0)
+    }
+
+    func testDecodesCaptureMemoryCardDeletionContract() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": "capture_memory_card_deletion_1",
+              "deleted": true,
+              "cardId": "capture-card-1",
+              "captureId": "capture-1",
+              "deletedAt": "2026-07-25T10:00:00.000Z"
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CaptureMemoryCardDeletionResponse.self, from: data)
+
+        XCTAssertTrue(response.deleted)
+        XCTAssertEqual(response.cardId, "capture-card-1")
+        XCTAssertEqual(response.captureId, "capture-1")
     }
 
     func testDuePoolUsesNextReviewTimeAndStableOrdering() {

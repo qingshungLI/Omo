@@ -166,7 +166,7 @@ private struct V2ScratchRevealCanvas: View {
 
 struct V2ScreenshotAwakeningFlowView: View {
     let session: V2ScreenshotDrawSession
-    let onAssessment: (String, V2MemoryAssessment, String) async throws -> ImageFlowReviewSchedule
+    let onAssessment: (String, V2MemoryAssessment, String) async throws -> CaptureMemoryCardAssessmentResponse
     let onClose: () -> Void
 
     @Environment(\.accessibilityReduceMotion)
@@ -1102,10 +1102,8 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .font(V2Typography.bodySmall)
                 .foregroundStyle(V2Color.textMuted)
 
-            V2PrimaryActionButton(title: "收下这张碎片") {
-                withAnimation(reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.34, dampingFraction: 0.78)) {
-                    phase = .checkpoint
-                }
+            V2PrimaryActionButton(title: "碎片已保存，返回知识库") {
+                stowAndClose()
             }
         }
         .padding(22)
@@ -1293,17 +1291,24 @@ struct V2ScreenshotAwakeningFlowView: View {
                 phase = .assessing
             }
             do {
-                let schedule = try await onAssessment(
+                let completedReviewCycleKey = currentReviewCycleKey
+                let response = try await onAssessment(
                     currentCard.id,
                     pendingAssessment.assessment,
                     pendingAssessment.attemptId
                 )
                 guard !Task.isCancelled else { return }
-                currentSchedule = schedule
+                currentSchedule = response.schedule
+                if let serverMastery = response.mastery {
+                    masteryBefore = V2MemoryMasteryStage(rawServerValue: serverMastery.before)
+                        ?? currentCard.masteryStage
+                    masteryAfter = V2MemoryMasteryStage(rawServerValue: serverMastery.after)
+                        ?? currentCard.masteryStage.applying(pendingAssessment.assessment)
+                }
                 self.pendingAssessment = nil
                 withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.24)) {
                     var updatedReviewCycles = assessedReviewCycles
-                    updatedReviewCycles.insert(currentReviewCycleKey)
+                    updatedReviewCycles.insert(completedReviewCycleKey)
                     persistedAssessedReviewCycles = updatedReviewCycles.sorted().suffix(64).joined(separator: ",")
                     phase = .checkpoint
                 }
@@ -1345,7 +1350,7 @@ struct V2ScreenshotAwakeningFlowView: View {
     }
 
     private var currentReviewCycleKey: String {
-        "\(currentCard.id)-\(currentCard.schedule.nextReviewAt)"
+        currentCard.reviewCycleKey(scheduleOverride: currentSchedule)
     }
 
     private var assessedReviewCycles: Set<String> {
