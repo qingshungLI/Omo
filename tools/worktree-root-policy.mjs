@@ -6,7 +6,9 @@ export const APPROVED_BRIDGE_WORKTREE_SUFFIXES = Object.freeze([
   "integration",
   "kimi",
   "qoder",
-  "security"
+  "security",
+  "persistence",
+  "ios-contract"
 ]);
 
 const bridgeSuffixExpression = APPROVED_BRIDGE_WORKTREE_SUFFIXES.join("|");

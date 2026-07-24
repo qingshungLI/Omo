@@ -21,7 +21,9 @@ test("allows only approved versioned bridge-amax worktree suffixes", () => {
     "/data1/yuxiao/recallo-v062-integration",
     "/data1/yuxiao/recallo-v063-kimi",
     "/data1/yuxiao/recallo-v063-qoder",
-    "/data1/yuxiao/recallo-v063-security"
+    "/data1/yuxiao/recallo-v063-security",
+    "/data1/yuxiao/recallo-v063-persistence",
+    "/data1/yuxiao/recallo-v063-ios-contract"
   ]) {
     const result = classifyRecallWorktreeRoot(root);
     assert.equal(result.allowed, true, root);
@@ -33,6 +35,9 @@ test("rejects arbitrary data1 paths and near-match bypasses", () => {
   for (const root of [
     "/data1/yuxiao/recallo-v063-evil",
     "/data1/yuxiao/recallo-v063-security-extra",
+    "/data1/yuxiao/recallo-v063-persistence-copy",
+    "/data1/yuxiao/recallo-v063-ios-contract-extra",
+    "/data1/yuxiao/recallo-v063-ios_contract",
     "/data1/yuxiao/recallo-v063-security/child",
     "/data1/yuxiao/recallo-vx-security",
     "/data1/yuxiao/random-project",
