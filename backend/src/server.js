@@ -103,6 +103,7 @@ import { AppleAuthError, verifyAppleIdentityToken } from "./appleAuth.js";
 import { buildSourceCapabilities, preflightSourceInput } from "./sources/sourcePreflight.js";
 import { runImageFlow } from "./flow/index.js";
 import { createImageFlowJob, getImageFlowJob } from "./flow/imageFlowJobs.js";
+import { captureMemoryStore } from "./flow/captureMemoryStore.js";
 import { buildMemoizedVideoRuntimeReadiness } from "./media/videoRuntimeReadiness.js";
 import { takeTemporaryPublicMedia } from "./media/temporaryPublicMedia.js";
 
@@ -277,6 +278,7 @@ async function handleSourcePreflight(req, res) {
 
 async function handleImageFlow(req, res) {
   const body = await readBody(req);
+  const deviceId = getDeviceId(req);
   const input = {
     imageBase64: body.imageBase64 || body.image || "",
     mimeType: body.mimeType || "",
@@ -287,14 +289,19 @@ async function handleImageFlow(req, res) {
   };
   if (body.async === true) {
     const job = createImageFlowJob(
-      (onProgress) => runImageFlow({ ...input, onProgress }),
-      { ownerId: getDeviceId(req) }
+      async (onProgress) => {
+        const result = await runImageFlow({ ...input, onProgress });
+        persistCaptureMemoryResult(deviceId, result);
+        return result;
+      },
+      { ownerId: deviceId }
     );
     sendJson(res, 202, job);
     return;
   }
   try {
     const result = await runImageFlow(input);
+    persistCaptureMemoryResult(deviceId, result);
     sendJson(res, result.status === "completed" || result.status === "vision_completed" ? 200 : 422, result);
   } catch (error) {
     sendJson(res, 422, {
@@ -303,6 +310,18 @@ async function handleImageFlow(req, res) {
       message: error?.message || "截图处理失败，请稍后重试。"
     });
   }
+}
+
+function persistCaptureMemoryResult(deviceId, result) {
+  const stored = captureMemoryStore.upsertCaptureAnalysis(
+    deviceId,
+    result?.captureAnalysis
+  );
+  if (stored && result?.captureAnalysis) {
+    result.captureAnalysis.schedule = stored.schedule;
+    result.schedule = stored.schedule;
+  }
+  return stored;
 }
 
 async function handleTemporaryAsrMedia(req, res, token) {
@@ -2320,6 +2339,50 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/api/memory-cards") {
+    try {
+      const result = captureMemoryStore.list(deviceId, {
+        pool: requestUrl.searchParams.get("pool") || ""
+      });
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, error.statusCode || 422, {
+        errorCode: error.code || "capture_memory_cards_unavailable",
+        message: error.message || "暂时无法读取记忆卡。"
+      });
+    }
+    return;
+  }
+
+  const captureMemoryAssessmentMatch = pathname.match(/^\/api\/memory-cards\/([^/]+)\/assessments$/);
+  if (req.method === "POST" && captureMemoryAssessmentMatch) {
+    try {
+      const body = await readBody(req);
+      const result = captureMemoryStore.recordAssessment(
+        deviceId,
+        decodeURIComponent(captureMemoryAssessmentMatch[1]),
+        {
+          attemptId: body.attemptId,
+          assessment: body.assessment
+        }
+      );
+      if (!result) {
+        sendJson(res, 404, {
+          errorCode: "capture_memory_card_not_found",
+          message: "记忆卡不存在。"
+        });
+      } else {
+        sendJson(res, 200, result);
+      }
+    } catch (error) {
+      sendJson(res, error.statusCode || 422, {
+        errorCode: error.code || "capture_memory_assessment_not_recorded",
+        message: error.message || "复习反馈保存失败。"
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/auth/apple") {
     await handleAppleAuth(req, res);
     return;
@@ -2918,8 +2981,10 @@ export {
   buildCostRunResponse,
   costWorkbenchEnabled,
   createReviewSessionForChapter,
+  persistCaptureMemoryResult,
   recordSessionAttempt,
   saveCostRunResponse,
+  server,
   serializeChapterForClient,
   startOrResumeReviewSession,
   startOrResumeV2ReviewSession

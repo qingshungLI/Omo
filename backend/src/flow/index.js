@@ -1,8 +1,14 @@
 import { analyzeScreenshotImage } from "./vision.js";
 import { enabledCapturePlatforms, searchLinks } from "./search.js";
 import { extractFocusedSourceContent, isVideoUrl } from "./source.js";
-import { generateQuickReviewPath, generateVideoOverview } from "./review.js";
+import { generateVideoOverview } from "./review.js";
 import { buildMemoryCard, buildMemoryFragment } from "./memoryCard.js";
+import {
+  buildCaptureDisposition,
+  generateCaptureMemoryCard,
+  serializeLegacyMemoryCard,
+  serializeLegacyReview
+} from "./captureMemoryCard.js";
 
 export async function runImageFlow({
   imagePath = "",
@@ -17,7 +23,8 @@ export async function runImageFlow({
   searcher = searchLinks,
   analyzeImage = analyzeScreenshotImage,
   extract = extractFocusedSourceContent,
-  generate = generateQuickReviewPath,
+  generate = null,
+  generateMemory = generateCaptureMemoryCard,
   generateOverview = generateVideoOverview,
   enabledPlatforms = enabledCapturePlatforms(process.env.CAPTURE_PLATFORMS)
 } = {}) {
@@ -41,8 +48,7 @@ export async function runImageFlow({
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
-    response.memoryCard = fragmentForResult(response);
-    return response;
+    return attachFragmentContracts(response);
   }
   if (sourcePlatform && !allowedPlatforms.has(sourcePlatform)) {
     timings.totalMs = Date.now() - flowStartedAt;
@@ -52,8 +58,7 @@ export async function runImageFlow({
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
-    response.memoryCard = fragmentForResult(response);
-    return response;
+    return attachFragmentContracts(response);
   }
   if (identity.platform && identity.platform !== "unknown" && !allowedPlatforms.has(identity.platform)) {
     timings.totalMs = Date.now() - flowStartedAt;
@@ -63,8 +68,7 @@ export async function runImageFlow({
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
-    response.memoryCard = fragmentForResult(response);
-    return response;
+    return attachFragmentContracts(response);
   }
   if (sourcePlatform && isKnownPlatform(identity.platform) && sourcePlatform !== identity.platform) {
     timings.totalMs = Date.now() - flowStartedAt;
@@ -74,8 +78,7 @@ export async function runImageFlow({
       capture: serializeCaptureAnalysis(captureAnalysis, identity),
       timings
     };
-    response.memoryCard = fragmentForResult(response);
-    return response;
+    return attachFragmentContracts(response);
   }
   reportProgress(onProgress, { stage: "search", message: "截图理解完成，正在用 TikHub 核对内容来源", percent: 20 });
   const queries = buildSearchQueries(identity);
@@ -134,8 +137,7 @@ export async function runImageFlow({
         ? "已理解截图，但尚未配置可用的来源搜索 API。"
         : "没有找到标题和博主均可信的来源链接，已停止生成，避免保存错误内容。"
     };
-    response.memoryCard = fragmentForResult(response);
-    return response;
+    return attachFragmentContracts(response);
   }
 
   result.link = candidate;
@@ -182,6 +184,7 @@ export async function runImageFlow({
         extractionMeta: source.learningSource?.extractionMeta || null
       };
     }
+    const evidence = evidenceForSource(source);
     const reviewInput = {
       id: `image-${Date.now()}`,
       title: source.sourceTitle,
@@ -191,22 +194,31 @@ export async function runImageFlow({
       blocks: source.blocks
     };
     reportProgress(onProgress, { stage: "generate", message: "内容已提取，正在生成截图知识卡和全片总结", percent: 82 });
-    const reviewRequest = measureAsync(timings, "reviewGenerationMs", () => generate(reviewInput));
+    const memoryRequest = measureAsync(timings, "reviewGenerationMs", async () => (
+      generate
+        ? { legacyReview: await generate(reviewInput), evidence }
+        : {
+            captureAnalysis: await generateMemory({
+              evidence,
+              sourceStatus: "verified",
+              sourceTitle: source.sourceTitle,
+              sourceAccount: source.sourceAccount,
+              sourceUrl: source.sourceUrl,
+              source: result.source,
+              link: result.link
+            }),
+            evidence
+          }
+    ));
     const overviewRequest = sourceType === "video_link"
       ? measureAsync(timings, "overviewGenerationMs", () => generateOverview({ title: source.sourceTitle, account: source.sourceAccount, rawText: source.overviewText }))
       : null;
     const generationStartedAt = Date.now();
-    const [review, videoOverview] = await Promise.all([reviewRequest, overviewRequest]);
+    const [memoryGeneration, videoOverview] = await Promise.all([memoryRequest, overviewRequest]);
     timings.generationWallMs = Date.now() - generationStartedAt;
-    result.review = review;
     if (videoOverview) result.videoOverview = videoOverview;
     result.status = "completed";
-    result.memoryCard = buildMemoryCard({
-      review,
-      source: result.source,
-      link: result.link,
-      capture: result.capture
-    });
+    applyMemoryGenerationResult(result, memoryGeneration);
     reportProgress(onProgress, { stage: "completed", message: "复习卡已生成", percent: 100 });
   } catch (error) {
     if (timings.sourceExtractionMs === undefined) {
@@ -222,15 +234,11 @@ export async function runImageFlow({
     if (result.error.code === "failed_extract_video" && screenshotEvidence.length >= 24) {
       try {
         reportProgress(onProgress, { stage: "generate", message: "视频转写不可用，正在只依据截图可见内容生成记忆卡", percent: 82 });
-        const fallbackReview = await measureAsync(timings, "reviewGenerationMs", () => generate({
-          id: `image-fallback-${Date.now()}`,
-          title: candidate.title || identity.title || "截图记忆",
-          sourceUrl: candidate.url,
-          sourceAccount: candidate.account || identity.account,
-          rawText: screenshotEvidence,
-          blocks: [{ id: "screenshot-visible", type: "paragraph", text: screenshotEvidence }]
-        }));
-        result.review = fallbackReview;
+        const fallbackEvidence = [{
+          id: "screenshot-visible",
+          type: "screenshot",
+          text: screenshotEvidence
+        }];
         result.source = {
           sourceType: "screenshot",
           title: candidate.title || identity.title || "截图记忆",
@@ -244,29 +252,54 @@ export async function runImageFlow({
         result.sourceWarning = result.error;
         delete result.error;
         result.status = "completed";
-        result.memoryCard = buildMemoryCard({
-          review: fallbackReview,
-          source: result.source,
-          link: result.link,
-          capture: result.capture
-        });
+        const fallbackInput = {
+          id: `image-fallback-${Date.now()}`,
+          title: candidate.title || identity.title || "截图记忆",
+          sourceUrl: candidate.url,
+          sourceAccount: candidate.account || identity.account,
+          rawText: screenshotEvidence,
+          blocks: fallbackEvidence
+        };
+        const fallbackGeneration = await measureAsync(
+          timings,
+          "reviewGenerationMs",
+          async () => (
+            generate
+              ? { legacyReview: await generate(fallbackInput), evidence: fallbackEvidence }
+              : {
+                  captureAnalysis: await generateMemory({
+                    evidence: fallbackEvidence,
+                    sourceStatus: "partial",
+                    sourceTitle: result.source.title,
+                    sourceAccount: result.source.account,
+                    sourceUrl: result.source.url,
+                    source: result.source,
+                    link: result.link
+                  }),
+                  evidence: fallbackEvidence
+                }
+          )
+        );
+        applyMemoryGenerationResult(result, fallbackGeneration);
         reportProgress(onProgress, { stage: "completed", message: "已根据截图可见内容生成记忆卡", percent: 100 });
       } catch (fallbackError) {
         result.sourceFallbackError = {
           code: fallbackError?.code || "screenshot_fallback_failed",
           message: fallbackError?.message || "截图可见内容生成失败。"
         };
-        result.memoryCard = fragmentForResult({
+        result.error = result.sourceWarning || result.sourceFallbackError;
+        result.status = result.error.code;
+        Object.assign(result, attachFragmentContracts({
           ...result,
           message: result.error.message
-        });
+        }));
         reportProgress(onProgress, { stage: "failed", message: result.error.message, percent: 100 });
       }
     } else {
-      result.memoryCard = fragmentForResult({
+      Object.assign(result, attachFragmentContracts({
         ...result,
         message: result.error.message
-      });
+      }));
       reportProgress(onProgress, { stage: "failed", message: result.error.message, percent: 100 });
     }
   }
@@ -293,6 +326,62 @@ function fragmentForResult(result) {
     message: result.message || result.error?.message,
     code: result.status || result.error?.code
   });
+}
+
+function attachFragmentContracts(result, {
+  disposition = "needs_confirmation",
+  sourceStatus = "unconfirmed"
+} = {}) {
+  const response = { ...result };
+  response.captureAnalysis = buildCaptureDisposition({
+    disposition,
+    sourceStatus,
+    decisionReason: result.message || result.error?.message
+  });
+  response.memoryCard = fragmentForResult(response);
+  return response;
+}
+
+function applyMemoryGenerationResult(result, generation) {
+  if (generation?.legacyReview) {
+    result.review = generation.legacyReview;
+    result.memoryCard = buildMemoryCard({
+      review: generation.legacyReview,
+      source: result.source,
+      link: result.link,
+      capture: result.capture
+    });
+    return;
+  }
+
+  const captureAnalysis = generation?.captureAnalysis || buildCaptureDisposition({
+    disposition: "needs_confirmation",
+    sourceStatus: "unconfirmed",
+    decisionReason: "没有生成可用的记忆卡。"
+  });
+  result.captureAnalysis = captureAnalysis;
+  result.schedule = captureAnalysis.schedule || null;
+  const fallback = buildMemoryFragment({
+    capture: result.capture,
+    link: result.link,
+    message: captureAnalysis.decisionReason,
+    code: captureAnalysis.disposition
+  });
+  result.memoryCard = serializeLegacyMemoryCard(captureAnalysis, { fallback });
+  const legacyReview = serializeLegacyReview(captureAnalysis, {
+    evidence: generation?.evidence || [],
+    source: result.source
+  });
+  if (legacyReview) result.review = legacyReview;
+}
+
+function evidenceForSource(source) {
+  const blocks = Array.isArray(source?.blocks) ? source.blocks : [];
+  if (blocks.length > 0) return blocks;
+  const rawText = String(source?.rawText || "").trim();
+  return rawText
+    ? [{ id: "source-content", type: "paragraph", text: rawText }]
+    : [];
 }
 
 function reportProgress(handler, progress) {

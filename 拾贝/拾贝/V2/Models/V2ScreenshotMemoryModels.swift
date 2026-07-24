@@ -4,6 +4,7 @@ import UIKit
 struct V2CapturedMemoryCard: Identifiable, Equatable {
     let card: ImageFlowMemoryCard
     let screenshotData: Data
+    var schedule: ImageFlowReviewSchedule?
     var masteryStage: V2MemoryMasteryStage
     var successfulRecallCount: Int
     var lastAssessment: V2MemoryAssessment?
@@ -14,6 +15,7 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
     init(
         card: ImageFlowMemoryCard,
         screenshotData: Data,
+        schedule: ImageFlowReviewSchedule? = nil,
         masteryStage: V2MemoryMasteryStage = .sealed,
         successfulRecallCount: Int = 0,
         lastAssessment: V2MemoryAssessment? = nil,
@@ -21,14 +23,31 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
     ) {
         self.card = card
         self.screenshotData = screenshotData
+        self.schedule = schedule
         self.masteryStage = masteryStage
         self.successfulRecallCount = successfulRecallCount
         self.lastAssessment = lastAssessment
         self.capturedAt = capturedAt
     }
 
-    mutating func apply(_ assessment: V2MemoryAssessment) {
+    init(record: CaptureMemoryCardRecord) {
+        card = record.memoryCard
+        screenshotData = Data()
+        schedule = record.schedule
+        masteryStage = V2MemoryMasteryStage(rawServerValue: record.masteryStage) ?? .sealed
+        successfulRecallCount = record.successfulRecallCount ?? 0
+        lastAssessment = record.lastAssessment.flatMap(V2MemoryAssessment.init(rawValue:))
+        capturedAt = V2ScreenshotDateParser.date(from: record.capturedAt)
+            ?? V2ScreenshotDateParser.date(from: record.memoryCard.createdAt)
+            ?? Date()
+    }
+
+    mutating func apply(
+        _ assessment: V2MemoryAssessment,
+        schedule updatedSchedule: ImageFlowReviewSchedule
+    ) {
         lastAssessment = assessment
+        schedule = updatedSchedule
         if assessment == .remembered {
             successfulRecallCount += 1
         }
@@ -38,7 +57,7 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
     func isEligible(for pool: V2MemoryPool, now: Date = Date()) -> Bool {
         switch pool {
         case .due:
-            true
+            schedule?.isDue(at: now) ?? (lastAssessment == nil)
         case .timeCapsule:
             capturedAt <= now.addingTimeInterval(-30 * 24 * 60 * 60)
         case .fading:
@@ -117,6 +136,16 @@ enum V2MemoryMasteryStage: Int, CaseIterable, Equatable {
         }
     }
 
+    init?(rawServerValue: String?) {
+        switch rawServerValue {
+        case "sealed": self = .sealed
+        case "awakened": self = .awakened
+        case "solidified": self = .solidified
+        case "engraved": self = .engraved
+        default: return nil
+        }
+    }
+
     func applying(_ assessment: V2MemoryAssessment) -> V2MemoryMasteryStage {
         if self == .sealed {
             return .awakened
@@ -145,8 +174,7 @@ struct V2ScreenshotDrawSession: Identifiable, Equatable {
         mode: V2ScreenshotDrawMode,
         from cards: [V2CapturedMemoryCard],
         pool: V2MemoryPool = .due,
-        now: Date = Date(),
-        shuffle: ([V2CapturedMemoryCard]) -> [V2CapturedMemoryCard] = { $0.shuffled() }
+        now: Date = Date()
     ) -> V2ScreenshotDrawSession? {
         let eligibleCards = cards.filter { $0.isEligible(for: pool, now: now) }
         let uniqueCards = eligibleCards.reduce(into: [V2CapturedMemoryCard]()) { result, card in
@@ -155,9 +183,49 @@ struct V2ScreenshotDrawSession: Identifiable, Equatable {
             }
         }
         guard !uniqueCards.isEmpty else { return nil }
-        let shuffled = shuffle(uniqueCards)
-        let selected = mode == .single ? Array(shuffled.prefix(1)) : Array(shuffled.prefix(10))
+        let orderedCards = ordered(uniqueCards, for: pool)
+        let selected = mode == .single ? Array(orderedCards.prefix(1)) : Array(orderedCards.prefix(10))
         return V2ScreenshotDrawSession(mode: mode, pool: pool, cards: selected)
+    }
+
+    private static func ordered(
+        _ cards: [V2CapturedMemoryCard],
+        for pool: V2MemoryPool
+    ) -> [V2CapturedMemoryCard] {
+        cards.sorted { lhs, rhs in
+            switch pool {
+            case .due:
+                let lhsDate = lhs.schedule?.nextReviewDate ?? lhs.capturedAt
+                let rhsDate = rhs.schedule?.nextReviewDate ?? rhs.capturedAt
+                if lhsDate != rhsDate { return lhsDate < rhsDate }
+            case .timeCapsule:
+                if lhs.capturedAt != rhs.capturedAt { return lhs.capturedAt < rhs.capturedAt }
+            case .fading:
+                let lhsPriority = fadingPriority(lhs.lastAssessment)
+                let rhsPriority = fadingPriority(rhs.lastAssessment)
+                if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
+                if lhs.capturedAt != rhs.capturedAt { return lhs.capturedAt < rhs.capturedAt }
+            }
+            return lhs.id < rhs.id
+        }
+    }
+
+    private static func fadingPriority(_ assessment: V2MemoryAssessment?) -> Int {
+        switch assessment {
+        case .forgot: 0
+        case .fuzzy: 1
+        default: 2
+        }
+    }
+}
+
+private enum V2ScreenshotDateParser {
+    static func date(from value: String?) -> Date? {
+        guard let value, !value.isEmpty else { return nil }
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractionalFormatter.date(from: value)
+            ?? ISO8601DateFormatter().date(from: value)
     }
 }
 

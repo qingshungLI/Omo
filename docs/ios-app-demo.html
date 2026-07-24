@@ -362,17 +362,16 @@
       background: rgba(253, 250, 242, 0.7);
       box-shadow: 0 4px 12px rgba(112, 120, 62, 0.08);
       cursor: pointer;
-      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+      transition: transform 260ms cubic-bezier(.34,1.56,.64,1), border-color 180ms ease, background 180ms ease;
     }
 
-    .memory-pool:nth-child(1) { transform: rotate(-3deg) translateY(9px); }
-    .memory-pool:nth-child(3) { transform: rotate(3deg) translateY(9px); }
     .memory-pool:hover { border-color: rgba(152, 168, 78, 0.7); }
+    .memory-pool:active { transform: scale(.97); }
     .memory-pool.selected {
       border-color: var(--primary);
       background: var(--cream);
       box-shadow: 0 7px 20px rgba(112, 120, 62, 0.18);
-      transform: translateY(-5px);
+      transform: translateY(-5px) rotate(-5deg);
     }
 
     .pool-symbol {
@@ -408,17 +407,24 @@
 
     .card-stack {
       position: relative;
-      width: 280px;
-      height: 344px;
-      margin: auto 0 26px;
+      width: 178px;
+      height: 126px;
+      margin: 18px 0 20px;
+      border: 0;
+      background: transparent;
+      cursor: grab;
+      touch-action: none;
+      transition: transform 200ms cubic-bezier(.34,1.56,.64,1);
     }
+
+    .card-stack:active { cursor: grabbing; }
 
     .stack-card {
       position: absolute;
-      top: 14px;
-      left: 21px;
-      width: 238px;
-      height: 318px;
+      top: 8px;
+      left: 22px;
+      width: 134px;
+      height: 98px;
       border: 1px solid var(--border);
       border-radius: 24px;
       background: rgba(253, 250, 242, 0.84);
@@ -445,17 +451,17 @@
     .stack-card-content {
       display: grid;
       justify-items: center;
-      gap: 13px;
+      gap: 4px;
     }
 
     .sparkle {
-      width: 44px;
-      height: 44px;
+      width: 30px;
+      height: 30px;
       color: var(--primary);
     }
 
     .stack-title {
-      font-size: 20px;
+      font-size: 13px;
       font-weight: 700;
     }
 
@@ -508,7 +514,7 @@
       left: 18px;
       height: 86px;
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       align-items: center;
       padding: 0 7px;
       border-radius: 29px;
@@ -540,11 +546,8 @@
       color: var(--primary);
     }
 
-    .nav-button.upload img {
-      width: 60px;
-      height: 60px;
-      transform: translateY(-5px);
-    }
+    .nav-button img { opacity: .72; }
+    .nav-button.active img { opacity: 1; filter: sepia(.2) saturate(1.3); }
 
     .upload-content {
       position: relative;
@@ -576,26 +579,41 @@
 
     .mascot {
       position: relative;
-      width: 105px;
-      height: 122px;
+      width: 112px;
+      height: 112px;
       margin: 13px auto 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
     }
 
     .mascot img {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: transform 220ms cubic-bezier(.34,1.56,.64,1);
     }
 
-    .mascot .back {
-      width: 83px;
-      top: 0;
+    .mascot.boop img { animation: mascot-boop 340ms cubic-bezier(.34,1.56,.64,1); }
+    .mascot.success img { animation: mascot-hop 480ms cubic-bezier(.34,1.56,.64,1) 1; }
+
+    @keyframes mascot-boop {
+      0%, 100% { transform: scale(1); }
+      35% { transform: scale(1.12, .84); }
+      68% { transform: scale(.94, 1.08); }
     }
 
-    .mascot .front {
-      width: 65px;
-      top: 48px;
-      left: 55%;
+    @keyframes mascot-hop {
+      0%, 100% { transform: translateY(0) scale(1); }
+      45% { transform: translateY(-10px) scale(.96, 1.04); }
+    }
+
+    .mascot-hint {
+      min-height: 20px;
+      margin: 2px 0 8px;
+      color: var(--muted);
+      font-size: 11px;
     }
 
     .upload-card {
@@ -878,13 +896,20 @@
       display: grid;
       place-items: center;
       padding: 28px;
-      animation: summon-card 780ms cubic-bezier(.2,.8,.2,1) both;
+      animation: summon-card 1250ms cubic-bezier(.2,.8,.2,1) both;
     }
 
-    .summoned-card .rarity {
+    .summoned-card .rarity,
+    .summoned-card .mastery-chip {
       position: absolute;
       top: 18px;
       left: 18px;
+      animation: summon-badge 200ms ease-out 1250ms both;
+    }
+
+    .summoned-card .mastery-chip {
+      right: 18px;
+      left: auto;
     }
 
     .summoned-card strong {
@@ -908,14 +933,17 @@
       background: rgba(79, 135, 185, 0.34);
       box-shadow: 0 0 24px rgba(79, 135, 185, 0.55);
       transform: rotate(-24deg);
-      animation: summon-trail 780ms ease-out both;
+      animation: summon-trail 500ms ease-out 250ms both;
     }
 
     .summon-trail.r { background: rgba(103, 103, 103, 0.26); }
-    .summon-trail.sr { background: rgba(79, 135, 185, 0.36); }
+    .summon-trail.sr {
+      background: rgba(240, 138, 93, 0.42);
+      box-shadow: 0 0 26px rgba(240, 138, 93, 0.45);
+    }
     .summon-trail.ssr {
-      background: rgba(217, 133, 44, 0.38);
-      box-shadow: 0 0 28px rgba(217, 133, 44, 0.5);
+      background: rgba(217, 164, 65, 0.42);
+      box-shadow: 0 0 28px rgba(217, 164, 65, 0.5);
     }
 
     .skip-summon {
@@ -932,14 +960,22 @@
     }
 
     @keyframes summon-card {
-      from { opacity: 0; transform: translate(90px, -52px) rotate(12deg) scale(.72); }
-      to { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); }
+      0% { opacity: 0; transform: translateY(64px) rotate(-4deg) scale(.86); }
+      20% { opacity: 1; transform: translateY(30px) rotate(-3.5deg) scale(.94); }
+      60% { transform: translateY(-6px) rotate(2.5deg) scale(1.01); }
+      86% { transform: translateY(2px) rotate(-1deg) scale(1); }
+      100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
     }
 
     @keyframes summon-trail {
-      from { opacity: 0; transform: translate(110px, -75px) rotate(-24deg) scaleX(.25); }
+      from { opacity: 0; transform: translate(-110px, 55px) rotate(-24deg) scaleX(.25); }
       40% { opacity: 1; }
-      to { opacity: 0; transform: translate(-110px, 55px) rotate(-24deg) scaleX(1); }
+      to { opacity: 0; transform: translate(110px, -75px) rotate(-24deg) scaleX(1); }
+    }
+
+    @keyframes summon-badge {
+      from { opacity: 0; transform: translateY(5px) scale(.94); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     .draw-content {
@@ -975,13 +1011,13 @@
     }
 
     .rarity.sr {
-      color: #4F87B9;
-      background: rgba(79, 135, 185, 0.13);
+      color: #D46E45;
+      background: rgba(240, 138, 93, 0.15);
     }
 
     .rarity.ssr {
-      color: #D9852C;
-      background: rgba(217, 133, 44, 0.13);
+      color: #B77B18;
+      background: rgba(217, 164, 65, 0.16);
     }
 
     .source-status {
@@ -1221,6 +1257,130 @@
     .assessment-button.fuzzy { color: #D3A34A; }
     .assessment-button.forgot { color: #E57668; }
 
+    .semantic-sentence {
+      margin: 22px 0 0;
+      color: var(--text-2);
+      font-size: 18px;
+      font-weight: 650;
+      line-height: 1.65;
+    }
+
+    .semantic-mask {
+      position: relative;
+      display: inline-block;
+      min-width: 92px;
+      padding: 1px 5px;
+      border: 0;
+      border-radius: 6px;
+      color: transparent;
+      background:
+        repeating-linear-gradient(-8deg, rgba(70, 72, 68, .76) 0 3px, rgba(70, 72, 68, .14) 3px 7px),
+        #efe8d8;
+      cursor: crosshair;
+      touch-action: none;
+      user-select: none;
+      transition: color 260ms ease, background 260ms ease, opacity 260ms ease;
+    }
+
+    .semantic-mask.revealed {
+      color: inherit;
+      background: rgba(240, 138, 93, .12);
+    }
+
+    .variant-options {
+      display: grid;
+      gap: 9px;
+      margin-top: 22px;
+    }
+
+    .variant-option {
+      min-height: 48px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      color: var(--text);
+      background: var(--cream);
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .variant-result {
+      margin-top: 16px;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .collection-content,
+    .profile-content {
+      padding: 18px 24px 122px;
+    }
+
+    .collection-content h2,
+    .profile-content h2 {
+      margin: 6px 0 18px;
+      font-size: 25px;
+    }
+
+    .collection-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .collection-card,
+    .profile-panel {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--cream);
+      box-shadow: 0 4px 12px rgba(112, 120, 62, .08);
+    }
+
+    .collection-card {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .collection-card h3 {
+      margin: 2px 0 6px;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .collection-card p,
+    .profile-panel p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .profile-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+      margin-bottom: 14px;
+    }
+
+    .profile-stat {
+      padding: 14px 8px;
+      border-radius: 15px;
+      background: rgba(232, 235, 189, .38);
+      text-align: center;
+    }
+
+    .profile-stat strong {
+      display: block;
+      font-size: 20px;
+    }
+
+    .profile-stat span {
+      color: var(--muted);
+      font-size: 10px;
+    }
+
     .complete-content {
       min-height: 100%;
       display: flex;
@@ -1400,6 +1560,30 @@
       }
     }
 
+    @media (max-width: 400px) {
+      .home-content,
+      .collection-content,
+      .profile-content {
+        padding-right: 16px;
+        padding-left: 16px;
+      }
+
+      .memory-pool {
+        min-height: 190px;
+        padding-right: 5px;
+        padding-left: 5px;
+      }
+
+      .pool-copy {
+        min-height: 42px;
+      }
+
+      .bottom-nav {
+        right: 12px;
+        left: 12px;
+      }
+    }
+
     @media (max-height: 760px) and (min-width: 821px) {
       .device {
         width: 354px;
@@ -1439,10 +1623,10 @@
       <h1 id="preview-title">把刷过的内容，变成会再次想起的记忆。</h1>
       <p>这是当前 iOS 方向的 Web 交互预览。你可以从自己的过去选择记忆池，体验召回、主动回忆、修复与入册。</p>
       <ol class="steps">
-        <li><span class="step-number">1</span><span>点击手机底部的 <strong>+</strong>，选择自己的截图，或载入内置 B站演示截图。</span></li>
+        <li><span class="step-number">1</span><span>在“今日”里添加截图，或载入内置 B站演示截图。</span></li>
         <li><span class="step-number">2</span><span>选择“今日待唤醒 / 时间胶囊 / 快要遗忘”，召回一定来自自己的内容。</span></li>
         <li><span class="step-number">3</span><span>先回忆再揭晓；R/SR/SSR 表示内容价值，封存到铭刻表示你的掌握程度。</span></li>
-        <li><span class="step-number">4</span><span>向右拖动卡片上的控制条，主动回忆后再看答案，最后进行自评。</span></li>
+        <li><span class="step-number">4</span><span>擦开被遮挡的承重语义，主动回忆后再看答案，最后进行自评。</span></li>
       </ol>
       <div class="preview-note">Web 页只演示产品交互，不会上传图片或调用模型；正式 iOS 流程由 Qwen 视觉模型分析内容。</div>
       <button class="reset-button" id="desktop-reset" type="button">重置体验</button>
@@ -1471,28 +1655,43 @@
         rarity: "R",
         cue: "截图里提到，《恋与深空》上线首年贡献了叠纸游戏约多少收入？",
         answer: "约 48.86%",
+        coreBefore: "《恋与深空》上线首年贡献了叠纸游戏约 ",
+        hidden: "48.86%",
+        coreAfter: " 的收入。",
         explanation: "先记住接近一半这个量级。数字来自本次演示截图的文字区域，正式产品会把答案绑定到原始证据。",
         rarityReason: "R · 单一明确事实，适合快速复习。",
         source: "B站 · 演示视频页",
-        platform: "bilibili"
+        platform: "bilibili",
+        judgment: { statement: "《恋与深空》上线首年贡献了叠纸游戏约一半收入。", correct: true },
+        choice: { prompt: "最接近截图证据的比例是？", options: ["约 12%", "约 25%", "约 49%"], correct: 2 }
       },
       {
         rarity: "SR",
         cue: "为什么“收藏了”通常不等于“记住了”？",
         answer: "收藏完成的是存储，记忆还需要后续主动提取。",
+        coreBefore: "收藏完成的是存储，记忆还需要后续",
+        hidden: "主动提取",
+        coreAfter: "。",
         explanation: "重新尝试说出答案，比再次被动浏览更能暴露遗忘；Recallo 把消费后的内容转成一次短促的主动回忆。",
         rarityReason: "SR · 可迁移的方法论，能影响之后的学习行为。",
         source: "抖音 · 学习方法演示",
-        platform: "douyin"
+        platform: "douyin",
+        judgment: { statement: "只要收藏内容，就已经完成了记忆巩固。", correct: false },
+        choice: { prompt: "收藏之后还缺少哪一步？", options: ["主动提取", "增加收藏夹", "继续刷相似内容"], correct: 0 }
       },
       {
         rarity: "SSR",
         cue: "面对持续刷新的信息流，最稀缺的能力可能不是什么？",
         answer: "不是获取更多内容，而是决定什么值得在未来再次想起。",
+        coreBefore: "最稀缺的不是获取更多内容，而是",
+        hidden: "决定什么值得在未来再次想起",
+        coreAfter: "。",
         explanation: "产品不试图把所有内容都变成课程，而是让用户从一次性消费中留下少量、可被唤醒的个人记忆。",
         rarityReason: "SSR · 能改变信息消费方式的核心判断。",
         source: "公众号 · 产品思考演示",
-        platform: "wechat"
+        platform: "wechat",
+        judgment: { statement: "信息流时代最稀缺的是获得更多内容。", correct: false },
+        choice: { prompt: "这张卡强调的核心能力是什么？", options: ["收藏更多", "筛选未来值得再想起的内容", "提高刷视频速度"], correct: 1 }
       }
     ];
 
@@ -1537,7 +1736,10 @@
       revealed: false,
       revealProgress: 0,
       lastAssessment: "",
-      masteryByCard: ["sealed", "sealed", "awakened"],
+      masteryByCard: ["sealed", "awakened", "awakened"],
+      nextReviewByCard: [0, 2, 1],
+      variantResult: "",
+      mascotTapCount: 0,
       masteryBefore: "sealed",
       masteryAfter: "sealed",
       cardCount: 5,
@@ -1557,13 +1759,12 @@
       `;
     }
 
-    function navItem(tab, label, asset, selectedAsset, extraClass = "") {
+    function navItem(tab, label, asset) {
       const selected = state.screen === tab || (tab === "home" && ["summon", "draw", "complete"].includes(state.screen));
-      const src = `/app-demo-assets/${selected ? selectedAsset : asset}`;
       return `
-        <button class="nav-button ${selected ? "active" : ""} ${extraClass}" data-nav="${tab}" type="button" aria-label="${label}">
-          <img src="${src}" alt="">
-          ${label ? `<span>${label}</span>` : ""}
+        <button class="nav-button ${selected ? "active" : ""}" data-nav="${tab}" type="button" aria-label="${label}" aria-current="${selected ? "page" : "false"}">
+          <img src="/app-demo-assets/phosphor/${asset}" alt="">
+          <span>${label}</span>
         </button>
       `;
     }
@@ -1571,13 +1772,9 @@
     function bottomNav() {
       return `
         <nav class="bottom-nav" aria-label="主要导航">
-          ${navItem("home", "学习", "v2-nav-learning-inactive.svg", "v2-nav-learning-selected.svg")}
-          ${navItem("materials", "资料", "v2-nav-materials-inactive.svg", "v2-nav-materials-selected.svg")}
-          <button class="nav-button upload" data-nav="upload" type="button" aria-label="上传">
-            <img src="/app-demo-assets/v2-upload-tab-button.svg" alt="">
-          </button>
-          ${navItem("discover", "发现", "v2-nav-discover-inactive.svg", "v2-nav-discover-selected.svg")}
-          ${navItem("notes", "笔记", "v2-nav-notes-inactive.svg", "v2-nav-notes-selected.svg")}
+          ${navItem("home", "今日", "sun.svg")}
+          ${navItem("library", "知识库", "cards-three.svg")}
+          ${navItem("profile", "我的", "user-circle.svg")}
         </nav>
       `;
     }
@@ -1587,7 +1784,7 @@
         <header class="top-chrome">
           <button class="circle-button" data-toast="今天没有新通知" type="button" aria-label="通知">${icons.bell}</button>
           ${title ? `<div class="top-title">${title}</div>` : "<span></span>"}
-          <button class="circle-button" data-toast="个人页暂不在本次 MVP 中" type="button" aria-label="个人主页">${icons.person}</button>
+          <button class="circle-button" data-nav="profile" type="button" aria-label="个人主页">${icons.person}</button>
         </header>
       `;
     }
@@ -1615,13 +1812,29 @@
             <div class="home-content">
               <h2>今天，唤醒一点记忆</h2>
               <p class="home-subtitle">从自己的过去，召回一段正在消失的记忆</p>
+              <button class="mascot" id="mascot-button" type="button" aria-label="毛球，点我一下">
+                <img src="/app-demo-assets/mascot-v06/recallo-mascot-idle.png" alt="">
+              </button>
+              <p class="mascot-hint" id="mascot-hint">它只提醒你：抽到的是自己的过去</p>
               <div class="memory-pools" aria-label="选择记忆池">
                 ${pools}
+              </div>
+              <div class="card-stack" id="recall-stack" role="button" tabindex="0" aria-label="长按或向上拖动 28 点，召回一张记忆">
+                <div class="stack-card"></div>
+                <div class="stack-card"></div>
+                <div class="stack-card front">
+                  <div class="stack-card-content">
+                    ${icons.sparkle}
+                    <span class="stack-title">上拖召回</span>
+                    <span class="stack-subtitle">或长按 450ms</span>
+                  </div>
+                </div>
               </div>
               <div class="button-row">
                 <button class="primary-button" id="draw-one" type="button">召回 1 张</button>
                 <button class="secondary-button" id="draw-many" type="button">连续召回</button>
               </div>
+              <button class="direct-reveal" data-nav="upload" type="button"><img src="/app-demo-assets/phosphor/plus.svg" alt="" width="16" height="16"> 添加新截图</button>
               <p class="helper-copy">${selectedPool.title} · ${selectedPool.cardIndexes.length} 张可召回 · 连续模式可随时退出</p>
             </div>
           </div>
@@ -1650,8 +1863,7 @@
                 <h2>把刚刚刷到的内容，留给未来的你</h2>
                 <p>一张截图，只提炼一个值得再想起的点</p>
                 <div class="mascot" aria-hidden="true">
-                  <img class="back" src="/app-demo-assets/upload-mascot-back.svg" alt="">
-                  <img class="front" src="/app-demo-assets/upload-mascot-front.svg" alt="">
+                  <img src="/app-demo-assets/mascot-v06/recallo-mascot-thinking.png" alt="">
                 </div>
               </div>
               <div class="upload-card">
@@ -1706,6 +1918,75 @@
       `;
     }
 
+    function reviewDateText(dayOffset) {
+      if (dayOffset === 0) return "今天";
+      if (dayOffset === 1) return "明天";
+      const date = new Date();
+      date.setDate(date.getDate() + dayOffset);
+      return `${date.getMonth() + 1}月${date.getDate()}日`;
+    }
+
+    function libraryScreen() {
+      const rows = cards.map((card, index) => `
+        <article class="collection-card">
+          <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
+          <div>
+            <h3>${card.coreBefore}${card.hidden}${card.coreAfter}</h3>
+            <p>${card.source}</p>
+            <p>${masteryLabels[state.masteryByCard[index]]} · ${reviewDateText(state.nextReviewByCard[index])}复习</p>
+          </div>
+        </article>
+      `).join("");
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="library">
+          ${topChrome("知识库")}
+          <div class="screen-scroll">
+            <div class="collection-content">
+              <h2>你的记忆卡</h2>
+              <div class="collection-list">${rows}</div>
+              <p class="helper-copy">这里只展示真实卡片；完整知识图谱不在本轮伪造。</p>
+            </div>
+          </div>
+          ${bottomNav()}
+        </section>
+      `;
+    }
+
+    function profileScreen() {
+      const remembered = state.masteryByCard.filter((item) => item === "solidified" || item === "engraved").length;
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="profile">
+          ${topChrome("我的")}
+          <div class="screen-scroll">
+            <div class="profile-content">
+              <h2>我的 Recallo</h2>
+              <div class="profile-stats">
+                <div class="profile-stat"><strong>${cards.length}</strong><span>真实卡片</span></div>
+                <div class="profile-stat"><strong>${remembered}</strong><span>已稳固</span></div>
+                <div class="profile-stat"><strong>${state.mascotTapCount}</strong><span>毛球回应</span></div>
+              </div>
+              <div class="profile-panel">
+                <strong>稀有度解释</strong>
+                <p>R / SR / SSR 表示知识节点的核心潜力，不是抽取概率，也不等于掌握程度。</p>
+              </div>
+              <div class="profile-panel" style="margin-top:12px">
+                <strong>动态效果</strong>
+                <p>系统 Reduce Motion：${reduced ? "已开启，过场改为淡入" : "未开启，使用克制的 1450ms 召回过场"}。</p>
+              </div>
+              <div class="profile-panel" style="margin-top:12px">
+                <strong>数据与隐私</strong>
+                <p>本 Web 预览只在浏览器本地读取选择的图片，不上传文件。</p>
+              </div>
+            </div>
+          </div>
+          ${bottomNav()}
+        </section>
+      `;
+    }
+
     function summonScreen() {
       const card = cards[state.currentCard];
       const pool = memoryPools[state.selectedPool];
@@ -1723,9 +2004,9 @@
               <div class="summon-trail ${card.rarity.toLowerCase()}"></div>
               <div class="summoned-card">
                 <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
+                <span class="mastery-chip">${masteryLabels[state.masteryByCard[state.currentCard]]}</span>
                 ${icons.sparkle}
                 <strong>一段记忆正在苏醒</strong>
-                <span>${masteryLabels[state.masteryByCard[state.currentCard]]}</span>
               </div>
             </div>
             <button class="skip-summon" id="skip-summon" type="button">跳过过场</button>
@@ -1736,34 +2017,52 @@
 
     function drawScreen() {
       const card = cards[state.currentCard];
+      const taskKind = state.masteryByCard[state.currentCard] === "sealed"
+        ? "masked_semantic"
+        : (state.currentCard % 2 === 0 ? "judgment" : "choice");
       const progressText = state.drawMode === "continuous"
         ? `${state.sessionPosition + 1} / ${state.continuousLimit}`
         : "唤醒一张记忆";
-      const answer = state.revealed
-        ? `<div class="answer" id="answer">
+      const revealedAnswer = `<div class="answer" id="answer">
+            ${state.variantResult ? `<p class="variant-result">${state.variantResult}</p>` : ""}
             <strong>${card.answer}</strong>
             <p>${card.explanation}</p>
             <p class="rarity-reason">${card.rarityReason}</p>
             ${sourcePreview(card)}
             <button class="source-link" data-toast="演示页不跳转外部平台" type="button">↗ ${card.source}</button>
-          </div>`
-        : `<div class="reveal-area">
-            <div class="reveal-track" id="reveal-track" role="slider" tabindex="0" aria-label="向右拖动揭晓答案" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-              <div class="reveal-fill" id="reveal-fill"></div>
-              <div class="reveal-copy">${icons.hand}<span id="reveal-label">向右拖动，唤醒语义</span></div>
-            </div>
-            <p class="reveal-hint">答案被遮住了，先在脑中说一遍</p>
           </div>`;
+      let task;
+      if (state.revealed) {
+        task = revealedAnswer;
+      } else if (taskKind === "masked_semantic") {
+        task = `<div class="reveal-area">
+            <p class="semantic-sentence">
+              ${card.coreBefore}<span class="semantic-mask" id="semantic-mask" role="button" tabindex="0" aria-label="擦开或点击揭示承重语义">${card.hidden}</span>${card.coreAfter}
+            </p>
+            <p class="reveal-hint" id="reveal-label">在遮挡区域擦动；覆盖 45% 后完整揭示</p>
+          </div>`;
+      } else if (taskKind === "judgment") {
+        task = `<div class="variant-options" aria-label="判断题">
+            <p class="semantic-sentence">${card.judgment.statement}</p>
+            <button class="variant-option" data-variant-answer="true" type="button">对</button>
+            <button class="variant-option" data-variant-answer="false" type="button">不对</button>
+          </div>`;
+      } else {
+        task = `<div class="variant-options" aria-label="选择题">
+            <p class="semantic-sentence">${card.choice.prompt}</p>
+            ${card.choice.options.map((option, index) => `<button class="variant-option" data-variant-answer="${index}" type="button">${option}</button>`).join("")}
+          </div>`;
+      }
       const assessment = state.revealed
         ? `<div class="assessment">
             <p>刚才想起来了吗？</p>
             <div class="assessment-buttons">
-              <button class="assessment-button remembered" data-assessment="想起来了" type="button">想起来了</button>
-              <button class="assessment-button fuzzy" data-assessment="有点印象" type="button">有点印象</button>
-              <button class="assessment-button forgot" data-assessment="没想起来" type="button">没想起来</button>
+              <button class="assessment-button remembered" data-assessment="remembered" type="button">记得</button>
+              <button class="assessment-button fuzzy" data-assessment="fuzzy" type="button">模糊</button>
+              <button class="assessment-button forgot" data-assessment="forgot" type="button">忘记</button>
             </div>
           </div>`
-        : `<button class="direct-reveal" id="direct-reveal" type="button">直接揭晓</button>`;
+        : (taskKind === "masked_semantic" ? `<button class="direct-reveal" id="direct-reveal" type="button">直接揭示</button>` : "");
 
       return `
         ${statusBar()}
@@ -1781,9 +2080,9 @@
                   <span class="mastery-chip">${masteryLabels[state.masteryByCard[state.currentCard]]}</span>
                   <span class="source-status">${icons.seal}演示来源已关联</span>
                 </div>
-                <p class="prompt-label">先别看答案</p>
+                <p class="prompt-label">${taskKind === "masked_semantic" ? "先在脑中补全承重语义" : "后续复习变式"}</p>
                 <h2 class="recall-cue">${card.cue}</h2>
-                ${answer}
+                ${task}
               </article>
               ${assessment}
             </div>
@@ -1795,7 +2094,7 @@
     function completeScreen() {
       const card = cards[state.currentCard];
       const transition = `${masteryLabels[state.masteryBefore]} → ${masteryLabels[state.masteryAfter]}`;
-      const detail = state.lastAssessment === "想起来了"
+      const detail = state.lastAssessment === "remembered"
         ? "你完成了一次主动重建。它会在新的时间窗口再次出现。"
         : "记忆没有被惩罚或摧毁，系统只会让它更早再次出现。";
       const masteryOrder = ["sealed", "awakened", "solidified", "engraved"];
@@ -1809,6 +2108,9 @@
         <section class="screen" data-screen="complete">
           <div class="screen-scroll">
             <div class="complete-content">
+              <div class="mascot ${state.lastAssessment === "remembered" ? "success" : ""}" aria-hidden="true">
+                <img src="/app-demo-assets/mascot-v06/${state.lastAssessment === "remembered" ? "recallo-mascot-success.png" : "recallo-mascot-tilt.png"}" alt="">
+              </div>
               <div class="archive-card">
                 <div class="archive-thumb">${memoryPools[state.selectedPool].symbol}</div>
                 <div>
@@ -1821,7 +2123,7 @@
               <p>${detail}</p>
               <div class="memory-change">
                 <div class="mastery-track">${masteryTrack}</div>
-                <p class="helper-copy">${transition} · ${state.lastAssessment === "想起来了" ? "3 天后再次召回" : "明天优先召回"}</p>
+                <p class="helper-copy">${transition} · ${reviewDateText(state.nextReviewByCard[state.currentCard])}再次召回</p>
               </div>
               <div class="complete-actions">
                 <button class="primary-button" id="draw-again" type="button">${hasNext ? "继续召回" : "再召回一张"}</button>
@@ -1837,6 +2139,8 @@
       clearTimeout(state.toastTimer);
       const screens = {
         home: homeScreen,
+        library: libraryScreen,
+        profile: profileScreen,
         upload: uploadScreen,
         analyzing: analyzingScreen,
         summon: summonScreen,
@@ -1862,6 +2166,11 @@
     }
 
     function bindHomeEvents() {
+      const hints = [
+        "它只提醒你：抽到的是自己的过去",
+        "先想一遍，再看答案",
+        "忘记不会受罚，只会更早再见"
+      ];
       app.querySelectorAll("[data-pool]").forEach((button) => {
         button.addEventListener("click", () => {
           state.selectedPool = button.dataset.pool;
@@ -1870,6 +2179,60 @@
       });
       document.getElementById("draw-one").addEventListener("click", () => startDraw("single"));
       document.getElementById("draw-many").addEventListener("click", () => startDraw("continuous"));
+      const mascot = document.getElementById("mascot-button");
+      mascot.addEventListener("click", () => {
+        state.mascotTapCount += 1;
+        mascot.classList.remove("boop");
+        void mascot.offsetWidth;
+        mascot.classList.add("boop");
+        document.getElementById("mascot-hint").textContent = hints[state.mascotTapCount % hints.length];
+        setTimeout(() => mascot.classList.remove("boop"), 340);
+      });
+
+      const stack = document.getElementById("recall-stack");
+      let startY = 0;
+      let startX = 0;
+      let dragging = false;
+      let triggered = false;
+      let holdTimer;
+      const resetStack = () => {
+        stack.style.transform = "";
+        dragging = false;
+        clearTimeout(holdTimer);
+      };
+      stack.addEventListener("pointerdown", (event) => {
+        dragging = true;
+        triggered = false;
+        startY = event.clientY;
+        startX = event.clientX;
+        stack.setPointerCapture(event.pointerId);
+        holdTimer = setTimeout(() => {
+          triggered = true;
+          startDraw("single");
+        }, 450);
+      });
+      stack.addEventListener("pointermove", (event) => {
+        if (!dragging || triggered) return;
+        const dy = Math.min(0, event.clientY - startY);
+        const dx = event.clientX - startX;
+        if (Math.abs(dy) > 6 || Math.abs(dx) > 6) clearTimeout(holdTimer);
+        const tilt = Math.max(-4, Math.min(4, dx / 12));
+        stack.style.transform = `translateY(${Math.max(-36, dy)}px) rotate(${tilt}deg) scale(${dy <= -28 ? .97 : 1})`;
+      });
+      const endGesture = (event) => {
+        if (!dragging || triggered) return;
+        const dy = event.clientY - startY;
+        resetStack();
+        if (dy <= -28) startDraw("single");
+      };
+      stack.addEventListener("pointerup", endGesture);
+      stack.addEventListener("pointercancel", resetStack);
+      stack.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          startDraw("single");
+        }
+      });
     }
 
     function bindSummonEvents() {
@@ -1909,41 +2272,40 @@
         return;
       }
 
-      document.getElementById("direct-reveal").addEventListener("click", reveal);
-      const track = document.getElementById("reveal-track");
-      let dragging = false;
-      let startX = 0;
+      const directReveal = document.getElementById("direct-reveal");
+      if (directReveal) directReveal.addEventListener("click", reveal);
+      const mask = document.getElementById("semantic-mask");
+      if (mask) {
+        let dragging = false;
+        let startX = 0;
+        mask.addEventListener("click", reveal);
+        mask.addEventListener("pointerdown", (event) => {
+          dragging = true;
+          startX = event.clientX;
+          mask.setPointerCapture(event.pointerId);
+        });
+        mask.addEventListener("pointermove", (event) => {
+          if (!dragging) return;
+          updateRevealProgress(Math.abs(event.clientX - startX) / Math.max(1, mask.clientWidth));
+          if (state.revealProgress >= 0.45) reveal();
+        });
+        mask.addEventListener("pointerup", () => { dragging = false; });
+        mask.addEventListener("pointercancel", () => { dragging = false; });
+        mask.addEventListener("keydown", (event) => {
+          if (event.key.startsWith("Arrow")) {
+            event.preventDefault();
+            updateRevealProgress(state.revealProgress + 0.15);
+            if (state.revealProgress >= 0.45) reveal();
+          }
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            reveal();
+          }
+        });
+      }
 
-      track.addEventListener("pointerdown", (event) => {
-        dragging = true;
-        startX = event.clientX;
-        track.setPointerCapture(event.pointerId);
-      });
-      track.addEventListener("pointermove", (event) => {
-        if (!dragging) return;
-        updateRevealProgress((event.clientX - startX) / Math.max(1, track.clientWidth - 58));
-      });
-      const endDrag = () => {
-        if (!dragging) return;
-        dragging = false;
-        if (state.revealProgress >= 0.65) {
-          reveal();
-        } else {
-          updateRevealProgress(0);
-        }
-      };
-      track.addEventListener("pointerup", endDrag);
-      track.addEventListener("pointercancel", endDrag);
-      track.addEventListener("keydown", (event) => {
-        if (event.key === "ArrowRight") {
-          event.preventDefault();
-          updateRevealProgress(state.revealProgress + 0.2);
-          if (state.revealProgress >= 0.65) reveal();
-        }
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          reveal();
-        }
+      app.querySelectorAll("[data-variant-answer]").forEach((button) => {
+        button.addEventListener("click", () => answerVariant(button.dataset.variantAnswer));
       });
     }
 
@@ -1965,7 +2327,7 @@
     }
 
     function navigate(target) {
-      if (target === "home" || target === "upload") {
+      if (["home", "library", "profile", "upload"].includes(target)) {
         clearTimeout(state.summonTimer);
         state.screen = target;
         state.revealed = false;
@@ -1973,7 +2335,6 @@
         render();
         return;
       }
-      showToast(`${target === "materials" ? "资料" : target === "discover" ? "发现" : "笔记"}页暂不在本次 MVP 中`);
     }
 
     function startAnalysis() {
@@ -2014,10 +2375,11 @@
       }
       state.revealed = false;
       state.revealProgress = 0;
+      state.variantResult = "";
       state.screen = "summon";
       render();
       const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      state.summonTimer = setTimeout(finishSummon, reduceMotion ? 20 : 900);
+      state.summonTimer = setTimeout(finishSummon, reduceMotion ? 20 : 1450);
     }
 
     function finishSummon() {
@@ -2029,13 +2391,11 @@
 
     function updateRevealProgress(progress) {
       state.revealProgress = Math.min(1, Math.max(0, progress));
-      const fill = document.getElementById("reveal-fill");
-      const track = document.getElementById("reveal-track");
+      const mask = document.getElementById("semantic-mask");
       const label = document.getElementById("reveal-label");
-      if (!fill || !track || !label) return;
-      fill.style.width = `${Math.max(18, state.revealProgress * 100)}%`;
-      track.setAttribute("aria-valuenow", String(Math.round(state.revealProgress * 100)));
-      label.textContent = state.revealProgress >= 0.65 ? "松开揭晓" : "向右拖动，唤醒语义";
+      if (!mask || !label) return;
+      mask.style.opacity = String(Math.max(.22, 1 - state.revealProgress * .75));
+      label.textContent = state.revealProgress >= 0.45 ? "正在完整揭示" : `已擦开 ${Math.round(state.revealProgress * 100)}%`;
     }
 
     function reveal() {
@@ -2045,18 +2405,29 @@
       requestAnimationFrame(() => document.getElementById("answer")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
     }
 
+    function answerVariant(rawAnswer) {
+      const card = cards[state.currentCard];
+      const isJudgment = state.currentCard % 2 === 0;
+      const correct = isJudgment
+        ? (rawAnswer === "true") === card.judgment.correct
+        : Number(rawAnswer) === card.choice.correct;
+      state.variantResult = correct ? "回答正确 · 现在检查证据" : "这次没有答对 · 不扣分，只会更早复习";
+      reveal();
+    }
+
     function assess(value) {
       state.lastAssessment = value;
       state.masteryBefore = state.masteryByCard[state.currentCard];
       state.masteryAfter = nextMastery(state.masteryBefore, value);
       state.masteryByCard[state.currentCard] = state.masteryAfter;
+      state.nextReviewByCard[state.currentCard] = value === "forgot" ? 1 : value === "fuzzy" ? 2 : 4;
       state.screen = "complete";
       render();
     }
 
     function nextMastery(current, assessment) {
       if (current === "sealed") return "awakened";
-      if (assessment !== "想起来了") return current;
+      if (assessment !== "remembered") return current;
       if (current === "awakened") return "solidified";
       if (current === "solidified") return "engraved";
       return "engraved";
@@ -2090,7 +2461,10 @@
         revealed: false,
         revealProgress: 0,
         lastAssessment: "",
-        masteryByCard: ["sealed", "sealed", "awakened"],
+        masteryByCard: ["sealed", "awakened", "awakened"],
+        nextReviewByCard: [0, 2, 1],
+        variantResult: "",
+        mascotTapCount: 0,
         masteryBefore: "sealed",
         masteryAfter: "sealed",
         cardCount: 5

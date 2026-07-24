@@ -28,7 +28,7 @@
 4. 自评文案统一为“记得 / 模糊 / 忘记”三档克制反馈。
 5. 引入原创角色“毛球”（珊瑚橙、奶油白、铅笔线、轻颗粒），只借鉴成熟卡牌产品的揭晓节奏与卡面层级，不使用其任何资产。
 6. 锁定 Web 预览动效参数、素材白名单（Pow / Kenney / Phosphor）与“无假进度”红线。
-7. 当前模型固定为 `qwen3.7-plus-2026-05-26`；本版的设计与 Web 预览实现由 Kimi 完成。
+7. 当前模型固定为 `qwen3.7-plus-2026-05-26`；设计、Web、iOS 与后端必须共同遵守同一状态机和证据合同，不将产品能力归因于开发代理。
 
 ## 0. 本版确认的产品合同
 
@@ -48,7 +48,7 @@
 12. **抽卡的玩家幻想是“召回并修复自己的记忆”。** 不把第三方随机奖励包装成学习；被召回的卡一定来自用户自己的过去。
 13. **稀有度与掌握度是两条轴。** R / SR / SSR 固定表达内容潜力；封存、唤醒、稳固、铭刻表达用户跨时间记住它的程度。
 14. **毛球是原创角色方向。** 珊瑚橙、奶油白、铅笔线和轻颗粒；不复刻原神、炉石等第三方资产，只借鉴其揭晓节奏与卡面层级。
-15. **素材遵守白名单。** Pow（MIT，仅 iOS 运行时，Web 不引入）、Kenney Particle Pack（CC0，最多少量粒子）、Phosphor Icons Core（MIT，Web SVG）；MVP 不引入 Lottie / Rive；登记见 `docs/asset-provenance.md`。
+15. **素材遵守白名单。** Pow `1.0.6`（MIT，仅 iOS 运行时）、Kenney Particle Pack `1.1`（CC0，仅 3 个粒子）、Phosphor Icons Core `2b75f3a`（MIT，仅 5 个 Web SVG）；MVP 不引入 Lottie / Rive；登记见 `docs/asset-provenance.md`。
 16. **反馈保持克制，进度必须真实。** 记得 / 模糊 / 忘记三档克制反馈；全链路不出现假进度条、假百分比和伪造的加载动画。
 
 ## 1. 产品定义
@@ -698,6 +698,10 @@ POST /v3/captures
 - [`recallo-v06-motion-and-assets.md`](../docs/recallo-v06-motion-and-assets.md)：v0.6 动效时间轴、状态机、Reduce Motion 降级、毛球姿态、反赌博 / 无社交边界与素材授权策略。
 - [`asset-provenance.md`](../docs/asset-provenance.md)：仓库素材授权登记，区分实际使用与评估中。
 - [`ios-app-demo.html`](../docs/ios-app-demo.html)：v0.6 三 Tab 首页、召回、语义擦开与反馈的 Web 交互预览。
+- [`recallo-v06-web-home.png`](../docs/product-exploration/assets/recallo-v06-web-home.png)：375px 今日页验收截图。
+- [`recallo-v06-web-recall.png`](../docs/product-exploration/assets/recallo-v06-web-recall.png)：首次精确语义遮挡验收截图。
+- [`recallo-v06-web-library.png`](../docs/product-exploration/assets/recallo-v06-web-library.png)：只展示真实卡片和调度日期的知识库验收截图。
+- [`2026-07-24-recallo-v06-mvp-validation.md`](../docs/validation/2026-07-24-recallo-v06-mvp-validation.md)：服务器、Web 和 iOS 环境边界的验收记录。
 - [`recallo-memory-summon-concept-v0.5.png`](../docs/product-exploration/assets/recallo-memory-summon-concept-v0.5.png)：v0.5 历史概念图，首页结构已被本版三 Tab 取代，仅保留布局质感参考。
 - [`recallo-web-memory-collection-v0.5.png`](../docs/product-exploration/assets/recallo-web-memory-collection-v0.5.png)：v0.5 Web 实现的“主动回忆后修复并入册”验收截图，交互细节以 v0.6 文档与 demo 为准。
 

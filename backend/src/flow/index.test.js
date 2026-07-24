@@ -4,6 +4,79 @@ import { buildSearchQueries, buildSearchQuery, extractScreenshotIdentity, runIma
 import { focusSourceContent } from "./source.js";
 import { searchLinks } from "./search.js";
 
+function captureAnalysisFixture({
+  sourceStatus = "verified",
+  evidenceId = "subtitle-1"
+} = {}) {
+  return {
+    schemaVersion: "capture_memory_card_2",
+    disposition: "create_card",
+    sourceStatus,
+    decisionReason: "内容包含一个清晰的学习方法。",
+    memoryCard: {
+      id: "capture-memory-test",
+      coreKnowledge: "主动回忆要求先尝试提取信息，以暴露记忆缺口。",
+      recallCue: "主动回忆要求先做什么？",
+      hiddenSemantic: "尝试提取信息",
+      explanation: "先尝试提取信息，才能暴露记忆缺口。",
+      sourceEvidenceIds: [evidenceId],
+      rarity: "R",
+      rarityReason: "具体学习方法。",
+      rarityConfidence: 0.8,
+      rarityRuleVersion: "capture_rarity_2",
+      sourceTitle: "主动回忆为什么有效",
+      sourceUrl: "https://example.com/source",
+      recallVariants: [
+        {
+          id: "cloze",
+          type: "semantic_cloze",
+          prompt: "主动回忆要求先 ____。",
+          answer: "尝试提取信息",
+          options: [],
+          correctOptionId: null,
+          correctBoolean: null,
+          explanation: "先尝试提取信息。",
+          sourceEvidenceIds: [evidenceId]
+        },
+        {
+          id: "tf",
+          type: "true_false",
+          prompt: "主动回忆能够暴露记忆缺口。",
+          answer: "true",
+          options: [],
+          correctOptionId: null,
+          correctBoolean: true,
+          explanation: "原内容明确支持这一点。",
+          sourceEvidenceIds: [evidenceId]
+        },
+        {
+          id: "mcq",
+          type: "multiple_choice",
+          prompt: "主动回忆会暴露什么？",
+          answer: "记忆缺口",
+          options: [
+            { id: "a", text: "记忆缺口" },
+            { id: "b", text: "阅读速度" },
+            { id: "c", text: "页面颜色" },
+            { id: "d", text: "笔记长度" }
+          ],
+          correctOptionId: "a",
+          correctBoolean: null,
+          explanation: "主动回忆会暴露记忆缺口。",
+          sourceEvidenceIds: [evidenceId]
+        }
+      ]
+    },
+    schedule: {
+      nextReviewAt: "2026-07-24T08:00:00.000Z",
+      intervalDays: 0,
+      state: "due",
+      status: "due",
+      stepIndex: 0
+    }
+  };
+}
+
 test("builds a compact query from account and title OCR lines", () => {
   const query = buildSearchQuery([
     "18:35",
@@ -196,6 +269,148 @@ test("returns a timestamp-focused review and a whole-video overview", async () =
   assert.equal(Number.isFinite(result.timings.reviewGenerationMs), true);
   assert.equal(Number.isFinite(result.timings.overviewGenerationMs), true);
   assert.equal(Number.isFinite(result.timings.totalMs), true);
+});
+
+test("uses the capture_memory_card_2 generator in the production path and keeps legacy mirrors", async () => {
+  const result = await runImageFlow({
+    ocrText: "记忆研究所\n主动回忆为什么有效\n00:12 / 02:00",
+    searcher: async (query) => ({
+      provider: "tikhub",
+      query,
+      results: [{
+        title: "主动回忆为什么有效",
+        url: "https://www.bilibili.com/video/BVmemory",
+        account: "记忆研究所",
+        platform: "bilibili",
+        contentKind: "video"
+      }]
+    }),
+    extract: async () => ({
+      sourceTitle: "主动回忆为什么有效",
+      sourceUrl: "https://www.bilibili.com/video/BVmemory",
+      sourceAccount: "记忆研究所",
+      platform: "bilibili",
+      rawText: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。",
+      overviewText: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。",
+      blocks: [{
+        id: "subtitle-1",
+        type: "paragraph",
+        text: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。"
+      }],
+      focus: { status: "timestamp_window", timestampSeconds: 12 }
+    }),
+    generateMemory: async (input) => {
+      assert.equal(input.sourceStatus, "verified");
+      assert.deepEqual(input.evidence.map((item) => item.id), ["subtitle-1"]);
+      return captureAnalysisFixture({ sourceStatus: input.sourceStatus });
+    },
+    generateOverview: async () => ({ summary: "全片概览", highlights: [] })
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.captureAnalysis.schemaVersion, "capture_memory_card_2");
+  assert.equal(result.captureAnalysis.memoryCard.recallVariants.length, 3);
+  assert.equal(result.schedule.nextReviewAt, result.captureAnalysis.schedule.nextReviewAt);
+  assert.equal(result.memoryCard.state, "formal");
+  assert.equal(result.memoryCard.sourceStatus, "verified");
+  assert.equal(result.review.units[0].questions.length, 3);
+});
+
+test("marks screenshot-only generation partial while mapping the legacy card to unconfirmed", async () => {
+  const extractionError = new Error("视频内容不可用。");
+  extractionError.code = "failed_extract_video";
+  const result = await runImageFlow({
+    imageBase64: "aGVsbG8=",
+    mimeType: "image/png",
+    analyzeImage: async () => ({
+      provider: "qwen-vision",
+      identity: {
+        platform: "douyin",
+        contentKind: "video",
+        title: "主动回忆为什么有效",
+        account: "记忆研究所",
+        timestampSeconds: null,
+        locatorTerms: ["主动回忆"],
+        visibleTextLines: [
+          "主动回忆为什么有效",
+          "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。"
+        ],
+        confidence: 0.9
+      },
+      lines: [
+        "主动回忆为什么有效",
+        "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。"
+      ]
+    }),
+    searcher: async (query) => ({
+      provider: "tikhub",
+      query,
+      results: [{
+        title: "主动回忆为什么有效",
+        url: "https://www.douyin.com/video/123",
+        account: "记忆研究所",
+        platform: "douyin",
+        contentKind: "video"
+      }]
+    }),
+    extract: async () => {
+      throw extractionError;
+    },
+    generateMemory: async (input) => {
+      assert.equal(input.sourceStatus, "partial");
+      assert.equal(input.evidence[0].type, "screenshot");
+      return captureAnalysisFixture({
+        sourceStatus: input.sourceStatus,
+        evidenceId: "screenshot-visible"
+      });
+    }
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.sourceFallback, true);
+  assert.equal(result.captureAnalysis.sourceStatus, "partial");
+  assert.equal(result.memoryCard.sourceStatus, "unconfirmed");
+});
+
+test("treats archive_only as a completed business outcome", async () => {
+  const result = await runImageFlow({
+    ocrText: "小林的笔记\n今日心情记录",
+    searcher: async (query) => ({
+      provider: "tikhub",
+      query,
+      results: [{
+        title: "今日心情记录",
+        url: "https://www.xiaohongshu.com/explore/archive1",
+        account: "小林的笔记",
+        platform: "xiaohongshu",
+        contentKind: "image_text"
+      }]
+    }),
+    extract: async () => ({
+      sourceTitle: "今日心情记录",
+      sourceUrl: "https://www.xiaohongshu.com/explore/archive1",
+      sourceAccount: "小林的笔记",
+      platform: "xiaohongshu",
+      rawText: "今天只是记录了一段没有复习价值的日常心情，没有可提炼的知识。",
+      blocks: [{
+        id: "note-1",
+        type: "paragraph",
+        text: "今天只是记录了一段没有复习价值的日常心情，没有可提炼的知识。"
+      }],
+      focus: {}
+    }),
+    generateMemory: async () => ({
+      schemaVersion: "capture_memory_card_2",
+      disposition: "archive_only",
+      sourceStatus: "verified",
+      decisionReason: "这是一段日常心情记录。",
+      memoryCard: null,
+      schedule: null
+    })
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.captureAnalysis.disposition, "archive_only");
+  assert.equal(result.memoryCard.state, "fragment");
 });
 
 test("uses verified screenshot text when video extraction is unavailable", async () => {

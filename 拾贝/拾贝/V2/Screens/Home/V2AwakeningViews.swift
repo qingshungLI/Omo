@@ -14,7 +14,11 @@ struct V2AwakeningHomeView: View {
     let onDrawScreenshot: (V2MemoryPool) -> Void
     let onContinuousScreenshotDraw: (V2MemoryPool) -> Void
     let onDraw: () -> Void
+    let onAddContent: () -> Void
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
     @State private var selectedMemoryPool = V2MemoryPool.due
+    @State private var isMascotReacting = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -71,89 +75,134 @@ struct V2AwakeningHomeView: View {
                 Text("还没有可以唤醒的记忆")
                     .font(V2Typography.sectionTitle)
                     .foregroundStyle(V2Color.textPrimary)
-                Text("点击底部 + 添加内容")
+                Text("先添加一张截图或一段内容")
                     .font(V2Typography.bodySmall)
                     .foregroundStyle(V2Color.textMuted)
+                V2PrimaryActionButton(title: "添加内容", action: onAddContent)
+                    .v2PageColumn()
                 Spacer()
             }
         } else {
-            VStack(spacing: 0) {
-                Text("今天，唤醒一点记忆")
-                    .font(.system(size: 25, weight: .bold))
-                    .foregroundStyle(V2Color.textPrimary)
-                    .padding(.top, 38)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    Text("今天，唤醒一点记忆")
+                        .font(.system(size: 25, weight: .bold))
+                        .foregroundStyle(V2Color.textPrimary)
+                        .padding(.top, 26)
 
-                Text(homeSubtitle)
-                    .font(V2Typography.bodySmall)
-                    .foregroundStyle(V2Color.textSecondary.opacity(0.76))
-                    .padding(.top, 10)
+                    Text(homeSubtitle)
+                        .font(V2Typography.bodySmall)
+                        .foregroundStyle(V2Color.textSecondary.opacity(0.76))
+                        .padding(.top, 9)
 
-                Spacer(minLength: 24)
-
-                if screenshotCardCount > 0 {
-                    V2MemoryPoolSelector(
-                        selectedPool: $selectedMemoryPool,
-                        counts: screenshotPoolCounts
+                    Button {
+                        reactMascot()
+                    } label: {
+                        Image("RecalloMascotIdle")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(width: 92, height: 92)
+                            .scaleEffect(
+                                reduceMotion
+                                    ? 1
+                                    : isMascotReacting ? 1.045 : 1
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Recallo 毛球")
+                    .accessibilityHint("轻点查看毛球回应")
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.7),
+                        value: isMascotReacting
                     )
-                    .v2PageColumn()
-                } else {
-                    V2MemoryCardStack(isActive: !isLoading)
-                        .frame(width: 280, height: 350)
-                }
+                    .padding(.top, 8)
 
-                Spacer(minLength: 20)
+                    if screenshotCardCount > 0 {
+                        V2MemoryPoolSelector(
+                            selectedPool: $selectedMemoryPool,
+                            counts: screenshotPoolCounts,
+                            reduceMotion: reduceMotion
+                        )
+                        .v2PageColumn()
+                    }
 
-                if screenshotCardCount > 0 {
-                    HStack(spacing: 12) {
+                    V2MemoryCardStack(
+                        pool: selectedMemoryPool,
+                        count: screenshotCardCount > 0 ? selectedPoolCount : (canDraw ? 1 : 0),
+                        isActive: !isLoading && (screenshotCardCount > 0 ? selectedPoolCount > 0 : canDraw),
+                        reduceMotion: reduceMotion,
+                        onDraw: {
+                            V2AwakeningHaptics.selection()
+                            if screenshotCardCount > 0 {
+                                guard selectedPoolCount > 0 else { return }
+                                onDrawScreenshot(selectedMemoryPool)
+                            } else {
+                                onDraw()
+                            }
+                        }
+                    )
+                    .frame(width: 280, height: 344)
+                    .padding(.top, 4)
+
+                    if screenshotCardCount > 0 {
+                        HStack(spacing: 12) {
+                            V2PrimaryActionButton(
+                                title: "召回 1 张",
+                                tone: selectedPoolCount > 0 ? .normal : .disabled
+                            ) {
+                                guard selectedPoolCount > 0 else { return }
+                                V2AwakeningHaptics.selection()
+                                onDrawScreenshot(selectedMemoryPool)
+                            }
+
+                            Button {
+                                guard selectedPoolCount > 0 else { return }
+                                V2AwakeningHaptics.selection()
+                                onContinuousScreenshotDraw(selectedMemoryPool)
+                            } label: {
+                                Text("连续召回")
+                                    .font(V2Typography.bodyEmphasis)
+                                    .foregroundStyle(selectedPoolCount > 0 ? V2Color.primary : V2Color.textMuted)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 53)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(V2Color.surfaceCream)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                    .stroke(V2Color.primary, lineWidth: 1)
+                                            )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(selectedPoolCount == 0)
+                        }
+                        .v2PageColumn()
+                    } else {
                         V2PrimaryActionButton(
-                            title: "召回 1 张",
-                            tone: selectedPoolCount > 0 ? .normal : .disabled
+                            title: actionTitle,
+                            tone: isLoading || !canDraw ? .disabled : .normal
                         ) {
-                            guard selectedPoolCount > 0 else { return }
                             V2AwakeningHaptics.selection()
-                            onDrawScreenshot(selectedMemoryPool)
+                            onDraw()
                         }
+                        .v2PageColumn()
+                    }
 
-                        Button {
-                            guard selectedPoolCount > 0 else { return }
-                            V2AwakeningHaptics.selection()
-                            onContinuousScreenshotDraw(selectedMemoryPool)
-                        } label: {
-                            Text("连续召回")
-                                .font(V2Typography.bodyEmphasis)
-                                .foregroundStyle(selectedPoolCount > 0 ? V2Color.primary : V2Color.textMuted)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 53)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(V2Color.surfaceCream)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .stroke(V2Color.primary, lineWidth: 1)
-                                        )
-                                )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(selectedPoolCount == 0)
-                    }
-                    .v2PageColumn()
-                } else {
-                    V2PrimaryActionButton(
-                        title: actionTitle,
-                        tone: isLoading || !canDraw ? .disabled : .normal
-                    ) {
-                        V2AwakeningHaptics.selection()
-                        onDraw()
-                    }
-                    .v2PageColumn()
+                    Text(screenshotCardCount > 0
+                         ? "\(selectedMemoryPool.title) · \(selectedPoolCount) 张可召回 · 连续模式可随时退出"
+                         : "一张就好，随时可以停下")
+                        .font(V2Typography.caption)
+                        .foregroundStyle(V2Color.textMuted)
+                        .padding(.top, 13)
+
+                    Button("添加新的内容", action: onAddContent)
+                        .font(V2Typography.bodySmallEmphasis)
+                        .foregroundStyle(V2Color.textSecondary)
+                        .padding(.top, 14)
+                        .padding(.bottom, 28)
                 }
-
-                Text(screenshotCardCount > 0
-                     ? "\(selectedMemoryPool.title) · \(selectedPoolCount) 张可召回 · 连续模式可随时退出"
-                     : "一张就好，随时可以停下")
-                    .font(V2Typography.caption)
-                    .foregroundStyle(V2Color.textMuted)
-                    .padding(.top, 13)
             }
         }
     }
@@ -182,6 +231,18 @@ struct V2AwakeningHomeView: View {
         return count > 0 ? "有 \(count) 张记忆等待唤醒" : "暂时没有需要唤醒的记忆"
     }
 
+    private func reactMascot() {
+        V2AwakeningHaptics.selection()
+        guard !reduceMotion, !isMascotReacting else { return }
+        isMascotReacting = true
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 340_000_000)
+            withAnimation(.easeOut(duration: 0.12)) {
+                isMascotReacting = false
+            }
+        }
+    }
+
     private func backgroundDecorations(in size: CGSize) -> some View {
         ZStack {
             Image("V2BgDecoLeftHillPlant")
@@ -208,49 +269,47 @@ struct V2AwakeningHomeView: View {
 private struct V2MemoryPoolSelector: View {
     @Binding var selectedPool: V2MemoryPool
     let counts: [V2MemoryPool: Int]
+    let reduceMotion: Bool
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             ForEach(V2MemoryPool.allCases) { pool in
                 let count = counts[pool, default: 0]
                 Button {
-                    selectedPool = pool
+                    withAnimation(
+                        reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.78)
+                    ) {
+                        selectedPool = pool
+                    }
                 } label: {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 5) {
                         Image(systemName: pool.symbolName)
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 17, weight: .medium))
                             .foregroundStyle(V2Color.primary)
-                            .frame(width: 42, height: 42)
+                            .frame(width: 34, height: 34)
                             .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
                                     .fill(V2Color.pageGreenBackground.opacity(0.58))
                             )
 
                         Text(pool.title)
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(V2Color.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.82)
 
-                        Text(pool.subtitle)
-                            .font(.system(size: 9))
-                            .foregroundStyle(V2Color.textMuted)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .frame(height: 28)
-
                         Text("\(count) 张")
-                            .font(V2Typography.captionEmphasis)
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(count > 0 ? V2Color.primary : V2Color.textMuted)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 220)
-                    .padding(.horizontal, 6)
+                    .frame(height: 92)
+                    .padding(.horizontal, 4)
                     .background(
-                        RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        RoundedRectangle(cornerRadius: 17, style: .continuous)
                             .fill(V2Color.surfaceCream.opacity(selectedPool == pool ? 1 : 0.72))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 19, style: .continuous)
+                                RoundedRectangle(cornerRadius: 17, style: .continuous)
                                     .stroke(
                                         selectedPool == pool ? V2Color.primary : V2Color.primary.opacity(0.22),
                                         lineWidth: selectedPool == pool ? 1.5 : 1
@@ -258,14 +317,28 @@ private struct V2MemoryPoolSelector: View {
                             )
                             .v2Shadow()
                     )
-                    .offset(y: selectedPool == pool ? -5 : 7)
+                    .rotationEffect(.degrees(selectedPool == pool ? -5 : 0))
+                    .offset(y: selectedPool == pool ? -3 : 2)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(V2MemoryPoolPressStyle(reduceMotion: reduceMotion))
                 .accessibilityLabel("\(pool.title)，\(count) 张可召回")
                 .accessibilityValue(selectedPool == pool ? "已选择" : "未选择")
             }
         }
-        .frame(height: 238)
+        .frame(height: 108)
+    }
+}
+
+private struct V2MemoryPoolPressStyle: ButtonStyle {
+    let reduceMotion: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(
+                reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.72),
+                value: configuration.isPressed
+            )
     }
 }
 
@@ -511,12 +584,17 @@ struct V2AwakeningCompletionView: View {
 }
 
 private struct V2MemoryCardStack: View {
+    let pool: V2MemoryPool
+    let count: Int
     let isActive: Bool
+    let reduceMotion: Bool
+    let onDraw: () -> Void
+    @GestureState private var dragTranslation = CGSize.zero
 
     var body: some View {
         ZStack {
-            card(rotation: -7, x: -20, y: 13, opacity: 0.72)
-            card(rotation: 6, x: 20, y: 7, opacity: 0.84)
+            card(rotation: -5, x: -20, y: 13, opacity: 0.72)
+            card(rotation: 5, x: 20, y: 7, opacity: 0.84)
 
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(V2Color.surfaceCream)
@@ -534,15 +612,64 @@ private struct V2MemoryCardStack: View {
                         Text("记忆卡")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(V2Color.textPrimary)
-                        Text("轻轻抽取一张")
+                        Text(isActive ? "向上拖动，召回一张" : "这个卡池暂时是空的")
                             .font(V2Typography.caption)
                             .foregroundStyle(V2Color.textMuted)
                     }
                 }
                 .opacity(isActive ? 1 : 0.72)
         }
+        .scaleEffect(isDragging && !reduceMotion ? 0.97 : 1)
+        .rotation3DEffect(
+            .degrees(reduceMotion ? 0 : dragTilt),
+            axis: (x: 0, y: 1, z: 0),
+            perspective: 0.45
+        )
+        .offset(y: reduceMotion ? 0 : -min(upwardProgress * 6, 6))
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.76),
+            value: dragTranslation
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .updating($dragTranslation) { value, state, _ in
+                    guard isActive else { return }
+                    state = value.translation
+                }
+                .onEnded { value in
+                    guard isActive, -value.translation.height >= 28 else { return }
+                    onDraw()
+                }
+        )
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45)
+                .onEnded { _ in
+                    guard isActive else { return }
+                    onDraw()
+                }
+        )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("待唤醒记忆卡")
+        .accessibilityLabel("\(pool.title)，\(count) 张待召回记忆卡")
+        .accessibilityHint(isActive ? "向上拖动二十八点、长按，或使用召回操作" : "当前没有可召回卡片")
+        .accessibilityAction(named: "召回一张") {
+            guard isActive else { return }
+            onDraw()
+        }
+        .accessibilityIdentifier("v2.memory-card-stack")
+    }
+
+    private var isDragging: Bool {
+        abs(dragTranslation.width) > 0.5 || abs(dragTranslation.height) > 0.5
+    }
+
+    private var upwardProgress: CGFloat {
+        min(1, max(0, -dragTranslation.height / 28))
+    }
+
+    private var dragTilt: Double {
+        let normalized = max(-1, min(1, dragTranslation.width / 80))
+        return Double(normalized) * 4
     }
 
     private func card(

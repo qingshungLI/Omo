@@ -566,7 +566,7 @@ final class APIClientDecodingTests: XCTestCase {
             )
         }
 
-        let session = V2ScreenshotDrawSession.make(mode: .continuous, from: cards, shuffle: { $0 })
+        let session = V2ScreenshotDrawSession.make(mode: .continuous, from: cards)
 
         XCTAssertEqual(session?.cards.count, 10)
         XCTAssertEqual(Set(session?.cards.map(\.id) ?? []).count, 10)
@@ -590,15 +590,13 @@ final class APIClientDecodingTests: XCTestCase {
             mode: .continuous,
             from: [oldCard, fadingCard],
             pool: .timeCapsule,
-            now: now,
-            shuffle: { $0 }
+            now: now
         )
         let fading = V2ScreenshotDrawSession.make(
             mode: .continuous,
             from: [oldCard, fadingCard],
             pool: .fading,
-            now: now,
-            shuffle: { $0 }
+            now: now
         )
 
         XCTAssertEqual(timeCapsule?.cards.map(\.id), ["old"])
@@ -611,18 +609,200 @@ final class APIClientDecodingTests: XCTestCase {
             screenshotData: Data()
         )
 
-        card.apply(.fuzzy)
+        card.apply(.fuzzy, schedule: schedule(days: 1))
         XCTAssertEqual(card.masteryStage, .awakened)
 
-        card.apply(.forgot)
+        card.apply(.forgot, schedule: schedule(days: 1))
         XCTAssertEqual(card.masteryStage, .awakened)
 
-        card.apply(.remembered)
+        card.apply(.remembered, schedule: schedule(days: 3))
         XCTAssertEqual(card.masteryStage, .solidified)
 
-        card.apply(.remembered)
+        card.apply(.remembered, schedule: schedule(days: 7))
         XCTAssertEqual(card.masteryStage, .engraved)
         XCTAssertEqual(card.successfulRecallCount, 2)
+        XCTAssertEqual(card.schedule?.intervalDays, 7)
+    }
+
+    func testDecodesCaptureAnalysisV2WithTypedVariantsAndPartialSource() throws {
+        let data = Data(
+            """
+            {
+              "status": "completed",
+              "captureAnalysis": {
+                "schemaVersion": "capture_memory_card_2",
+                "disposition": "create_card",
+                "sourceStatus": "partial",
+                "memoryCard": {
+                  "id": "capture-card-1",
+                  "coreKnowledge": "主动提取比被动重看更能暴露遗忘。",
+                  "recallCue": "什么方式更能暴露遗忘？",
+                  "hiddenSemantic": "主动提取",
+                  "explanation": "主动提取要求用户先重建答案。",
+                  "sourceEvidenceIds": ["evidence-1"],
+                  "rarity": "SR",
+                  "rarityReason": "可以迁移到多个学习场景。",
+                  "rarityConfidence": 0.87,
+                  "rarityRuleVersion": "core-potential-1",
+                  "sourceStatus": "partial",
+                  "recallVariants": [
+                    {
+                      "id": "variant-cloze",
+                      "type": "semantic_cloze",
+                      "prompt": "____比被动重看更能暴露遗忘。",
+                      "answer": "主动提取",
+                      "options": [],
+                      "correctOptionId": null,
+                      "correctBoolean": null,
+                      "explanation": "原句遮挡。",
+                      "sourceEvidenceIds": ["evidence-1"]
+                    },
+                    {
+                      "id": "variant-tf",
+                      "type": "true_false",
+                      "prompt": "被动重看更能暴露遗忘。",
+                      "answer": "错误",
+                      "options": [],
+                      "correctOptionId": null,
+                      "correctBoolean": false,
+                      "explanation": "证据支持主动提取。",
+                      "sourceEvidenceIds": ["evidence-1"]
+                    },
+                    {
+                      "id": "variant-mcq",
+                      "type": "multiple_choice",
+                      "prompt": "哪种方式更能暴露遗忘？",
+                      "answer": "主动提取",
+                      "options": [
+                        {"id": "a", "text": "主动提取"},
+                        {"id": "b", "text": "被动重看"}
+                      ],
+                      "correctOptionId": "a",
+                      "correctBoolean": null,
+                      "explanation": "只有一个正确答案。",
+                      "sourceEvidenceIds": ["evidence-1"]
+                    }
+                  ]
+                },
+                "schedule": {
+                  "nextReviewAt": "2026-07-25T10:00:00.000Z",
+                  "intervalDays": 1,
+                  "state": "scheduled",
+                  "status": "scheduled"
+                }
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(ImageFlowResponse.self, from: data)
+
+        XCTAssertEqual(response.captureAnalysis?.schemaVersion, "capture_memory_card_2")
+        XCTAssertEqual(response.captureAnalysis?.disposition, .createCard)
+        XCTAssertEqual(response.captureAnalysis?.sourceStatus, .partial)
+        XCTAssertEqual(response.captureAnalysis?.memoryCard?.recallVariants?.map(\.type), [
+            .semanticCloze,
+            .trueFalse,
+            .multipleChoice
+        ])
+        XCTAssertEqual(response.captureAnalysis?.schedule?.intervalDays, 1)
+        XCTAssertNotNil(response.captureAnalysis?.schedule?.nextReviewDate)
+    }
+
+    func testDecodesFlatCaptureCardListAndCanonicalScheduleState() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": "capture_memory_cards_1",
+              "cards": [{
+                "id": "capture-card-1",
+                "state": "formal",
+                "coreKnowledge": "证据绑定让复习结果可核对。",
+                "recallCue": "什么让复习结果可核对？",
+                "hiddenSemantic": "证据绑定",
+                "explanation": "答案对应原始证据。",
+                "sourceEvidenceIds": ["evidence-1"],
+                "rarity": "R",
+                "rarityReason": "具体且有用。",
+                "sourceStatus": "verified",
+                "schedule": {
+                  "nextReviewAt": "2026-07-24T09:00:00.000Z",
+                  "intervalDays": 1,
+                  "state": "due",
+                  "status": "due"
+                },
+                "createdAt": "2026-07-20T09:00:00.000Z",
+                "updatedAt": "2026-07-24T09:00:00.000Z"
+              }]
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CaptureMemoryCardsResponse.self, from: data)
+
+        XCTAssertEqual(response.cards.first?.memoryCard.id, "capture-card-1")
+        XCTAssertEqual(response.cards.first?.schedule?.state, "due")
+        XCTAssertEqual(response.cards.first?.capturedAt, "2026-07-20T09:00:00.000Z")
+    }
+
+    func testDecodesIdempotentCaptureAssessmentSchedule() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": "capture_memory_assessment_1",
+              "cardId": "capture-card-1",
+              "assessment": {
+                "attemptId": "attempt-stable",
+                "assessment": "remembered",
+                "assessedAt": "2026-07-24T10:00:00.000Z",
+                "repeated": true
+              },
+              "schedule": {
+                "nextReviewAt": "2026-07-27T10:00:00.000Z",
+                "intervalDays": 3,
+                "state": "scheduled",
+                "status": "scheduled"
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CaptureMemoryCardAssessmentResponse.self, from: data)
+
+        XCTAssertEqual(response.assessment.attemptId, "attempt-stable")
+        XCTAssertTrue(response.assessment.repeated)
+        XCTAssertEqual(response.schedule.intervalDays, 3)
+    }
+
+    func testDuePoolUsesNextReviewTimeAndStableOrdering() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let later = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "later"),
+            screenshotData: Data(),
+            schedule: schedule(at: now.addingTimeInterval(-60), days: 1),
+            capturedAt: now.addingTimeInterval(-300)
+        )
+        let earlier = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "earlier"),
+            screenshotData: Data(),
+            schedule: schedule(at: now.addingTimeInterval(-600), days: 1),
+            capturedAt: now.addingTimeInterval(-200)
+        )
+        let future = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "future"),
+            screenshotData: Data(),
+            schedule: schedule(at: now.addingTimeInterval(600), days: 1),
+            capturedAt: now.addingTimeInterval(-100)
+        )
+
+        let session = V2ScreenshotDrawSession.make(
+            mode: .continuous,
+            from: [later, future, earlier],
+            pool: .due,
+            now: now
+        )
+
+        XCTAssertEqual(session?.cards.map(\.id), ["earlier", "later"])
     }
 
     func testScreenshotImageProcessorProducesBoundedJPEG() throws {
@@ -653,6 +833,19 @@ final class APIClientDecodingTests: XCTestCase {
             sourceTitle: nil,
             sourceUrl: nil,
             sourceStatus: .verified
+        )
+    }
+
+    private func schedule(days: Int) -> ImageFlowReviewSchedule {
+        schedule(at: Date(timeIntervalSince1970: 2_000_000_000), days: days)
+    }
+
+    private func schedule(at date: Date, days: Int) -> ImageFlowReviewSchedule {
+        ImageFlowReviewSchedule(
+            nextReviewAt: ISO8601DateFormatter().string(from: date),
+            intervalDays: days,
+            state: "scheduled",
+            status: "scheduled"
         )
     }
 

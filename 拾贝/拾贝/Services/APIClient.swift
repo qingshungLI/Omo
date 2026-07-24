@@ -137,6 +137,28 @@ struct APIClient {
         )
     }
 
+    func fetchCaptureMemoryCards() async throws -> [CaptureMemoryCardRecord] {
+        let response: CaptureMemoryCardsResponse = try await get("/api/memory-cards")
+        return response.cards
+    }
+
+    func assessCaptureMemoryCard(
+        id: String,
+        assessment: String,
+        attemptId: String
+    ) async throws -> CaptureMemoryCardAssessmentResponse {
+        let request = CaptureMemoryCardAssessmentRequest(
+            assessment: assessment,
+            attemptId: attemptId
+        )
+        return try await send(
+            "/api/memory-cards/\(encodedPathComponent(id))/assessments",
+            method: "POST",
+            body: request,
+            acceptsFailureBody: false
+        )
+    }
+
     func fetchV2Chapter(id: String) async throws -> V2BackendChapter {
         let response: V2BackendChapterResponse = try await get("/api/chapters/\(encodedPathComponent(id))")
         return response.chapter
@@ -587,7 +609,7 @@ struct ImageFlowRequest: Codable {
     var sourceUrl: String?
 }
 
-struct ImageFlowResponse: Codable {
+struct ImageFlowResponse: Decodable {
     struct Link: Codable {
         var title: String
         var url: String
@@ -600,9 +622,13 @@ struct ImageFlowResponse: Codable {
     var link: Link?
     var sourceFallback: Bool?
     var memoryCard: ImageFlowMemoryCard?
+    var schemaVersion: String?
+    var disposition: CaptureAnalysisDisposition?
+    var schedule: ImageFlowReviewSchedule?
+    var captureAnalysis: CaptureAnalysisV2?
 }
 
-struct ImageFlowMemoryCard: Codable, Equatable, Identifiable {
+struct ImageFlowMemoryCard: Decodable, Equatable, Identifiable {
     enum State: String, Codable {
         case formal
         case fragment
@@ -616,20 +642,263 @@ struct ImageFlowMemoryCard: Codable, Equatable, Identifiable {
 
     enum SourceStatus: String, Codable {
         case verified
+        case partial
         case unconfirmed
     }
 
     var id: String
+    var captureId: String? = nil
+    var version: Int? = nil
     var state: State
     var coreKnowledge: String
     var recallCue: String
     var hiddenSemantic: String?
     var explanation: String
+    var sourceEvidenceIds: [String]? = nil
+    var recallVariants: [ImageFlowRecallVariant]? = nil
     var rarity: Rarity?
     var rarityReason: String?
+    var rarityReasons: [String]? = nil
+    var rarityConfidence: Double? = nil
+    var rarityRuleVersion: String? = nil
     var sourceTitle: String?
     var sourceUrl: String?
     var sourceStatus: SourceStatus
+    var createdAt: String? = nil
+    var updatedAt: String? = nil
+}
+
+extension ImageFlowMemoryCard {
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case captureId
+        case version
+        case state
+        case coreKnowledge
+        case recallCue
+        case hiddenSemantic
+        case explanation
+        case sourceEvidenceIds
+        case recallVariants
+        case rarity
+        case rarityReason
+        case rarityReasons
+        case rarityConfidence
+        case rarityRuleVersion
+        case sourceTitle
+        case sourceUrl
+        case sourceStatus
+        case createdAt
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        captureId = try container.decodeIfPresent(String.self, forKey: .captureId)
+        version = try container.decodeIfPresent(Int.self, forKey: .version)
+        state = try container.decodeIfPresent(State.self, forKey: .state) ?? .formal
+        coreKnowledge = try container.decode(String.self, forKey: .coreKnowledge)
+        recallCue = try container.decode(String.self, forKey: .recallCue)
+        hiddenSemantic = try container.decodeIfPresent(String.self, forKey: .hiddenSemantic)
+        explanation = try container.decode(String.self, forKey: .explanation)
+        sourceEvidenceIds = try container.decodeIfPresent([String].self, forKey: .sourceEvidenceIds)
+        recallVariants = try container.decodeIfPresent([ImageFlowRecallVariant].self, forKey: .recallVariants)
+        rarity = try container.decodeIfPresent(Rarity.self, forKey: .rarity)
+        rarityReason = try container.decodeIfPresent(String.self, forKey: .rarityReason)
+        rarityReasons = try container.decodeIfPresent([String].self, forKey: .rarityReasons)
+        rarityConfidence = try container.decodeIfPresent(Double.self, forKey: .rarityConfidence)
+        rarityRuleVersion = try container.decodeIfPresent(String.self, forKey: .rarityRuleVersion)
+        sourceTitle = try container.decodeIfPresent(String.self, forKey: .sourceTitle)
+        sourceUrl = try container.decodeIfPresent(String.self, forKey: .sourceUrl)
+        sourceStatus = try container.decodeIfPresent(SourceStatus.self, forKey: .sourceStatus) ?? .unconfirmed
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
+}
+
+enum CaptureAnalysisDisposition: String, Codable, Equatable {
+    case createCard = "create_card"
+    case archiveOnly = "archive_only"
+    case needsConfirmation = "needs_confirmation"
+}
+
+struct ImageFlowRecallVariant: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable, Equatable {
+        case semanticCloze = "semantic_cloze"
+        case trueFalse = "true_false"
+        case multipleChoice = "multiple_choice"
+    }
+
+    var id: String
+    var type: Kind
+    var prompt: String
+    var answer: String?
+    var options: [ImageFlowRecallOption]
+    var correctOptionId: String?
+    var correctBoolean: Bool?
+    var explanation: String
+    var sourceEvidenceIds: [String]
+}
+
+struct ImageFlowRecallOption: Codable, Equatable, Identifiable {
+    var id: String
+    var text: String
+}
+
+struct ImageFlowReviewSchedule: Decodable, Equatable {
+    var nextReviewAt: String
+    var intervalDays: Int
+    var state: String
+    var status: String?
+
+    init(
+        nextReviewAt: String,
+        intervalDays: Int,
+        state: String,
+        status: String? = nil
+    ) {
+        self.nextReviewAt = nextReviewAt
+        self.intervalDays = intervalDays
+        self.state = state
+        self.status = status
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case nextReviewAt
+        case intervalDays
+        case state
+        case status
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        nextReviewAt = try container.decode(String.self, forKey: .nextReviewAt)
+        intervalDays = try container.decode(Int.self, forKey: .intervalDays)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        state = try container.decodeIfPresent(String.self, forKey: .state)
+            ?? status
+            ?? "scheduled"
+    }
+
+    var nextReviewDate: Date? {
+        Self.parseISO8601(nextReviewAt)
+    }
+
+    func isDue(at now: Date = Date()) -> Bool {
+        guard let nextReviewDate else { return false }
+        return nextReviewDate <= now
+    }
+
+    var displayText: String {
+        guard let nextReviewDate else { return "下次复习时间待同步" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = .current
+        formatter.dateFormat = "M月d日 HH:mm"
+        return "\(formatter.string(from: nextReviewDate)) 再次召回"
+    }
+
+    private static func parseISO8601(_ value: String) -> Date? {
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractionalFormatter.date(from: value)
+            ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
+struct CaptureAnalysisV2: Decodable, Equatable {
+    var schemaVersion: String
+    var disposition: CaptureAnalysisDisposition
+    var sourceStatus: ImageFlowMemoryCard.SourceStatus
+    var memoryCard: ImageFlowMemoryCard?
+    var schedule: ImageFlowReviewSchedule?
+}
+
+struct CaptureMemoryCardsResponse: Decodable, Equatable {
+    var cards: [CaptureMemoryCardRecord]
+
+    private enum CodingKeys: String, CodingKey {
+        case cards
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cards = try container.decodeIfPresent([CaptureMemoryCardRecord].self, forKey: .cards)
+            ?? container.decodeIfPresent([CaptureMemoryCardRecord].self, forKey: .items)
+            ?? []
+    }
+}
+
+struct CaptureMemoryCardRecord: Decodable, Equatable {
+    var memoryCard: ImageFlowMemoryCard
+    var schedule: ImageFlowReviewSchedule?
+    var masteryStage: String?
+    var successfulRecallCount: Int?
+    var lastAssessment: String?
+    var capturedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case memoryCard
+        case card
+        case schedule
+        case masteryStage
+        case successfulRecallCount
+        case lastAssessment
+        case capturedAt
+    }
+
+    init(
+        memoryCard: ImageFlowMemoryCard,
+        schedule: ImageFlowReviewSchedule?,
+        masteryStage: String?,
+        successfulRecallCount: Int?,
+        lastAssessment: String?,
+        capturedAt: String?
+    ) {
+        self.memoryCard = memoryCard
+        self.schedule = schedule
+        self.masteryStage = masteryStage
+        self.successfulRecallCount = successfulRecallCount
+        self.lastAssessment = lastAssessment
+        self.capturedAt = capturedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let nestedCard = try container.decodeIfPresent(ImageFlowMemoryCard.self, forKey: .memoryCard)
+            ?? container.decodeIfPresent(ImageFlowMemoryCard.self, forKey: .card) {
+            memoryCard = nestedCard
+        } else {
+            memoryCard = try ImageFlowMemoryCard(from: decoder)
+        }
+        schedule = try container.decodeIfPresent(ImageFlowReviewSchedule.self, forKey: .schedule)
+        masteryStage = try container.decodeIfPresent(String.self, forKey: .masteryStage)
+        successfulRecallCount = try container.decodeIfPresent(Int.self, forKey: .successfulRecallCount)
+        lastAssessment = try container.decodeIfPresent(String.self, forKey: .lastAssessment)
+        capturedAt = try container.decodeIfPresent(String.self, forKey: .capturedAt)
+            ?? memoryCard.createdAt
+    }
+}
+
+struct CaptureMemoryCardAssessmentRequest: Encodable {
+    var assessment: String
+    var attemptId: String
+}
+
+struct CaptureMemoryCardAssessmentResponse: Decodable, Equatable {
+    struct Assessment: Decodable, Equatable {
+        var attemptId: String
+        var assessment: String
+        var assessedAt: String
+        var repeated: Bool
+    }
+
+    var schemaVersion: String
+    var cardId: String
+    var assessment: Assessment
+    var schedule: ImageFlowReviewSchedule
 }
 
 struct AttemptRequest: Codable {

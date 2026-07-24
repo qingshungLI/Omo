@@ -56,12 +56,27 @@ struct V2MaterialsView: View {
     let generatingChapterStatus: V2ChapterReviewStatus
     let generatingProgressText: String
     let generatedChapter: V2ReviewChapterData?
+    let screenshotCards: [V2CapturedMemoryCard]
     let openGeneratingChapter: (String?) -> Void
     let openChapter: (String) -> Void
 
     var body: some View {
-        V2TabScaffold(selectedTab: $selectedTab, title: "全部章节") {
+        V2TabScaffold(selectedTab: $selectedTab, title: "知识库") {
             VStack(spacing: 16) {
+                if !screenshotCards.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("我的记忆卡")
+                            .font(V2Typography.sectionTitle)
+                            .foregroundStyle(V2Color.textPrimary)
+
+                        ForEach(screenshotCards) { captured in
+                            V2MemoryLibraryCard(captured: captured)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 12)
+                }
+
                 ZStack(alignment: .topTrailing) {
                     V2GeneratedChaptersSummaryCard(count: generatedChapterCount)
                         .padding(.top, 54)
@@ -120,52 +135,76 @@ struct V2MaterialsView: View {
                     .buttonStyle(.plain)
                 }
 
-                if usesMockData {
-                    Button {
-                        openChapter("v2-fixture")
-                    } label: {
-                        V2ChapterCard(
-                            title: V2ReviewFixture.chapter.title,
-                            status: .reviewing,
-                            source: "网页文章",
-                            knowledgeCount: V2ReviewFixture.chapter.units.count,
-                            questionCount: V2ReviewFixture.chapter.units.reduce(0) { $0 + $1.questions.count }
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        openChapter("v2-fixture")
-                    } label: {
-                        V2ChapterCard(
-                            title: "Claude Code hooks：把自动化放进工作流",
-                            status: .notStarted,
-                            source: "网页文章",
-                            knowledgeCount: 7,
-                            questionCount: 21
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        openChapter("v2-fixture")
-                    } label: {
-                        V2ChapterCard(
-                            title: "游戏化设计如何改善学习体验",
-                            status: .completed,
-                            source: "网页文章",
-                            knowledgeCount: 6,
-                            questionCount: 18
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
             }
         }
     }
 
     private func listStatus(for chapter: V2BackendChapter) -> V2ChapterReviewStatus {
         chapter.v2ListStatus(hasCompletedReviewOnce: completedChapterIDs.contains(chapter.id) || chapter.hasCompletedV2ReviewOnce)
+    }
+}
+
+private struct V2MemoryLibraryCard: View {
+    let captured: V2CapturedMemoryCard
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(captured.card.rarity?.rawValue ?? "记忆碎片")
+                    .font(V2Typography.captionEmphasis)
+                    .foregroundStyle(V2Color.primary)
+                Spacer()
+                Text(captured.masteryStage.title)
+                    .font(V2Typography.caption)
+                    .foregroundStyle(V2Color.textMuted)
+            }
+
+            Text(captured.card.coreKnowledge)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(V2Color.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 5) {
+                Image(systemName: sourceSymbol)
+                Text(sourceTitle)
+                    .lineLimit(1)
+                Spacer()
+                if let schedule = captured.schedule {
+                    Text(schedule.displayText)
+                        .lineLimit(1)
+                }
+            }
+            .font(V2Typography.caption)
+            .foregroundStyle(V2Color.textMuted)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .fill(V2Color.surfaceCream)
+                .v2Shadow()
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(captured.card.coreKnowledge)，\(sourceTitle)")
+        .accessibilityIdentifier("v2.library.card.\(captured.id)")
+    }
+
+    private var sourceTitle: String {
+        switch captured.card.sourceStatus {
+        case .verified:
+            captured.card.sourceTitle ?? "来源已核对"
+        case .partial:
+            "部分来源已核对"
+        case .unconfirmed:
+            "来源尚未确认"
+        }
+    }
+
+    private var sourceSymbol: String {
+        switch captured.card.sourceStatus {
+        case .verified: "checkmark.seal.fill"
+        case .partial: "checkmark.seal"
+        case .unconfirmed: "questionmark.circle"
+        }
     }
 }
 
@@ -1596,6 +1635,52 @@ struct V2ProfileView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+struct V2ProfileTabView: View {
+    @AppStorage("v2.profileAvatarImageData")
+    private var profileAvatarImageData = Data()
+    @AppStorage("v2.profilePresetAvatarName")
+    private var profilePresetAvatarName = ""
+    @AppStorage("v2.profileDisplayName")
+    private var profileDisplayName = "Cappy"
+
+    @Binding var selectedTab: V2HomeTab
+    @Binding var usesMockData: Bool
+    let allowsMockDataToggle: Bool
+    let reviewedCount: String
+    let streakDays: String
+    let account: AccountSnapshot?
+    let isAccountLoading: Bool
+    let accountMessage: String
+    let onSignInWithApple: (Data?, Data?) async -> Void
+    let onDeleteAccount: () async -> Void
+
+    var body: some View {
+        V2TabScaffold(selectedTab: $selectedTab, title: "我的") {
+            VStack(spacing: 20) {
+                V2ProfileHeaderCard(
+                    name: $profileDisplayName,
+                    reviewedCount: reviewedCount,
+                    streakDays: streakDays,
+                    avatarImageData: $profileAvatarImageData,
+                    selectedPresetAvatarName: $profilePresetAvatarName
+                )
+
+                V2ProfileSettingsCard(
+                    account: account,
+                    isAccountLoading: isAccountLoading,
+                    accountMessage: accountMessage,
+                    onSignInWithApple: onSignInWithApple,
+                    onDeleteAccount: onDeleteAccount
+                )
+
+                if allowsMockDataToggle {
+                    V2RuntimeModeCard(usesMockData: $usesMockData)
+                }
+            }
         }
     }
 }

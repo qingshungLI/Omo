@@ -23,25 +23,23 @@
 | 位置 | 内容 | 用途 | 授权 |
 | --- | --- | --- | --- |
 | `拾贝/拾贝/Assets.xcassets/` | iOS 全部图标、吉祥物、装饰图、头像预设（V2*、Tab*、AppIcon 等） | iOS App 界面 | 项目原创，仓库自有 |
-| `docs/app-demo-assets/*.svg`（16 个文件） | v0.5 Web 演示的导航图标、吉祥物、背景装饰 | v0.5 `ios-app-demo.html` 引用；v0.6 起 demo 改为内联实现，本目录保留为历史资产 | 项目原创，仓库自有 |
-| `docs/product-exploration/assets/*.png`（2 个文件） | v0.5 概念图与验收截图 | PRD §12 历史视觉参考 | 项目原创，仓库自有 |
-| `docs/ios-app-demo.html` 内联 SVG / CSS | v0.6 毛球角色、三 Tab 图标、卡面、铅笔涂鸦遮盖层、颗粒纹理 | v0.6 Web 交互预览 | 项目原创，仓库自有 |
+| `docs/app-demo-assets/*.svg`（16 个文件） | v0.5 Web 演示的导航图标、吉祥物、背景装饰 | v0.5 `ios-app-demo.html` 历史资产；v0.6 导航改用已登记的 Phosphor 文件 | 项目原创，仓库自有 |
+| `docs/product-exploration/assets/*.png`（5 个文件） | v0.5 概念图，以及 v0.6 今日、召回、知识库三张验收截图 | PRD 历史视觉参考与 v0.6 验收记录 | 项目原创，仓库自有 |
+| `docs/app-demo-assets/mascot-v06/*.png` | v0.6 毛球角色透明姿态表及站立、思考、侧头、起跳、成功 5 个切片 | Web 预览、设计核对 | 依据用户提供的情绪与比例参考重新生成的项目原创资产 |
+| `拾贝/拾贝/Assets.xcassets/RecalloMascot*.imageset/` | 与 Web 同源的 5 个毛球姿态 | iOS App | 项目原创，仓库自有 |
+| `docs/ios-app-demo.html` 内联 CSS | 卡面、铅笔涂鸦遮盖层、触控与 Reduce Motion 降级 | v0.6 Web 交互预览 | 项目原创，仓库自有 |
 
 ### 2.2 第三方素材
 
-当前仓库内 **没有任何 bundled 的第三方素材**。下表留作新增登记格式：
-
-| 素材 | 版本 / 文件 | 许可证 | 引入位置 | 用途 |
+| 素材 | 版本 / 文件 | 许可证与来源 | 引入位置 | 用途 |
 | --- | --- | --- | --- | --- |
-| （暂无） | — | — | — | — |
+| Pow | `1.0.6` | MIT · <https://github.com/EmergeTools/Pow> | `拾贝/拾贝.xcodeproj/project.pbxproj` | iOS 跳跃、升起、闪光及粒子 `changeEffect` |
+| Kenney Particle Pack | `1.1`：`star_04.png`、`circle_05.png`、`smoke_06.png` | CC0 · <https://kenney.nl/assets/particle-pack> | `docs/app-demo-assets/kenney-particles/`、`RecalloParticle*.imageset/` | 暖色火花、圆环、烟雾粒子，运行时统一着色 |
+| Phosphor Icons Core | Git commit `2b75f3ad12b420c9504ef05df8d2564a28f8500e`：`sun.svg`、`cards-three.svg`、`user-circle.svg`、`plus.svg`、`arrow-up.svg` | MIT · <https://github.com/phosphor-icons/core> | `docs/app-demo-assets/phosphor/` | Web 三栏导航和导入/上拖提示图标 |
 
 ## 3. considered：白名单内、评估中（未导入）
 
-| 素材 | 许可证 | 允许范围 | 当前状态 |
-| --- | --- | --- | --- |
-| Pow（mattbreda/pow，iOS 粒子库） | MIT | **仅 iOS 运行时**的少量粒子反馈；Web 预览不引入 | 未导入；仅在需要“记得”时刻的轻粒子时评估，需登记版本与文件 |
-| Kenney Particle Pack | CC0 | 最多少量粒子贴图（如 star / circle 基础粒子） | 未导入；若 Pow 自带粒子不足再评估，需登记具体 PNG 文件名 |
-| Phosphor Icons Core | MIT | Web 端 SVG 图标候选，按需内联并保留许可注释 | 未导入；v0.6 demo 目前使用原创内联 SVG，若改用 Phosphor 需逐图标登记 |
+当前没有处于 `considered` 状态的第三方素材；新增候选必须先登记后导入。
 
 ## 4. excluded：明确不引入
 
@@ -60,6 +58,26 @@
 
 ## 6. 当前核对基线（v0.6）
 
-- `docs/ios-app-demo.html`：无外部素材引用（无 `/app-demo-assets/`、无外链字体 / 图片 / 脚本），全部视觉为内联原创 SVG + CSS；
-- iOS 端：仅使用 `Assets.xcassets` 内原创资产，未添加 Pow / Kenney / 任何 Swift 粒子依赖；
+- Web 端：只引用仓库内的原创毛球 PNG 与 5 个 Phosphor 原始 SVG，无外链字体、图片或脚本；
+- iOS 端：Pow 精确锁定 `1.0.6`；只使用已登记的原创毛球与 3 个 Kenney 粒子；
 - 全仓库无 Lottie（`.json` 动效）、无 Rive（`.riv`）文件。
+
+## 7. 文件校验值（SHA-256）
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `mascot-v06/recallo-mascot-poses-v06-chroma.png` | `99de6a92e67bba6827d259e2ed542cbf113258f355a5558d55f44acb5685ae4f` |
+| `mascot-v06/recallo-mascot-poses-v06.png` | `401a45f794927bebc271afae1b39669476c3c51ffa79166a5aa2cac1bef01afe` |
+| `mascot-v06/recallo-mascot-idle.png` | `d62db1c37841d1d229b4c16b61965b482aae3e72daeb63add04e2a477da594c4` |
+| `mascot-v06/recallo-mascot-thinking.png` | `d868f2fb3b750638b24107c7f137e83cf28c29cc67996da919c8c758e5fc24be` |
+| `mascot-v06/recallo-mascot-tilt.png` | `0151f61ba6d48d2b436ef6f832101b0115df5df1252cb3a14bee3d05e1b444b2` |
+| `mascot-v06/recallo-mascot-hop.png` | `1b469d65d90055c17f0d163e95b57a4435e49e47689b6fa3ac3430a6689f0252` |
+| `mascot-v06/recallo-mascot-success.png` | `bc09d6438649b8a920a94d1b5195bbe1a46b27dda5b2e66db1ef94d412470a9c` |
+| `kenney-particles/star_04.png` | `6485ac16c773663bd39346f3bedae04465ac14c661eb47cc5cfa935cdbf6c2ec` |
+| `kenney-particles/circle_05.png` | `925b8ac284436f74f9cadf0ecd058da1c08fba65c098e4e34fd220603022f02e` |
+| `kenney-particles/smoke_06.png` | `d988b03bb46797be913333f06b26ff2aad55ec082cfb7d3d18ce86ccb71559b5` |
+| `phosphor/sun.svg` | `e031ec2d8c1b33f243e698a935c0252b75ab612966d111177d5ab1c680293606` |
+| `phosphor/cards-three.svg` | `b9b28b5fd8badf13603aae3cbff72f1080adbfebc45734384b8286c26970e8f3` |
+| `phosphor/user-circle.svg` | `96cc02045d8e1db183681f90ee21883b2cc45ce941a8ac5af5a6fa47bdd01f4b` |
+| `phosphor/plus.svg` | `96b24cf8fd7305767791d43231271c47d24f2be856eb2a474df0e67a80840f2f` |
+| `phosphor/arrow-up.svg` | `203081bc75bac0f1296da11e1225cd2315d8ae996b63a31f6ce133f3cd170bc5` |
