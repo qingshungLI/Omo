@@ -21,7 +21,7 @@ const SECRET_PATTERNS = [
   },
   {
     type: "tikhub_base64_assignment",
-    expression: /\b(?:TIKHUB_API_KEY|TIKHUB_API)\s*[:=]\s*["']?([A-Za-z0-9+/]{32,}={0,2})/gi,
+    expression: /\bTIKHUB(?:[\s_-]+API)(?:[\s_-]+KEY)?\s*[:=]\s*["']?([A-Za-z0-9+/_-]{32,}={0,2})/gi,
     capture: 1
   },
   {
@@ -81,7 +81,13 @@ export function collectCurrentInputs(cwd = process.cwd()) {
     const absolutePath = resolve(cwd, path);
     if (!existsSync(absolutePath)) continue;
     const content = readFileSync(absolutePath);
-    if (!isScannableText(content)) continue;
+    if (content.length > MAX_TEXT_BYTES) {
+      if (!content.includes(0)) {
+        inputs.push(unscannedInput(path, "worktree", content.length, "max_text_bytes_exceeded"));
+      }
+      continue;
+    }
+    if (content.includes(0)) continue;
     inputs.push({ path, source: "worktree", text: content.toString("utf8") });
   }
 
@@ -94,6 +100,11 @@ export function collectCurrentInputs(cwd = process.cwd()) {
   ], cwd);
 
   for (const path of stagedPaths) {
+    const stagedSize = gitBlobSize(path, cwd);
+    if (stagedSize > MAX_TEXT_BYTES) {
+      inputs.push(unscannedInput(path, "index", stagedSize, "max_text_bytes_exceeded"));
+      continue;
+    }
     let content;
     try {
       content = execFileSync("git", ["show", `:${path}`], {
@@ -102,9 +113,10 @@ export function collectCurrentInputs(cwd = process.cwd()) {
         maxBuffer: MAX_TEXT_BYTES + 1024
       });
     } catch {
+      inputs.push(unscannedInput(path, "index", stagedSize, "index_content_unreadable"));
       continue;
     }
-    if (!isScannableText(content)) continue;
+    if (content.includes(0)) continue;
     inputs.push({ path, source: "index", text: content.toString("utf8") });
   }
 
@@ -115,7 +127,10 @@ export function scanInputs(inputs) {
   const deduped = new Map();
 
   for (const input of inputs) {
-    for (const finding of scanTextForSecrets(input.text, input)) {
+    const inputFindings = input.unscannedReason
+      ? [unscannedFinding(input)]
+      : scanTextForSecrets(input.text, input);
+    for (const finding of inputFindings) {
       const key = [finding.path, finding.line, finding.type, finding.fingerprint].join("|");
       const existing = deduped.get(key);
       if (existing) {
@@ -190,7 +205,8 @@ export function formatFinding(finding) {
     `source=${finding.source}`,
     `masked=${finding.masked}`,
     `sha256=${finding.fingerprint}`,
-    `len=${finding.length}`
+    `len=${finding.length}`,
+    ...(finding.reason ? [`reason=${finding.reason}`] : [])
   ].join(" | ");
 }
 
@@ -208,8 +224,36 @@ function gitNullList(args, cwd) {
   return output.toString("utf8").split("\0").filter(Boolean);
 }
 
-function isScannableText(content) {
-  return content.length <= MAX_TEXT_BYTES && !content.includes(0);
+function gitBlobSize(path, cwd) {
+  try {
+    const value = execFileSync("git", ["cat-file", "-s", `:${path}`], {
+      cwd,
+      encoding: "utf8"
+    }).trim();
+    const size = Number(value);
+    return Number.isFinite(size) && size >= 0 ? size : -1;
+  } catch {
+    return -1;
+  }
+}
+
+function unscannedInput(path, source, length, unscannedReason) {
+  return { path, source, length, unscannedReason };
+}
+
+function unscannedFinding(input) {
+  const reason = String(input.unscannedReason || "content_unscanned");
+  const length = Number.isFinite(Number(input.length)) ? Number(input.length) : -1;
+  return {
+    path: input.path,
+    line: 0,
+    source: input.source,
+    type: "unscanned_text_input",
+    masked: "not-scanned",
+    fingerprint: fingerprint([input.path, input.source, length, reason].join(":")),
+    length,
+    reason
+  };
 }
 
 function compareFindings(left, right) {
@@ -236,6 +280,7 @@ function runCli() {
       "",
       "The current scan covers tracked worktree files plus staged index content.",
       "The history scan is explicit and is not part of normal commit/push gates.",
+      `Text inputs larger than ${MAX_TEXT_BYTES} bytes fail closed as auditable findings.`,
       "Findings only print masked values and SHA-256 fingerprints."
     ].join("\n"));
     return;
@@ -251,7 +296,7 @@ function runCli() {
   for (const finding of findings) console.log(`FAIL ${formatFinding(finding)}`);
 
   if (findings.length > 0) {
-    console.error("Secret scan failed. Rotate exposed credentials before removing history findings.");
+    console.error("Secret scan failed. Resolve secret findings or explicitly blocked inputs before continuing.");
     process.exitCode = 1;
   } else {
     console.log("PASS no secret-shaped values found");

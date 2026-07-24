@@ -24,6 +24,13 @@ function fakeTikHubToken() {
   ].join("");
 }
 
+function fakeUrlSafeTikHubToken() {
+  return [
+    "ZmFrZS11cmxzYWZlLXRpa2h1Yi10b2tlbl8t",
+    "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA"
+  ].join("");
+}
+
 function fakeDatabaseUrl() {
   return ["postgresql", "://recallo_fake:fake_password@db.example.invalid/recallo"].join("");
 }
@@ -45,6 +52,23 @@ test("detects TikHub base64 assignments", () => {
   assert.equal(findings.length, 1);
   assert.equal(findings[0].type, "tikhub_base64_assignment");
   assert.equal(formatFinding(findings[0]).includes(token), false);
+});
+
+test("detects informal and URL-safe TikHub assignments without printing full values", () => {
+  const standardToken = fakeTikHubToken();
+  const urlSafeToken = fakeUrlSafeTikHubToken();
+  const findings = [
+    ...scanTextForSecrets(`tikhub api:${standardToken}`, { path: "chat.txt" }),
+    ...scanTextForSecrets(`TIKHUB_API_KEY=${urlSafeToken}`, { path: "fixture.env" })
+  ];
+
+  assert.equal(findings.length, 2);
+  for (const [finding, token] of findings.map((item, index) => [item, [standardToken, urlSafeToken][index]])) {
+    assert.equal(finding.type, "tikhub_base64_assignment");
+    const output = formatFinding(finding);
+    assert.equal(output.includes(token), false);
+    assert.match(output, /masked=.{4}…[^|]{4}/);
+  }
 });
 
 test("detects credential-bearing database URLs", () => {
@@ -90,6 +114,59 @@ test("current scan reads both worktree and staged index content", () => {
   }
 });
 
+
+test("current scan fails closed on oversized tracked text without revealing its content", () => {
+  const directory = mkdtempSync(join(tmpdir(), "recallo-secret-oversize-worktree-"));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: directory });
+    execFileSync("git", ["config", "user.email", "security-test@example.invalid"], { cwd: directory });
+    execFileSync("git", ["config", "user.name", "Recallo Security Test"], { cwd: directory });
+    const fixturePath = join(directory, "large-fixture.txt");
+    writeFileSync(fixturePath, "safe baseline\n");
+    execFileSync("git", ["add", "large-fixture.txt"], { cwd: directory });
+    execFileSync("git", ["commit", "-qm", "safe baseline"], { cwd: directory });
+
+    const token = fakeTikHubToken();
+    writeFileSync(fixturePath, `${"x".repeat(5_000_001)}\ntikhub api:${token}\n`);
+    const findings = scanInputs(collectCurrentInputs(directory));
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].type, "unscanned_text_input");
+    assert.equal(findings[0].reason, "max_text_bytes_exceeded");
+    const output = formatFinding(findings[0]);
+    assert.match(output, /masked=not-scanned/);
+    assert.equal(output.includes(token), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("current scan fails closed on oversized staged content", () => {
+  const directory = mkdtempSync(join(tmpdir(), "recallo-secret-oversize-index-"));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd: directory });
+    execFileSync("git", ["config", "user.email", "security-test@example.invalid"], { cwd: directory });
+    execFileSync("git", ["config", "user.name", "Recallo Security Test"], { cwd: directory });
+    const fixturePath = join(directory, "large-index-fixture.txt");
+    writeFileSync(fixturePath, "safe baseline\n");
+    execFileSync("git", ["add", "large-index-fixture.txt"], { cwd: directory });
+    execFileSync("git", ["commit", "-qm", "safe baseline"], { cwd: directory });
+
+    const token = fakeUrlSafeTikHubToken();
+    writeFileSync(fixturePath, `${"y".repeat(5_000_001)}\nTIKHUB_API_KEY=${token}\n`);
+    execFileSync("git", ["add", "large-index-fixture.txt"], { cwd: directory });
+    writeFileSync(fixturePath, "safe worktree\n");
+
+    const findings = scanInputs(collectCurrentInputs(directory));
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].source, "index");
+    assert.equal(findings[0].type, "unscanned_text_input");
+    const output = formatFinding(findings[0]);
+    assert.match(output, /reason=max_text_bytes_exceeded/);
+    assert.equal(output.includes(token), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 test("history audit detects a removed secret without revealing it", () => {
   const directory = mkdtempSync(join(tmpdir(), "recallo-secret-history-"));
   try {
