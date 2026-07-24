@@ -6,9 +6,11 @@ import { createMediaExtractionError } from "./mediaErrors.js";
 import { normalizeTranscriptionPayload } from "./transcriptionResult.js";
 import { VIDEO_DEFAULTS } from "./videoDefaults.js";
 
-const DEFAULT_TIMEOUT_MS = readPositiveInt(process.env.VIDEO_ASR_TIMEOUT_MS, 180_000);
+const DEFAULT_TIMEOUT_MS = readPositiveInt(process.env.VIDEO_ASR_TIMEOUT_MS, 600_000);
 const CURRENT_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SCRIPT_PATH = resolve(CURRENT_DIR, "../../scripts/transcribe-local-whisper.py");
+let activeLocalWhisperProcesses = 0;
+const localWhisperWaiters = [];
 
 export async function transcribeAudioWithLocalWhisper({
   audioPath,
@@ -18,6 +20,8 @@ export async function transcribeAudioWithLocalWhisper({
   device = process.env.LOCAL_WHISPER_DEVICE || VIDEO_DEFAULTS.localWhisperDevice,
   computeType = process.env.LOCAL_WHISPER_COMPUTE_TYPE || VIDEO_DEFAULTS.localWhisperComputeType,
   language = process.env.LOCAL_WHISPER_LANGUAGE || VIDEO_DEFAULTS.localWhisperLanguage,
+  beamSize = readPositiveInt(process.env.LOCAL_WHISPER_BEAM_SIZE, 1),
+  cpuThreads = readPositiveInt(process.env.LOCAL_WHISPER_CPU_THREADS, 2),
   timeoutMs = DEFAULT_TIMEOUT_MS,
   spawnImpl = spawn
 } = {}) {
@@ -34,17 +38,37 @@ export async function transcribeAudioWithLocalWhisper({
     "--model", model,
     "--device", device,
     "--compute-type", computeType,
-    "--language", language
+    "--language", language,
+    "--beam-size", String(beamSize),
+    "--cpu-threads", String(cpuThreads)
   ];
 
-  const result = await runTranscriptionCommand({
+  // Bound both process count and per-process threads. This permits useful
+  // parallelism without CTranslate2 workers oversubscribing every CPU core.
+  const result = await runLocalWhisperLimited(() => runTranscriptionCommand({
     pythonPath,
     args,
     timeoutMs,
     spawnImpl
-  });
+  }));
 
   return normalizeTranscriptionPayload(result, { provider: "local_whisper" });
+}
+
+async function runLocalWhisperLimited(operation) {
+  const limit = readPositiveInt(process.env.LOCAL_WHISPER_MAX_PROCESSES, 2);
+  if (activeLocalWhisperProcesses >= limit) {
+    await new Promise((resolve) => localWhisperWaiters.push(resolve));
+  } else {
+    activeLocalWhisperProcesses += 1;
+  }
+  try {
+    return await operation();
+  } finally {
+    const next = localWhisperWaiters.shift();
+    if (next) next();
+    else activeLocalWhisperProcesses -= 1;
+  }
 }
 
 function runTranscriptionCommand({
@@ -55,7 +79,14 @@ function runTranscriptionCommand({
 }) {
   return new Promise((resolveCommand, rejectCommand) => {
     const child = spawnImpl(pythonPath, args, {
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        OMP_NUM_THREADS: String(process.env.LOCAL_WHISPER_CPU_THREADS || 2),
+        MKL_NUM_THREADS: String(process.env.LOCAL_WHISPER_CPU_THREADS || 2),
+        OPENBLAS_NUM_THREADS: String(process.env.LOCAL_WHISPER_CPU_THREADS || 2),
+        VECLIB_MAXIMUM_THREADS: String(process.env.LOCAL_WHISPER_CPU_THREADS || 2)
+      }
     });
     let stdout = "";
     let stderr = "";

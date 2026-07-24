@@ -118,6 +118,11 @@ struct APIClient {
         return try await send("/api/sources/preflight", method: "POST", body: request, acceptsFailureBody: true)
     }
 
+    func analyzeImage(ocr: ImageOCRResult, sourceUrl: String? = nil) async throws -> ImageFlowResponse {
+        let request = ImageFlowRequest(ocrText: ocr.keyText, ocrLines: ocr.lines, sourceUrl: sourceUrl)
+        return try await send("/api/sources/image-flow", method: "POST", body: request, acceptsFailureBody: true)
+    }
+
     func fetchV2Chapter(id: String) async throws -> V2BackendChapter {
         let response: V2BackendChapterResponse = try await get("/api/chapters/\(encodedPathComponent(id))")
         return response.chapter
@@ -556,6 +561,25 @@ struct ChapterCreateRequest: Codable {
         sourceUrl = input.sourceUrl
         sourceTitle = input.sourceTitle
     }
+}
+
+struct ImageFlowRequest: Codable {
+    var ocrText: String
+    var ocrLines: [String]
+    var sourceUrl: String?
+}
+
+struct ImageFlowResponse: Codable {
+    struct Link: Codable {
+        var title: String
+        var url: String
+        var snippet: String
+    }
+
+    var status: String
+    var query: String?
+    var link: Link?
+    var sourceFallback: Bool?
 }
 
 struct AttemptRequest: Codable {

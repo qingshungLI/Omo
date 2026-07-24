@@ -31,7 +31,9 @@ export async function extractSourceContent(input, {
     const learningSource = await extractVideoLearningSource({
       sourceUrl: input.sourceUrl,
       rawText: input.rawText,
-      sourceTitle: input.sourceTitle
+      sourceTitle: input.sourceTitle,
+      preferredTimestampSeconds: input.timestampSeconds,
+      publicMediaBaseUrl: input.publicMediaBaseUrl
     });
     const v2Source = buildV2SourceFromLearningSource(learningSource);
     return {

@@ -394,7 +394,7 @@ struct V2RootView: View {
                 let progress = progressIndex(unitID: unitID, questionID: questionID)
                 let unitTitle = unitDisplayTitle(id: unitID) ?? question.title
                 switch question.kind {
-                case .multipleChoice:
+                case .multipleChoice, .trueFalse:
                     V2MultipleChoiceQuestionView(
                         question: question,
                         unitTitle: unitTitle,
@@ -436,7 +436,7 @@ struct V2RootView: View {
                 let progress = (current: 0, total: 1)
                 let unitTitle = V2ReviewFixture.unitDisplayTitle(id: savedQuestion.unitID) ?? question.title
                 switch question.kind {
-                case .multipleChoice:
+                case .multipleChoice, .trueFalse:
                     V2MultipleChoiceQuestionView(
                         question: question,
                         unitTitle: unitTitle,
@@ -464,7 +464,7 @@ struct V2RootView: View {
             if let question = activeQuestion(chapterID: savedQuestion.chapterID, unitID: savedQuestion.unitID, questionID: savedQuestion.questionID) {
                 let progress = (current: 0, total: 1)
                 switch question.kind {
-                case .multipleChoice:
+                case .multipleChoice, .trueFalse:
                     V2MultipleChoiceQuestionView(
                         question: question,
                         unitTitle: savedQuestion.unitTitle,
@@ -2775,7 +2775,7 @@ struct V2RootView: View {
         let interaction = questionInteractionStates[key, default: V2QuestionInteractionState()]
 
         switch question.kind {
-        case .multipleChoice:
+        case .multipleChoice, .trueFalse:
             guard let selectedIndex = interaction.multipleChoice.selectedIndex else {
                 return nil
             }
@@ -2827,7 +2827,7 @@ struct V2RootView: View {
             var interaction = questionInteractionStates[key, default: V2QuestionInteractionState()]
 
             switch question.kind {
-            case .multipleChoice:
+            case .multipleChoice, .trueFalse:
                 if let selectedOptionId = backendState.selectedOptionId,
                    let selectedIndex = optionIndex(for: selectedOptionId) {
                     interaction.multipleChoice.selectedIndex = selectedIndex

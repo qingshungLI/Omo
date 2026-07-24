@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import "./env.js";
 import { STATUS_TEXT } from "./generation/types.js";
@@ -100,11 +101,13 @@ import {
 import { buildVersionInfo } from "./versionInfo.js";
 import { AppleAuthError, verifyAppleIdentityToken } from "./appleAuth.js";
 import { buildSourceCapabilities, preflightSourceInput } from "./sources/sourcePreflight.js";
+import { runImageFlow } from "./flow/index.js";
+import { createImageFlowJob, getImageFlowJob } from "./flow/imageFlowJobs.js";
 import { buildMemoizedVideoRuntimeReadiness } from "./media/videoRuntimeReadiness.js";
+import { takeTemporaryPublicMedia } from "./media/temporaryPublicMedia.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectRoot = resolve(__dirname, "..", "..");
-const demoRoot = resolve(projectRoot, "demo");
 const docsRoot = resolve(projectRoot, "docs");
 const costRunRoot = resolve(projectRoot, ".tmp", "cost-runs");
 const host = process.env.HOST || "0.0.0.0";
@@ -119,19 +122,6 @@ const REVIEW_SESSION_SCHEMA_VERSION = 2;
 const MAX_REINFORCEMENTS_PER_QUESTION = 2;
 const GENERATION_JOB_TIMEOUT_MS = readPositiveInt(process.env.GENERATION_JOB_TIMEOUT_MS, 360_000);
 const databaseInitializedByParent = process.env.SHIBEI_DB_INITIALIZED_BY_PARENT === "1";
-
-const contentTypes = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8",
-  ".svg": "image/svg+xml; charset=utf-8",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp"
-};
 
 function sendJson(res, statusCode, body) {
   res.writeHead(statusCode, {
@@ -263,6 +253,58 @@ async function handleSourcePreflight(req, res) {
     fetchMetadata: body.fetchMetadata === true
   });
   sendJson(res, result.ok ? 200 : 422, result);
+}
+
+async function handleImageFlow(req, res) {
+  const body = await readBody(req);
+  const input = {
+    imageBase64: body.imageBase64 || body.image || "",
+    imagePath: process.env.NODE_ENV === "development" ? body.imagePath || "" : "",
+    ocrText: body.ocrText || "",
+    ocrLines: body.ocrLines || [],
+    sourceUrl: body.sourceUrl || "",
+    publicMediaBaseUrl: process.env.SHIBEI_PUBLIC_BASE_URL || requestBaseUrl(req),
+    includeDetails: body.includeDetails === true
+  };
+  if (body.async === true) {
+    const job = createImageFlowJob((onProgress) => runImageFlow({ ...input, onProgress }));
+    sendJson(res, 202, job);
+    return;
+  }
+  try {
+    const result = await runImageFlow(input);
+    sendJson(res, result.status === "completed" || result.status === "ocr_completed" ? 200 : 422, result);
+  } catch (error) {
+    sendJson(res, 422, {
+      status: "failed",
+      errorCode: error?.code || "image_flow_failed",
+      message: error?.message || "截图处理失败，请稍后重试。"
+    });
+  }
+}
+
+async function handleTemporaryAsrMedia(req, res, token) {
+  const media = takeTemporaryPublicMedia(token);
+  if (!media) {
+    sendText(res, 404, "Not found");
+    return;
+  }
+  const file = await stat(media.path).catch(() => null);
+  if (!file?.isFile() || file.size <= 0) {
+    sendText(res, 404, "Not found");
+    return;
+  }
+  res.writeHead(200, {
+    "content-type": media.contentType,
+    "content-length": file.size,
+    "cache-control": "no-store",
+    ...responseCorsHeaders(res)
+  });
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  createReadStream(media.path).on("error", () => res.destroy()).pipe(res);
 }
 
 async function handleAppleAuth(req, res) {
@@ -2129,27 +2171,15 @@ function sortByCreatedAtDesc(items) {
 
 async function serveStatic(req, res) {
   const url = new URL(req.url || "/", "http://localhost");
-  const requestedPath = decodeURIComponent(url.pathname);
-  const relativePath = requestedPath === "/" ? "index.html" : requestedPath.replace(/^\/+/, "");
-  const safePath = normalize(relativePath).replace(/^(\.\.[/\\])+/, "");
-  const filePath = resolve(join(demoRoot, safePath));
-
-  if (!filePath.startsWith(demoRoot)) {
-    res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Forbidden");
+  if (url.pathname === "/") {
+    sendJson(res, 200, {
+      service: "shibei-api",
+      status: "ok",
+      workflow: "link -> extract -> summarize -> review"
+    });
     return;
   }
-
-  try {
-    const data = await readFile(filePath);
-    res.writeHead(200, {
-      "content-type": contentTypes[extname(filePath)] || "application/octet-stream"
-    });
-    res.end(data);
-  } catch {
-    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Not found");
-  }
+  sendJson(res, 404, { errorCode: "not_found", message: "接口不存在。" });
 }
 
 const server = createServer(async (req, res) => {
@@ -2177,6 +2207,11 @@ const server = createServer(async (req, res) => {
 
   const requestUrl = new URL(req.url || "/", "http://localhost");
   const pathname = requestUrl.pathname.replace(/\/+$/, "") || "/";
+
+  if (["GET", "HEAD"].includes(req.method) && pathname === "/demo") {
+    await sendPublicHtml(req, res, "flow-demo.html");
+    return;
+  }
 
   if (["GET", "HEAD"].includes(req.method) && ["/privacy", "/privacy-policy.html"].includes(pathname)) {
     await sendPublicHtml(req, res, "privacy-policy.html");
@@ -2230,8 +2265,26 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  const temporaryMediaMatch = pathname.match(/^\/api\/asr-media\/([0-9a-f-]{36})$/i);
+  if (["GET", "HEAD"].includes(req.method) && temporaryMediaMatch) {
+    await handleTemporaryAsrMedia(req, res, temporaryMediaMatch[1]);
+    return;
+  }
+
   if (req.method === "POST" && req.url === "/api/sources/preflight") {
     await handleSourcePreflight(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/sources/image-flow") {
+    await handleImageFlow(req, res);
+    return;
+  }
+
+  const imageFlowJobMatch = pathname.match(/^\/api\/sources\/image-flow\/jobs\/([0-9a-f-]{36})$/i);
+  if (req.method === "GET" && imageFlowJobMatch) {
+    const job = getImageFlowJob(imageFlowJobMatch[1]);
+    sendJson(res, job ? 200 : 404, job || { errorCode: "image_flow_job_not_found", message: "任务不存在或已过期。" });
     return;
   }
 

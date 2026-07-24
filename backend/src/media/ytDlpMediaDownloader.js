@@ -6,14 +6,15 @@ import { join } from "node:path";
 
 import { createMediaExtractionError } from "./mediaErrors.js";
 import { VIDEO_DEFAULTS } from "./videoDefaults.js";
+import { resolveYtDlpPythonPath } from "./ytDlpRuntime.js";
 
 const DEFAULT_TIMEOUT_MS = readPositiveInt(process.env.YT_DLP_DOWNLOAD_TIMEOUT_MS, 180_000);
-const DEFAULT_FORMAT_SELECTOR = process.env.YT_DLP_FORMAT_SELECTOR || "bv*+ba/best";
+const DEFAULT_FORMAT_SELECTOR = process.env.YT_DLP_FORMAT_SELECTOR || "bestaudio[ext=m4a]/bestaudio/best";
 const DEFAULT_MAX_BYTES = readPositiveInt(process.env.VIDEO_MEDIA_MAX_BYTES, VIDEO_DEFAULTS.mediaMaxBytes);
 
 export async function downloadYtDlpMediaToTempFile({
   sourceUrl,
-  pythonPath = process.env.YT_DLP_PYTHON || process.env.PYTHON_PATH || "python3",
+  pythonPath = resolveYtDlpPythonPath(),
   formatSelector = DEFAULT_FORMAT_SELECTOR,
   maxBytes = DEFAULT_MAX_BYTES,
   timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -33,7 +34,6 @@ export async function downloadYtDlpMediaToTempFile({
       sourceUrl,
       pythonPath,
       formatSelector,
-      maxBytes,
       timeoutMs,
       outputTemplate: join(dir, "source-video.%(ext)s"),
       spawnImpl
@@ -50,6 +50,7 @@ export async function downloadYtDlpMediaToTempFile({
       dir,
       bytes: file.bytes,
       contentType: contentTypeForPath(file.path),
+      isAudioOnly: /(?:^|\/)bestaudio(?:\/|$)/i.test(formatSelector),
       sourceUrl
     };
   } catch (error) {
@@ -62,7 +63,6 @@ function runYtDlpDownload({
   sourceUrl,
   pythonPath,
   formatSelector,
-  maxBytes,
   timeoutMs,
   outputTemplate,
   spawnImpl
@@ -74,12 +74,11 @@ function runYtDlpDownload({
       "--no-playlist",
       "--no-warnings",
       "--no-progress",
+      "--retries", "5",
+      "--fragment-retries", "5",
+      "--user-agent", "Mozilla/5.0",
       "--format",
       formatSelector,
-      "--max-filesize",
-      String(maxBytes),
-      "--merge-output-format",
-      "mp4",
       "-o",
       outputTemplate,
       sourceUrl
@@ -161,13 +160,6 @@ function classifyYtDlpDownloadFailure(error, stderr = "", code = null) {
       status: code
     });
   }
-  if (/max-filesize|larger than max|file is larger/i.test(message)) {
-    return createMediaExtractionError("video_media_too_large", "视频文件超过处理阈值，未下载完整媒体。", {
-      retryable: false,
-      provider: "yt-dlp",
-      status: code
-    });
-  }
   return createMediaExtractionError("video_media_unavailable", "通用视频下载暂时失败，请稍后重试。", {
     retryable: true,
     provider: "yt-dlp",
@@ -178,6 +170,11 @@ function classifyYtDlpDownloadFailure(error, stderr = "", code = null) {
 
 function contentTypeForPath(path) {
   const lowercased = String(path || "").toLowerCase();
+  if (lowercased.endsWith(".m4a")) return "audio/mp4";
+  if (lowercased.endsWith(".mp3")) return "audio/mpeg";
+  if (lowercased.endsWith(".opus")) return "audio/opus";
+  if (lowercased.endsWith(".ogg")) return "audio/ogg";
+  if (lowercased.endsWith(".wav")) return "audio/wav";
   if (lowercased.endsWith(".webm")) return "video/webm";
   if (lowercased.endsWith(".mov")) return "video/quicktime";
   if (lowercased.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";

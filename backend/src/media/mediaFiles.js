@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
 import { createWriteStream } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, open as openFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,52 +12,29 @@ const DEFAULT_TIMEOUT_MS = readPositiveInt(process.env.VIDEO_MEDIA_FETCH_TIMEOUT
 
 export async function downloadMediaToTempFile({
   mediaUrl,
-  mediaUrls = [],
-  headers = {},
   fetchImpl = fetch,
   maxBytes = DEFAULT_MAX_BYTES,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-  candidateTimeoutMs = readPositiveInt(process.env.VIDEO_MEDIA_CANDIDATE_TIMEOUT_MS, 45_000)
+  requestHeaders = {}
 } = {}) {
-  const candidates = normalizeMediaUrls(mediaUrls, mediaUrl);
-  let lastError = null;
-  for (const candidateUrl of candidates) {
-    try {
-      return await downloadSingleMediaToTempFile({
-        mediaUrl: candidateUrl,
-        headers,
-        fetchImpl,
-        maxBytes,
-        timeoutMs: candidates.length > 1 ? Math.min(timeoutMs, candidateTimeoutMs) : timeoutMs
-      });
-    } catch (error) {
-      lastError = error;
-      if (error?.mediaErrorType === "video_media_too_large" || error?.retryable === false) {
-        throw error;
-      }
-    }
-  }
-  if (lastError) throw lastError;
-  throw createMediaExtractionError("video_media_url_missing", "视频内容暂时无法读取，请稍后重试。", {
-    retryable: false
-  });
-}
-
-async function downloadSingleMediaToTempFile({
-  mediaUrl,
-  headers,
-  fetchImpl,
-  maxBytes,
-  timeoutMs
-}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let dir = null;
   try {
+    if (Object.keys(requestHeaders || {}).length > 0) {
+      const rangedFile = await tryDownloadMediaByRanges({
+        mediaUrl,
+        fetchImpl,
+        requestHeaders,
+        signal: controller.signal,
+        maxBytes
+      });
+      if (rangedFile) return rangedFile;
+    }
     const response = await fetchImpl(mediaUrl, {
       signal: controller.signal,
       redirect: "follow",
-      headers: sanitizeDownloadHeaders(headers)
+      headers: requestHeaders
     });
     if (!response.ok) {
       throw createMediaExtractionError("video_media_unavailable", "视频内容暂时无法读取，请稍后重试。", {
@@ -97,22 +73,88 @@ async function downloadSingleMediaToTempFile({
   }
 }
 
-function normalizeMediaUrls(mediaUrls, mediaUrl) {
-  const values = [
-    ...(Array.isArray(mediaUrls) ? mediaUrls : []),
-    mediaUrl
-  ];
-  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+async function tryDownloadMediaByRanges({ mediaUrl, fetchImpl, requestHeaders, signal, maxBytes }) {
+  const probe = await fetchImpl(mediaUrl, {
+    signal,
+    redirect: "follow",
+    headers: { ...requestHeaders, range: "bytes=0-0" }
+  }).catch(() => null);
+  if (!probe || probe.status !== 206) {
+    await probe?.body?.cancel?.().catch(() => {});
+    return null;
+  }
+  const totalBytes = readContentRangeTotal(probe.headers);
+  const contentType = probe.headers?.get?.("content-type") || "";
+  await probe.body?.cancel?.().catch(() => {});
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0) return null;
+  if (totalBytes > maxBytes) {
+    throw createMediaExtractionError("video_media_too_large", "视频文件过大，暂时无法生成复习内容。", { retryable: false });
+  }
+
+  const dir = join(tmpdir(), `shibei-video-${randomUUID()}`);
+  const path = join(dir, "source-video");
+  const chunkBytes = readPositiveInt(process.env.VIDEO_MEDIA_RANGE_CHUNK_BYTES, 1024 * 1024);
+  const concurrency = readPositiveInt(process.env.VIDEO_MEDIA_RANGE_CONCURRENCY, 4);
+  await mkdir(dir, { recursive: true });
+  const handle = await openFile(path, "w");
+  try {
+    await handle.truncate(totalBytes);
+    const ranges = [];
+    for (let start = 0; start < totalBytes; start += chunkBytes) {
+      ranges.push({ start, end: Math.min(totalBytes - 1, start + chunkBytes - 1) });
+    }
+    await mapWithConcurrency(ranges, concurrency, async ({ start, end }, index) => {
+      const buffer = await fetchRangeWithRetry({
+        mediaUrl,
+        fetchImpl,
+        requestHeaders,
+        signal,
+        start,
+        end,
+        jitterMs: index * 13
+      });
+      await handle.write(buffer, 0, buffer.byteLength, start);
+    });
+    return { path, dir, bytes: totalBytes, contentType, sourceUrl: mediaUrl };
+  } catch (error) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  } finally {
+    await handle.close().catch(() => {});
+  }
 }
 
-function sanitizeDownloadHeaders(headers) {
-  if (!headers || typeof headers !== "object" || Array.isArray(headers)) return {};
-  const allowed = new Set(["accept", "referer", "user-agent"]);
-  return Object.fromEntries(
-    Object.entries(headers)
-      .map(([key, value]) => [String(key).toLowerCase(), String(value || "").trim()])
-      .filter(([key, value]) => allowed.has(key) && value)
-  );
+async function fetchRangeWithRetry({ mediaUrl, fetchImpl, requestHeaders, signal, start, end, jitterMs }) {
+  let lastError;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      const response = await fetchImpl(mediaUrl, {
+        signal,
+        redirect: "follow",
+        headers: { ...requestHeaders, range: `bytes=${start}-${end}` }
+      });
+      if (response.status !== 206) throw new Error(`range request failed: ${response.status}`);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.byteLength !== end - start + 1) throw new Error("range response size mismatch");
+      return buffer;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 5 || signal.aborted) break;
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt + jitterMs));
+    }
+  }
+  throw lastError;
+}
+
+async function mapWithConcurrency(items, concurrency, operation) {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(items.length, concurrency) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      await operation(items[index], index);
+    }
+  });
+  await Promise.all(workers);
 }
 
 export async function cleanupMediaTempFiles(...files) {
@@ -136,6 +178,9 @@ async function writeResponseBodyToFile(response, path, { maxBytes }) {
   const stream = createWriteStream(path);
   let bytes = 0;
   let finished = false;
+  // A media connection can close while a temporary file is being cleaned up.
+  // Keep the stream error observed so it cannot terminate the Node process.
+  stream.on("error", () => {});
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -149,11 +194,11 @@ async function writeResponseBodyToFile(response, path, { maxBytes }) {
         });
       }
       if (!stream.write(chunk)) {
-        await once(stream, "drain");
+        await waitForStream(stream, "drain");
       }
     }
     stream.end();
-    await once(stream, "finish");
+    await waitForStream(stream, "finish");
     finished = true;
     return bytes;
   } finally {
@@ -162,6 +207,25 @@ async function writeResponseBodyToFile(response, path, { maxBytes }) {
       stream.destroy();
     }
   }
+}
+
+function waitForStream(stream, event) {
+  return new Promise((resolve, reject) => {
+    const onSuccess = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      stream.off(event, onSuccess);
+      stream.off("error", onError);
+    };
+    stream.once(event, onSuccess);
+    stream.once("error", onError);
+  });
 }
 
 function readPositiveInt(value, fallback) {
@@ -173,4 +237,11 @@ function readContentLength(headers) {
   const value = headers?.get?.("content-length") || headers?.get?.("Content-Length") || "";
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function readContentRangeTotal(headers) {
+  const value = headers?.get?.("content-range") || headers?.get?.("Content-Range") || "";
+  const match = String(value).match(/\/([0-9]+)$/);
+  const number = Number(match?.[1]);
+  return Number.isFinite(number) && number > 0 ? number : null;
 }

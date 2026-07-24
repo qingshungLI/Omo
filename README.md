@@ -1,114 +1,68 @@
-# Recallo 项目交接入口
+# 拾贝
 
-Recallo 是一款面向碎片知识的 AI 复习 iOS App。用户把日常看到的截图、文字、文章或视频链接添加进来，系统自动提取值得记住的内容、生成测试题，并安排后续复习。
+拾贝用于收藏互联网上的碎片内容，并把它们变成几分钟内可完成的摘要与复习卡。
 
-## 当前状态
-
-当前仓库已有 SwiftUI 工程、HTML Demo 和 Railway 云端原型。现在已有：
-
-- HTML Demo：验证首页、添加、章节、通知、题卡、解释页、总结页等完整产品流。
-- Node 后端原型：提供本地 API、文章链接输入层和核心出题系统。
-- Railway 云端后端：可用 PostgreSQL 按匿名设备 ID 持久化章节、通知、生成任务和复习状态。
-- 核心出题系统：完成内容清洗、知识点提取、题目生成、质量检查、单题重写和测试集入口。
-- 社交内容取源：TikHub 作为可替换的来源增强器，支持抖音/小红书视频和小红书图文、公众号、知乎正文；失败时不应阻断截图视觉理解。
-- 成本计算工作台：内部 HTML 页面按单篇章节对比模型 token 估算、provider 实际 usage 和成本误差，不进入 iOS App 主接口。
-- 质量测试集：保存真实样本、人工样本和关键 baseline 结果。
-- iOS 迁移文档：收口了 SwiftUI 第一轮开发建议和 API / 数据模型契约。
-
-## 推荐阅读顺序
-
-1. `README.md`：当前总入口。
-2. `docs/macbook-xcode-migration-handoff-zh.md`：项目交接总说明。
-3. `docs/ios-api-data-contract-zh.md`：iOS 数据模型和 API 契约。
-4. `docs/xcode-first-sprint-plan-zh.md`：Xcode 第一轮开发准备计划。
-5. `docs/railway-cloud-prototype-zh.md`：Railway 云端原型部署和验证说明。
-6. `docs/production-readiness-review-zh.md`：生产就绪度风险台账和整改路线图。
-7. `docs/production-hardening-plan-zh.md`：P0 生产化分阶段推进计划。
-8. `docs/production-hardening-stage-0-baseline-zh.md`：P0 阶段 0 接口和状态基线。
-9. `docs/production-hardening-stage-1-queue-plan-zh.md`：P0 阶段 1 生成任务队列化实施计划。
-10. `tasks/prd-ai-knowledge-review-ios.md`：完整 PRD。
-11. `demo/README.md`：HTML Demo 运行方式。
-12. `quality-test-set/README.md`：题目质量测试集说明。
-
-## 当前目录结构
+主链路只有一条：
 
 ```text
-backend/           Node 后端、本地 API、核心出题系统
-tikhub/            TikHub Python 调研原型；生产代码已迁入 backend，不作为第二套服务部署
-Recallo iOS 工程/              正式 iOS App 工程；真机装包和 TestFlight 只能使用这里的 Xcode project
-demo/              HTML 真实体验 Demo
-docs/              迁移文档、API 契约、Xcode 首轮计划、fixture
-quality-test-set/  真实样本、人工样本、质量测试结果
-tasks/             PRD
-tools/             可选辅助工具
-articles/          临时抓取文章存放区
-experiments/       历史实验区；不要用这里的 iOS 工程覆盖正式 App
+粘贴/分享链接或文字
+  -> 提取文章正文或视频字幕
+  -> 字幕缺失时才下载音频并 ASR
+  -> 一次模型调用生成摘要、标签和 3 道练习
+  -> iOS 完成判断题/选择题并记录错题
 ```
+
+当前生产链路没有 Claude。截图流用于快速收藏：OCR 只取标题、博主和播放位置；TikHub 严格核对来源后，字幕优先、ASR 兜底，分别生成截图附近的记忆卡和全片概览。
+
+## 目录
+
+- `拾贝/`：正式 SwiftUI iOS App。
+- `backend/`：Node.js API、链接提取、视频字幕/ASR、模型生成和复习状态。
+- `docs/`：产品、架构、隐私和发布文档。
+- `tools/`：本地环境、iOS 和发布检查脚本。
+
+核心文件说明见 [docs/codebase-guide-zh.md](docs/codebase-guide-zh.md)，架构与性能策略见 [docs/fragment-memory-architecture-zh.md](docs/fragment-memory-architecture-zh.md)。
 
 ## 本地运行
 
-Windows PowerShell：
+要求 Node.js 20+。视频 ASR 兜底还需要 `ffmpeg`、`yt-dlp` 和本地 Whisper 环境。
 
-```powershell
-cd backend
-$env:DEEPSEEK_API_KEY="你的 DeepSeek Key"
-$env:DEEPSEEK_MODEL="deepseek-v4-flash"
-npm.cmd run dev
+根目录 `.env` 或 `backend/.env`：
+
+```dotenv
+AI_PROVIDER=qwen
+QWEN_API=replace_me
+BASE_URL=https://example.com/v1
+AI_MODEL=qwen3.7-plus-2026-05-26
+
+# 可选：TikHub 用于抖音、小红书等平台元数据/媒体地址
+TIKHUB_API_KEY=
+VIDEO_LINK_ENABLED=1
+
+# 默认关闭。只有字幕无法表达关键画面时再显式开启。
+VIDEO_VISUAL_ENABLED=0
 ```
 
-打开：
-
-```text
-http://127.0.0.1:5173/index.html
-```
-
-内部成本计算工作台：
-
-```text
-http://127.0.0.1:5173/cost-calculator.html
-```
-
-该页面需要后端运行，只用于模型成本审计；生产环境默认关闭，需要显式设置 `ENABLE_COST_WORKBENCH=1`。
-
-检查：
-
-```powershell
-cd backend
-npm.cmd run check
-cd ..
-node --check demo/app.js
-```
-
-正式真机装包：
+环境变量优先级为系统环境变量、`backend/.env`、根目录 `.env`。真实密钥不得提交 Git。
 
 ```bash
-./tools/install-official-ios.sh
+npm --prefix backend install
+npm run dev
+npm run check
 ```
 
-这个脚本只会构建并安装 `Recallo iOS 工程/Recallo.xcodeproj`，并在安装前校验 bundle id 必须是 `com.maxhan.shibei`、显示名必须是 `Recallo`。不要再用 `experiments/shibei-v2/ios/Recallo.xcodeproj` 给正式手机装包。
+后端默认地址为 `http://127.0.0.1:5173`。正式 iOS 工程是 `拾贝/拾贝.xcodeproj`。
 
-质量测试：
+本地截图流程演示页是 `http://127.0.0.1:5173/demo`。上传截图后会调用同一个 `POST /api/sources/image-flow` 接口；没有找到标题和博主均可信的 TikHub 结果时，流程会停止，不会生成错误卡片。
 
-```powershell
-npm.cmd --prefix backend run quality:test
-```
+部署后请设置 `SHIBEI_PUBLIC_BASE_URL=https://你的后端域名`。无字幕长视频时，后端会下载音频，生成一个仅供 Qwen ASR 读取的短期 HTTPS 地址；转写结束立即失效。本地 `localhost` 不会公开临时媒体，仍使用本地 Whisper 兜底。
 
-## 下一步建议
+## 性能目标
 
-当前阶段建议：
+- 有平台字幕：不下载完整视频，不抽帧，直接进入模型生成。
+- 无字幕：B站优先由 TikHub 提供音频流，Qwen 可直接读取时不下载；被平台 CDN 拒绝时才下载一次并 ASR。视觉理解默认关闭。
+- 长文/长字幕：确定性保留头、中、尾，模型输入默认最多 12,000 字符。
+- 摘要、标签、1 道判断题和 2 道选择题：一次模型请求完成，默认关闭 thinking。
+- 相同内容：进程内 TTL/LRU 缓存，并合并同时到达的重复请求。
 
-1. 继续用 SwiftUI mock 验收产品流。
-2. 真机真实生成走 Railway 云端 API。
-3. Railway 后端配置 PostgreSQL 和模型 Key。
-4. iOS 通过匿名 `deviceId` 访问云端，账号系统后置。
-5. 生成质量、复习体验稳定后，再补登录、APNs、生产监控和数据迁移。
-
-HTML Demo 是行为参考，不是 iOS 架构参考。iOS 端应使用 SwiftUI 重新实现。
-
-## 注意
-
-- 不要把 API Key 写入文档、代码或提交记录。
-- Railway 云端 API 接 PostgreSQL；本地未配置 `DATABASE_URL` 时仍使用内存模式。
-- 成本工作台和模型 usage 明细只用于内部调试，不能进入 iOS App 主接口或用户可见数据。
-- 公众号抓取受平台限制，失败时应允许用户改为粘贴正文。
-- TikHub 只处理用户主动提交的公开链接；生产模型生成仍由 Recallo 后端统一完成，不使用 `tikhub/` 原型中的 Claude 总结链。
+生产环境仍建议把结果缓存升级为 Redis/PostgreSQL 持久缓存，以便多 worker 共享。

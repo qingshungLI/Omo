@@ -1,11 +1,12 @@
 import { dirname } from "node:path";
 
-import { fetchBilibiliVideoSource } from "./bilibiliVideoProvider.js";
+import { splitAudioForParallelAsr } from "./asrAudioChunks.js";
 import { cleanupMediaTempFiles, downloadMediaToTempFile } from "./mediaFiles.js";
 import { extractAudioWithFfmpeg } from "./ffmpegAudio.js";
 import { createMediaExtractionError } from "./mediaErrors.js";
 import { createSpeechToTextProvider } from "./speechToTextProvider.js";
 import { fetchTikHubVideoSource } from "./tikhubVideoProvider.js";
+import { fetchBilibiliVideoSource } from "./bilibiliSubtitleProvider.js";
 import { fetchYtDlpVideoSource } from "./ytDlpVideoProvider.js";
 import { downloadYtDlpMediaToTempFile } from "./ytDlpMediaDownloader.js";
 import {
@@ -16,6 +17,7 @@ import {
 import { buildLearningSourceFromVideo } from "./learningSource.js";
 import { summarizeMediaUsage } from "./mediaCost.js";
 import { fetchPlatformSubtitleTranscript } from "./platformSubtitles.js";
+import { registerTemporaryPublicMedia } from "./temporaryPublicMedia.js";
 import {
   createVideoFramePack,
   createVideoFramePackProvider
@@ -41,13 +43,14 @@ export async function extractVideoLearningSource({
   sourceUrl,
   rawText = "",
   sourceTitle = "",
+  preferredTimestampSeconds = null,
   provider = null,
   downloadMedia = downloadMediaToTempFile,
   downloadYtDlpMedia = downloadYtDlpMediaToTempFile,
   maxDurationSeconds = readPositiveInt(process.env.VIDEO_MAX_DURATION_SECONDS, VIDEO_DEFAULTS.maxDurationSeconds),
   mediaMaxBytes = readPositiveInt(process.env.VIDEO_MEDIA_MAX_BYTES, VIDEO_DEFAULTS.mediaMaxBytes),
-  audioMaxBytes = readPositiveInt(process.env.VIDEO_AUDIO_MAX_BYTES, VIDEO_DEFAULTS.audioMaxBytes),
   extractAudio = extractAudioWithFfmpeg,
+  splitAudioForAsr = splitAudioForParallelAsr,
   speechToTextProvider = createSpeechToTextProvider(),
   transcribeAudio = null,
   fetchPlatformTranscript = fetchPlatformSubtitleTranscript,
@@ -60,14 +63,20 @@ export async function extractVideoLearningSource({
   now = new Date().toISOString(),
   videoSourceCache = undefined,
   learningSourceCache = undefined,
-  extractionCacheVersion = VIDEO_LEARNING_SOURCE_CACHE_VERSION
+  extractionCacheVersion = VIDEO_LEARNING_SOURCE_CACHE_VERSION,
+  publicMediaBaseUrl = process.env.SHIBEI_PUBLIC_BASE_URL || ""
 } = {}) {
   const sourceInput = sourceUrl || rawText;
+  const visualEnabled = readBooleanFlag(process.env.VIDEO_VISUAL_ENABLED, false)
+    || createFramePack !== createVideoFramePack
+    || understandVisuals !== understandVideoVisuals
+    || (framePackProvider?.name && framePackProvider.name !== "none")
+    || (visualUnderstandingProvider?.name && visualUnderstandingProvider.name !== "none");
   const activeProvider = provider || createVideoSourceProvider(sourceInput);
   const resolvedVideoSourceCache = resolveDefaultCache({
     providedCache: videoSourceCache,
     defaultCache: getSharedVideoSourceCache,
-    enabled: [fetchTikHubVideoSource, fetchBilibiliVideoSource].includes(activeProvider?.fetchVideoSource)
+    enabled: activeProvider?.fetchVideoSource === fetchTikHubVideoSource
   });
   const resolvedLearningSourceCache = resolveDefaultCache({
     providedCache: learningSourceCache,
@@ -128,20 +137,101 @@ export async function extractVideoLearningSource({
     enforceVideoDurationLimit(video, { maxDurationSeconds });
   }
   recordVideoSourceUsage(mediaUsageRecorder, { video, videoSourceCacheHit, videoSourceCacheKey });
+  const platformTranscript = await fetchPlatformTranscript({ subtitles: video.subtitles });
+  if (platformTranscript && !visualEnabled) {
+    const transcriptProvider = platformTranscript.provider || "platform_subtitle";
+    recordMediaUsage(mediaUsageRecorder, {
+      stage: "audio_transcription",
+      provider: transcriptProvider,
+      cost: 0,
+      metadata: {
+        segmentCount: Array.isArray(platformTranscript.segments) ? platformTranscript.segments.length : 0,
+        source: "platform_subtitle",
+        fastPath: true
+      }
+    });
+    const visualUnderstanding = {
+      provider: "none",
+      model: "",
+      status: "skipped",
+      skipped: true,
+      reason: "platform_subtitle_fast_path",
+      segments: [],
+      usage: {},
+      diagnostics: {}
+    };
+    const learningSource = buildLearningSourceFromVideo({
+      platform: video.platform,
+      title: sourceTitle || video.title,
+      url: video.sourceUrl || sourceUrl || rawText,
+      account: video.account,
+      author: video.account,
+      durationSeconds: video.durationSeconds,
+      description: video.description,
+      transcriptSegments: platformTranscript.segments,
+      visualSegments: [],
+      media: {
+        provider: video.provider,
+        providerContentId: video.providerContentId,
+        coverUrl: video.coverUrl
+      },
+      now
+    });
+    learningSource.extractionMeta.visualUnderstanding = buildVisualUnderstandingMeta(visualUnderstanding);
+    learningSource.extractionMeta.userVisibleContentBasis = buildUserVisibleContentBasis(visualUnderstanding);
+    learningSource.extractionMeta.asr = {
+      provider: transcriptProvider,
+      sampled: transcriptProvider.includes(":quorum-"),
+      segmentCount: Array.isArray(platformTranscript.segments) ? platformTranscript.segments.length : 0
+    };
+    learningSource.extractionMeta.fastPath = "platform_subtitle";
+    if (mediaUsageRecorder?.calls) {
+      learningSource.extractionMeta.mediaUsage = summarizeMediaUsage(mediaUsageRecorder.calls);
+    }
+    if (shouldCacheLearningSource(learningSource)) {
+      await writeCache(resolvedLearningSourceCache, learningSourceCacheKey, learningSource);
+    }
+    return withCacheMeta(learningSource, {
+      hit: false,
+      key: learningSourceCacheKey,
+      version: extractionCacheVersion,
+      signature: extractionSignature
+    });
+  }
   const tempFiles = [];
   try {
     let staleVideoSourceCache = false;
-    let transcript = await fetchPlatformTranscript({ subtitles: video.subtitles });
+    let transcript = platformTranscript;
     let mediaFile = null;
+    const activeTranscribeAudio = transcribeAudio || speechToTextProvider.transcribeAudio;
+
+    // Qwen can transcribe a platform-provided audio URL directly. Avoid a full
+    // download when the URL is public; this is the normal fast path for videos
+    // without captions.
     if (!transcript) {
+      if (
+        !transcribeAudio
+        && typeof speechToTextProvider.transcribeMedia === "function"
+        && video.audioUrl
+        && Object.keys(video.mediaRequestHeaders || {}).length === 0
+      ) {
+        try {
+          transcript = await speechToTextProvider.transcribeMedia({ mediaUrl: video.audioUrl });
+          recordMediaUsage(mediaUsageRecorder, {
+            stage: "audio_extraction",
+            provider: "provider_audio_url",
+            cost: 0,
+            metadata: { fastPath: true }
+          });
+        } catch {
+          // CDN URLs can block Qwen. Download only after this direct path fails.
+        }
+      }
+    }
+
+    if (!transcript || visualEnabled) {
       try {
-        mediaFile = await downloadVideoMedia({
-          video,
-          downloadMedia,
-          downloadYtDlpMedia,
-          mediaMaxBytes,
-          audioMaxBytes
-        });
+        mediaFile = await downloadVideoMedia({ video, downloadMedia, downloadYtDlpMedia, mediaMaxBytes });
       } catch (error) {
         if (!shouldRefreshCachedVideoSource({ error, videoSourceCacheHit })) throw error;
         staleVideoSourceCache = true;
@@ -154,54 +244,38 @@ export async function extractVideoLearningSource({
           video,
           videoSourceCacheHit,
           videoSourceCacheKey,
-          metadata: {
-            staleVideoSourceCache: true,
-            refetchedProviderSource: true
-          }
+          metadata: { staleVideoSourceCache: true, refetchedProviderSource: true }
         });
-        transcript = await fetchPlatformTranscript({ subtitles: video.subtitles });
-        if (!transcript) {
-          mediaFile = await downloadVideoMedia({
-            video,
-            downloadMedia,
-            downloadYtDlpMedia,
-            mediaMaxBytes,
-            audioMaxBytes
-          });
-        }
+        mediaFile = await downloadVideoMedia({ video, downloadMedia, downloadYtDlpMedia, mediaMaxBytes });
       }
-    }
-    if (mediaFile) {
       recordMediaUsage(mediaUsageRecorder, {
-        stage: video.mediaKind === "audio" ? "video_audio_fetch" : "video_media_fetch",
+        stage: "video_media_fetch",
         provider: video.mediaDownload?.provider || video.provider || "unknown",
         cost: 0,
         metadata: {
           bytes: mediaFile.bytes || 0,
           contentType: mediaFile.contentType || "",
-          mediaKind: video.mediaKind || "video",
-          ...(staleVideoSourceCache ? {
-            staleVideoSourceCache: true,
-            refetchedProviderSource: true
-          } : {})
+          ...(staleVideoSourceCache ? { staleVideoSourceCache: true, refetchedProviderSource: true } : {})
         }
       });
       tempFiles.push(mediaFile);
     }
+
     if (!transcript) {
-      const audio = await extractAudio({
-        inputPath: mediaFile.path,
-        outputDir: dirname(mediaFile.path)
+      if (!mediaFile || typeof activeTranscribeAudio !== "function") {
+        throw createMediaExtractionError("asr_unavailable", "视频音频暂时无法转写。", { retryable: true, provider: speechToTextProvider.name || "asr" });
+      }
+      transcript = await transcribeWithTemporaryPublicMedia({
+        speechToTextProvider,
+        mediaFile,
+        publicMediaBaseUrl,
+        durationSeconds: video.durationSeconds,
+        preferredTimestampSeconds,
+        splitAudio: splitAudioForAsr,
+        tempFiles,
+        transcribeChunk: (chunk) => activeTranscribeAudio({ audioPath: chunk.path }),
+        fallback: () => transcribeLocalAudio({ mediaFile, extractAudio, activeTranscribeAudio, tempFiles, mediaUsageRecorder })
       });
-      recordMediaUsage(mediaUsageRecorder, {
-        stage: "audio_extraction",
-        provider: "ffmpeg",
-        cost: 0,
-        metadata: { format: audio.format || "", sampleRate: audio.sampleRate || null }
-      });
-      tempFiles.push(audio);
-      const activeTranscribeAudio = transcribeAudio || speechToTextProvider.transcribeAudio;
-      transcript = await activeTranscribeAudio({ audioPath: audio.path });
     }
     const transcriptProvider = transcript.provider || speechToTextProvider.name || "custom";
     recordMediaUsage(mediaUsageRecorder, {
@@ -213,13 +287,21 @@ export async function extractVideoLearningSource({
         source: transcriptProvider.startsWith("platform_subtitle:") ? "platform_subtitle" : "asr"
       }
     });
-    const visualMediaFile = video.mediaKind === "audio" ? null : mediaFile;
-    const framePack = await createFramePack({
-      provider: framePackProvider,
-      video,
-      mediaFile: visualMediaFile,
-      transcriptSegments: transcript.segments
-    });
+    const framePack = visualEnabled
+      ? await createFramePack({
+          provider: framePackProvider,
+          video,
+          mediaFile,
+          transcriptSegments: transcript.segments
+        })
+      : {
+          provider: "none",
+          skipped: true,
+          reason: "disabled_by_default",
+          frames: [],
+          grids: [],
+          debug: {}
+        };
     recordMediaUsage(mediaUsageRecorder, {
       stage: "video_frame_pack",
       provider: framePack.provider || framePackProvider.name || "unknown",
@@ -237,14 +319,25 @@ export async function extractVideoLearningSource({
         } : {})
       }
     });
-    const visualUnderstanding = await safelyUnderstandVideoVisuals({
-      understandVisuals,
-      provider: visualUnderstandingProvider,
-      video,
-      mediaFile: visualMediaFile,
-      transcriptSegments: transcript.segments,
-      framePack
-    });
+    const visualUnderstanding = visualEnabled
+      ? await safelyUnderstandVideoVisuals({
+          understandVisuals,
+          provider: visualUnderstandingProvider,
+          video,
+          mediaFile,
+          transcriptSegments: transcript.segments,
+          framePack
+        })
+      : {
+          provider: "none",
+          model: "",
+          status: "skipped",
+          skipped: true,
+          reason: "disabled_by_default",
+          segments: [],
+          usage: {},
+          diagnostics: {}
+        };
     recordMediaUsage(mediaUsageRecorder, {
       stage: "visual_understanding",
       provider: visualUnderstanding.provider || visualUnderstandingProvider.name || "unknown",
@@ -280,19 +373,11 @@ export async function extractVideoLearningSource({
       now
     });
     learningSource.extractionMeta.visualUnderstanding = buildVisualUnderstandingMeta(visualUnderstanding);
-    learningSource.extractionMeta.userVisibleContentBasis = buildUserVisibleContentBasis(
-      visualUnderstanding,
-      { transcriptProvider }
-    );
-    learningSource.extractionMeta.acquisition = {
-      mode: transcriptProvider.startsWith("platform_subtitle:")
-        ? "platform_subtitles"
-        : video.acquisition?.mode || (video.mediaKind === "audio" ? "audio_only" : "full_video"),
-      fullVideoDownloaded: Boolean(mediaFile && video.mediaKind !== "audio"),
-      downloadedBytes: mediaFile?.bytes || 0,
-      estimatedMediaBytes: video.estimatedMediaBytes || null,
-      mediaMaxBytes,
-      audioMaxBytes
+    learningSource.extractionMeta.userVisibleContentBasis = buildUserVisibleContentBasis(visualUnderstanding);
+    learningSource.extractionMeta.asr = {
+      provider: transcriptProvider,
+      sampled: transcriptProvider.includes(":quorum-"),
+      segmentCount: Array.isArray(transcript.segments) ? transcript.segments.length : 0
     };
     if (mediaUsageRecorder?.calls) {
       learningSource.extractionMeta.mediaUsage = summarizeMediaUsage(mediaUsageRecorder.calls);
@@ -366,22 +451,19 @@ function buildVisualUnderstandingMeta(visualUnderstanding = {}) {
   };
 }
 
-function buildUserVisibleContentBasis(visualUnderstanding = {}, { transcriptProvider = "" } = {}) {
+function buildUserVisibleContentBasis(visualUnderstanding = {}) {
   const hasVisualEvidence = visualUnderstanding.status === "succeeded"
     && Array.isArray(visualUnderstanding.segments)
     && visualUnderstanding.segments.length > 0;
-  const transcriptLabel = String(transcriptProvider).startsWith("platform_subtitle:")
-    ? "视频字幕"
-    : "视频音频转写";
 
   return hasVisualEvidence
     ? {
       basis: "audio_visual",
-      message: `已结合${transcriptLabel}和画面信息生成`
+      message: "已结合视频字幕和画面信息生成"
     }
     : {
       basis: "audio_transcript",
-      message: `本次主要基于${transcriptLabel}生成`
+      message: "本次主要基于视频字幕生成"
     };
 }
 
@@ -496,7 +578,7 @@ function createVideoSourceProvider(sourceInput) {
   }
   if (platform === "bilibili") {
     return {
-      name: "bilibili-api",
+      name: "bilibili_api",
       fetchVideoSource: fetchBilibiliVideoSource
     };
   }
@@ -530,11 +612,7 @@ function enforceVideoPlatformGate(platform) {
     );
   }
 
-  if (
-    isYtDlpPreferredPlatform(platform)
-    && platform !== "bilibili"
-    && !readBooleanFlag(process.env.VIDEO_YTDLP_ENABLED, true)
-  ) {
+  if (platform !== "bilibili" && isYtDlpPreferredPlatform(platform) && !readBooleanFlag(process.env.VIDEO_YTDLP_ENABLED, true)) {
     throw createMediaExtractionError(
       "video_ytdlp_disabled",
       "YouTube、B站和网页视频链接暂未开放。",
@@ -547,8 +625,7 @@ async function downloadVideoMedia({
   video,
   downloadMedia,
   downloadYtDlpMedia,
-  mediaMaxBytes,
-  audioMaxBytes
+  mediaMaxBytes
 }) {
   if (video?.mediaDownload?.provider === "yt-dlp") {
     return downloadYtDlpMedia({
@@ -557,12 +634,242 @@ async function downloadVideoMedia({
       maxBytes: mediaMaxBytes
     });
   }
-  return downloadMedia({
-    mediaUrl: video.mediaUrl,
-    mediaUrls: video.mediaUrls,
-    headers: video.mediaHeaders,
-    maxBytes: video.mediaKind === "audio" ? audioMaxBytes : mediaMaxBytes
+  const urls = [video.mediaUrl, ...(video.mediaAlternativeUrls || [])].filter(Boolean);
+  let lastError;
+  for (const mediaUrl of urls) {
+    try {
+      return await downloadMedia({
+        mediaUrl,
+        maxBytes: mediaMaxBytes,
+        requestHeaders: video.mediaRequestHeaders || {}
+      });
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function isAudioMediaFile(mediaFile) {
+  if (mediaFile?.isAudioOnly) return true;
+  const contentType = String(mediaFile?.contentType || "").toLowerCase();
+  if (contentType.startsWith("audio/")) return true;
+  return /\.(m4a|mp3|opus|ogg|wav)(?:$|\?)/i.test(String(mediaFile?.path || ""));
+}
+
+async function transcribeLocalAudio({ mediaFile, extractAudio, activeTranscribeAudio, tempFiles, mediaUsageRecorder }) {
+  const sourceIsAudio = isAudioMediaFile(mediaFile);
+  const audio = sourceIsAudio
+    ? { ...mediaFile, format: "source_audio", sampleRate: null }
+    : await extractAudio({ inputPath: mediaFile.path, outputDir: dirname(mediaFile.path) });
+  recordMediaUsage(mediaUsageRecorder, {
+    stage: "audio_extraction",
+    provider: sourceIsAudio ? "source_audio" : "ffmpeg",
+    cost: 0,
+    metadata: { format: audio.format || "", sampleRate: audio.sampleRate || null, fastPath: sourceIsAudio }
   });
+  if (!sourceIsAudio) tempFiles.push(audio);
+  return activeTranscribeAudio({ audioPath: audio.path });
+}
+
+async function transcribeWithTemporaryPublicMedia({
+  speechToTextProvider,
+  mediaFile,
+  publicMediaBaseUrl,
+  durationSeconds,
+  preferredTimestampSeconds,
+  splitAudio,
+  tempFiles,
+  transcribeChunk,
+  fallback
+}) {
+  const parallelThresholdSeconds = readPositiveInt(process.env.QWEN_ASR_PARALLEL_THRESHOLD_SECONDS, 900);
+  if (Number(durationSeconds) >= parallelThresholdSeconds) {
+    try {
+      const chunked = await splitAudio({ inputPath: mediaFile.path });
+      tempFiles.push({ dir: chunked.dir });
+      const chunks = selectRepresentativeChunks(chunked.chunks, {
+        maxChunks: readPositiveInt(process.env.QWEN_ASR_MAX_CHUNKS, 8),
+        preferredTimestampSeconds
+      });
+      if (typeof speechToTextProvider?.transcribeMedia === "function" && normalizePublicMediaBase(publicMediaBaseUrl)) {
+        return await transcribeChunksWithQuorum({
+          chunks,
+          providerName: speechToTextProvider.name,
+          concurrency: readPositiveInt(process.env.QWEN_ASR_CHUNK_CONCURRENCY, 6),
+          quorum: readPositiveInt(process.env.QWEN_ASR_SUCCESS_QUORUM, 3),
+          transcribe: async (chunk) => {
+            const lease = registerTemporaryPublicMedia({
+              path: chunk.path,
+              contentType: chunk.contentType,
+              publicBaseUrl: publicMediaBaseUrl
+            });
+            if (!lease) throw new Error("public media URL is unavailable");
+            try {
+              return await speechToTextProvider.transcribeMedia({ mediaUrl: lease.url });
+            } finally {
+              lease.release();
+            }
+          }
+        });
+      }
+      if (typeof transcribeChunk === "function") {
+        return await transcribeChunksWithQuorum({
+          chunks,
+          providerName: "local_whisper:sampled",
+          concurrency: readPositiveInt(process.env.LOCAL_ASR_CHUNK_CONCURRENCY, 2),
+          quorum: readPositiveInt(process.env.LOCAL_ASR_SUCCESS_QUORUM, 2),
+          transcribe: transcribeChunk
+        });
+      }
+    } catch {
+      // Preserve the full-file fallback when no representative chunk succeeds.
+    }
+  }
+  if (typeof speechToTextProvider?.transcribeMedia !== "function") return fallback();
+  const lease = registerTemporaryPublicMedia({
+    path: mediaFile.path,
+    contentType: mediaFile.contentType,
+    publicBaseUrl: publicMediaBaseUrl
+  });
+  if (!lease) return fallback();
+  try {
+    return await speechToTextProvider.transcribeMedia({ mediaUrl: lease.url });
+  } catch (error) {
+    // A temporary URL can fail when the deployment is not publicly reachable.
+    // Preserve local Whisper as the development fallback.
+    return fallback();
+  } finally {
+    lease.release();
+  }
+}
+
+async function transcribeChunksWithQuorum({ chunks, transcribe, providerName, concurrency, quorum }) {
+  const required = Math.max(1, Math.min(Number(quorum) || 1, chunks.length));
+  const results = await collectWithSuccessQuorum(chunks, {
+    concurrency,
+    quorum: required,
+    operation: async (chunk) => {
+      const transcript = await transcribe(chunk);
+      const segments = (transcript?.segments || []).map((segment, index) => ({
+        ...segment,
+        id: `chunk-${String(chunk.chunkIndex + 1).padStart(3, "0")}-${segment.id || index + 1}`,
+        startSeconds: Number(segment.startSeconds) + chunk.startSeconds,
+        endSeconds: Number(segment.endSeconds) + chunk.startSeconds
+      }));
+      if (!segments.length) throw new Error("ASR chunk returned no segments");
+      return segments;
+    }
+  });
+  const segments = results.flat().sort((left, right) => Number(left.startSeconds) - Number(right.startSeconds));
+  if (!segments.length) throw new Error("parallel ASR returned no segments");
+  return {
+    provider: `${providerName || "asr"}:quorum-${results.length}-of-${chunks.length}`,
+    text: segments.map((segment) => segment.text).join(" "),
+    segments
+  };
+}
+
+function selectRepresentativeChunks(chunks, { maxChunks, preferredTimestampSeconds }) {
+  if (chunks.length <= maxChunks) return chunks;
+  const indexes = new Set([0, chunks.length - 1, Math.floor((chunks.length - 1) / 2)]);
+  for (let slot = 1; indexes.size < maxChunks && slot < maxChunks * 2; slot += 1) {
+    indexes.add(Math.round((slot * (chunks.length - 1)) / (maxChunks - 1)));
+  }
+  const timestamp = Number(preferredTimestampSeconds);
+  if (Number.isFinite(timestamp)) {
+    const nearest = chunks.reduce((best, chunk, index) => (
+      Math.abs(Number(chunk.startSeconds) - timestamp) < Math.abs(Number(chunks[best].startSeconds) - timestamp) ? index : best
+    ), 0);
+    if (!indexes.has(nearest)) {
+      indexes.delete([...indexes].at(-2));
+      indexes.add(nearest);
+    }
+  }
+  const selected = [...indexes].slice(0, maxChunks);
+  const preferredIndex = Number.isFinite(timestamp)
+    ? selected.reduce((best, index) => (
+      Math.abs(Number(chunks[index].startSeconds) - timestamp) < Math.abs(Number(chunks[best].startSeconds) - timestamp) ? index : best
+    ), selected[0])
+    : null;
+  const priority = [preferredIndex, 0, Math.floor((chunks.length - 1) / 2), chunks.length - 1]
+    .filter((index, position, values) => index !== null && selected.includes(index) && values.indexOf(index) === position);
+  return [...priority, ...selected.filter((index) => !priority.includes(index))].map((index) => chunks[index]);
+}
+
+function collectWithSuccessQuorum(items, { concurrency, quorum, operation }) {
+  return new Promise((resolve, reject) => {
+    const successes = [];
+    const failures = [];
+    let cursor = 0;
+    let active = 0;
+    let settled = false;
+    const launch = () => {
+      while (!settled && active < Math.min(concurrency, items.length) && cursor < items.length) {
+        const item = items[cursor++];
+        active += 1;
+        Promise.resolve(operation(item)).then((value) => {
+          active -= 1;
+          if (settled) return;
+          successes.push(value);
+          if (successes.length >= quorum) {
+            settled = true;
+            resolve([...successes]);
+            return;
+          }
+          launch();
+        }).catch((error) => {
+          active -= 1;
+          if (settled) return;
+          failures.push(error);
+          if (cursor >= items.length && active === 0) {
+            settled = true;
+            if (successes.length) resolve([...successes]);
+            else reject(failures.at(-1) || new Error("all ASR chunks failed"));
+            return;
+          }
+          launch();
+        });
+      }
+    };
+    launch();
+  });
+}
+
+async function mapWithConcurrency(items, concurrency, operation) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await operation(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function retryAsync(operation, { attempts, baseDelayMs, jitterMs }) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * (2 ** (attempt - 1)) + jitterMs));
+    }
+  }
+  throw lastError;
+}
+
+function normalizePublicMediaBase(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" && !/^(localhost|127\.0\.0\.1|0\.0\.0\.0|::1)$/i.test(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function withCacheMeta(learningSource, cache) {

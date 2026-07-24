@@ -7,6 +7,7 @@ import {
   corsHeadersForRequest,
   evaluateRequestGuards,
   isValidDeviceId,
+  maxBodyBytesForRequest,
   rateLimitGroupForRequest,
   readJsonBodyWithLimit,
   RequestGuardError,
@@ -93,10 +94,20 @@ test("reads JSON body with a hard size limit", async () => {
 
 test("classifies generation and mutation routes for limits", () => {
   assert.equal(rateLimitGroupForRequest(mockRequest({ method: "POST", url: "/api/v2/chapters" })), "generation");
+  assert.equal(rateLimitGroupForRequest(mockRequest({ method: "POST", url: "/api/sources/image-flow" })), "generation");
   assert.equal(rateLimitGroupForRequest(mockRequest({ method: "POST", url: "/api/v2/recommended-articles/a/import" })), "recommended-import");
   assert.equal(rateLimitGroupForRequest(mockRequest({ method: "POST", url: "/api/notifications/n1/read" })), "mutation");
   assert.equal(rateLimitGroupForRequest(mockRequest({ method: "GET", url: "/api/health" })), "none");
   assert.equal(rateLimitGroupForRequest(mockRequest({ method: "GET", url: "/api/version" })), "none");
+  assert.equal(rateLimitGroupForRequest(mockRequest({ method: "GET", url: "/api/sources/image-flow/jobs/11111111-1111-1111-1111-111111111111" })), "none");
+});
+
+test("allows screenshots larger than the generic JSON limit only on the image flow", () => {
+  const imageRequest = mockRequest({ method: "POST", url: "/api/sources/image-flow" });
+  const regularRequest = mockRequest({ method: "POST", url: "/api/notifications/n1/read" });
+  assert.equal(maxBodyBytesForRequest(imageRequest, {}), 8 * 1024 * 1024);
+  assert.equal(maxBodyBytesForRequest(regularRequest, {}), 1024 * 1024);
+  assert.equal(maxBodyBytesForRequest(imageRequest, { SHIBEI_MAX_IMAGE_FLOW_BODY_BYTES: "3145728" }), 3 * 1024 * 1024);
 });
 
 test("limits repeated generation requests by device and ip", () => {

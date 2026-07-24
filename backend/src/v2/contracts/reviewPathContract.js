@@ -1,6 +1,6 @@
 export const V2_REVIEW_PATH_SCHEMA_VERSION = "v2_review_path_1";
 
-export const V2_QUESTION_TYPES = ["multiple_choice", "matching"];
+export const V2_QUESTION_TYPES = ["multiple_choice", "true_false", "matching"];
 
 export const V2_REVIEW_CARD_TYPES = [
   "chapter_overview",
@@ -208,7 +208,11 @@ function validateQuestion(question, sourceAnchor, path, errors) {
   }
 
   if (question.type === "multiple_choice") {
-    validateMultipleChoiceQuestion(question, path, errors);
+    validateMultipleChoiceQuestion(question, path, errors, 4);
+  }
+
+  if (question.type === "true_false") {
+    validateMultipleChoiceQuestion(question, path, errors, 2);
   }
 
   if (question.type === "matching") {
@@ -216,7 +220,7 @@ function validateQuestion(question, sourceAnchor, path, errors) {
   }
 }
 
-function validateMultipleChoiceQuestion(question, path, errors) {
+function validateMultipleChoiceQuestion(question, path, errors, expectedOptionCount) {
   requireFields(question, ["options", "correctOptionId"], path, errors);
 
   if (!Array.isArray(question.options)) {
@@ -224,8 +228,8 @@ function validateMultipleChoiceQuestion(question, path, errors) {
     return;
   }
 
-  if (question.options.length !== 4) {
-    errors.push(`${path}.options must contain exactly 4 options`);
+  if (question.options.length !== expectedOptionCount) {
+    errors.push(`${path}.options must contain exactly ${expectedOptionCount} options`);
   }
 
   const optionIds = new Set();

@@ -85,7 +85,7 @@
 - ASR/OCR/视觉摘要解决“把媒体变成可引用文本”的问题。当前 ASR 通过 `SpeechToTextProvider` 选择，第一版推荐本地 Faster-Whisper，避免把视频链路绑定到 OpenAI；OpenAI transcription 只作为显式兼容 adapter。
 - V2 出题引擎继续解决“从文本生成可复习知识”的问题，但它必须通过 provider-neutral model caller 调用模型，不能和某一个基座模型或供应商绑定。当前实现优先使用 DeepSeek；如果未配置 DeepSeek，则保留 OpenAI 兼容 fallback。
 - 多模态视频理解是增强层，不是第一版阻断项。后端需要预留 `VisualUnderstandingProvider` 边界，默认 provider 为 `none`，后续可接 Qwen-VL、Gemini video understanding 或云厂商视觉服务，把输出统一合并为 `LearningSource.visualSegments`。
-- `claude-real-video` 的可取之处是 scene-aware 抽帧、RGB diff 去重和 contact sheet，而不是它的 URL 下载、Whisper CLI 或 manifest。详细审查见 `docs/video-visual-understanding-crv-adapter-zh.md`，执行计划见 `docs/superpowers/plans/2026-07-07-video-visual-understanding-adapter.md`。
+- 视觉兜底保留 scene-aware 抽帧、RGB diff 去重和 contact sheet 思路；当前实现以 `backend/src/media/` 中的生产适配器为准。
 
 ### 3.1 画面理解增强架构
 

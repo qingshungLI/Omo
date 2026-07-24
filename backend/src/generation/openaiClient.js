@@ -6,6 +6,9 @@ export async function callModelJson(request) {
   const provider = resolveModelJsonProvider();
   if (provider === "deepseek") return callDeepSeekJson(request);
   if (provider === "openai") return callOpenAIResponsesJson(request);
+  if (["qwen", "openai_compatible", "compatible"].includes(provider)) {
+    return callOpenAICompatibleJson(request, { provider });
+  }
   throw new Error(`不支持的模型供应商：${provider}`);
 }
 
@@ -16,7 +19,83 @@ export function resolveModelJsonProvider(env = process.env) {
   const explicitProvider = String(env.AI_PROVIDER || "").trim().toLowerCase();
   if (explicitProvider) return explicitProvider;
   if (env.DEEPSEEK_API_KEY) return "deepseek";
+  if (env.QWEN_API || env.QWEN_API_KEY || env.DASHSCOPE_API_KEY) return "qwen";
   return "openai";
+}
+
+async function callOpenAICompatibleJson(request, { provider }) {
+  const {
+    system,
+    user,
+    schemaName,
+    schema,
+    stage,
+    modelUsageRecorder,
+    estimatedOutputTokens
+  } = request;
+  const apiKey = process.env.QWEN_API
+    || process.env.QWEN_API_KEY
+    || process.env.DASHSCOPE_API_KEY
+    || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("缺少 OpenAI-compatible 模型 API Key。");
+  }
+
+  const model = process.env.AI_MODEL
+    || process.env.QWEN_MODEL
+    || process.env.MODEL
+    || "qwen-flash";
+  const url = resolveCompatibleChatUrl(process.env.BASE_URL || process.env.AI_BASE_URL);
+  const systemMessage = `${system}\n\n只输出 JSON 对象，不要输出 Markdown。必须符合 ${schemaName}：\n${JSON.stringify(schema)}`;
+  const requestText = [systemMessage, user].join("\n\n");
+  const response = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: user }
+      ],
+      response_format: { type: "json_object" },
+      stream: false,
+      enable_thinking: false,
+      temperature: 0.1,
+      max_tokens: normalizeMaxTokens(estimatedOutputTokens)
+    })
+  }, "OpenAI-compatible");
+
+  const payload = await response.json().catch(() => null);
+  const usageRecord = recordModelUsage(modelUsageRecorder, {
+    provider,
+    model,
+    stage,
+    requestText,
+    estimatedOutputTokens,
+    usage: payload?.usage,
+    error: response.ok ? null : payload?.error?.message || `模型请求失败：${response.status}`
+  });
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `模型请求失败：${response.status}`);
+  }
+
+  const text = payload?.choices?.[0]?.message?.content;
+  if (!text) throw new Error("模型没有返回结构化文本。");
+  try {
+    return parseModelJson(text);
+  } catch (error) {
+    annotateModelParseFailure(usageRecord, text, error);
+    throw new Error("模型返回内容不是可解析 JSON，请重试。");
+  }
+}
+
+function resolveCompatibleChatUrl(baseUrl) {
+  const value = String(baseUrl || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
+  if (/\/chat\/completions$/i.test(value)) return value;
+  return `${value}/chat/completions`;
 }
 
 async function callOpenAIResponsesJson({
@@ -204,7 +283,7 @@ function readPositiveInt(value, fallback) {
 function normalizeMaxTokens(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 4096;
-  return Math.max(1024, Math.min(16_000, Math.ceil(parsed)));
+  return Math.max(256, Math.min(16_000, Math.ceil(parsed)));
 }
 
 function normalizeDeepSeekThinking(value) {

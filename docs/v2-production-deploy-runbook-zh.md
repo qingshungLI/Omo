@@ -411,5 +411,5 @@ curl https://shibei-production.up.railway.app/api/health
 1. 在 Railway 面板确认当前 service 连接分支和当前 deployment id。
 2. 创建数据库备份或确认可恢复快照。
 3. 将目标 service 部署到 V2 候选 commit。
-4. 部署后把 deployment id 记录回本文件或 `docs/v2-production-replacement-inventory-zh.md`。
+4. 部署后把 deployment id 记录回本文件的部署记录部分。
 5. 运行本文件的生产 gate 命令。

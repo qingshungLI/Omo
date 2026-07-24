@@ -584,14 +584,18 @@ private extension V2BackendUnit {
 
 private extension V2BackendQuestion {
     func toReviewQuestionData(unitTitle: String, sourceExcerpt: String) -> V2ReviewQuestionData {
-        let kind: V2QuestionKind = type == "matching" ? .matching : .multipleChoice
+        let kind: V2QuestionKind = switch type {
+        case "matching": .matching
+        case "true_false": .trueFalse
+        default: .multipleChoice
+        }
         let optionTexts = options?.map(\.text) ?? []
         let correctIndex = options?.firstIndex { $0.id == correctOptionId }
 
         return V2ReviewQuestionData(
             id: id,
             kind: kind,
-            title: kind == .matching ? "连线理解" : "理解练习",
+            title: kind == .matching ? "连线理解" : (kind == .trueFalse ? "快速判断" : "理解练习"),
             prompt: stem ?? "",
             options: optionTexts,
             correctOptionIndex: correctIndex,

@@ -35,7 +35,9 @@ test("runs local faster-whisper script and normalizes transcript output", async 
     "--model", "base",
     "--device", "cpu",
     "--compute-type", "int8",
-    "--language", "zh"
+    "--language", "zh",
+    "--beam-size", "1",
+    "--cpu-threads", "2"
   ]);
   assert.equal(result.provider, "local_whisper");
   assert.equal(result.text, "先定义问题，再整理证据。");

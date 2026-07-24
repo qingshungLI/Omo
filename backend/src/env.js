@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const backendRoot = resolve(__dirname, "..");
+const projectRoot = resolve(backendRoot, "..");
 
 loadEnvFile(resolve(backendRoot, ".env"));
+loadEnvFile(resolve(projectRoot, ".env"));
 
 function loadEnvFile(filePath) {
   let content = "";

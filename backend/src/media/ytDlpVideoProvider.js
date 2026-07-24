@@ -3,13 +3,14 @@ import { spawn } from "node:child_process";
 import { createMediaExtractionError } from "./mediaErrors.js";
 import { normalizeSubtitleTracks } from "./platformSubtitles.js";
 import { detectVideoPlatform, normalizeVideoSourceUrl } from "./videoPlatforms.js";
+import { resolveYtDlpPythonPath } from "./ytDlpRuntime.js";
 
 const DEFAULT_TIMEOUT_MS = readPositiveInt(process.env.YT_DLP_INFO_TIMEOUT_MS, 45_000);
-const DEFAULT_FORMAT_SELECTOR = process.env.YT_DLP_FORMAT_SELECTOR || "bv*+ba/best";
+const DEFAULT_FORMAT_SELECTOR = process.env.YT_DLP_FORMAT_SELECTOR || "bestaudio[ext=m4a]/bestaudio/best";
 
 export async function fetchYtDlpVideoSource({
   sourceUrl,
-  pythonPath = process.env.YT_DLP_PYTHON || process.env.PYTHON_PATH || "python3",
+  pythonPath = resolveYtDlpPythonPath(),
   formatSelector = DEFAULT_FORMAT_SELECTOR,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   spawnImpl = spawn
@@ -105,6 +106,7 @@ function normalizeYtDlpPayload(payload, { sourceUrl, platform, formatSelector })
     });
   }
   const webpageUrl = stringValue(payload.webpage_url || payload.original_url || sourceUrl);
+  const audioUrl = selectedAudioUrl(payload);
   return {
     provider: "yt-dlp",
     platform,
@@ -114,6 +116,7 @@ function normalizeYtDlpPayload(payload, { sourceUrl, platform, formatSelector })
     account: stringValue(payload.uploader || payload.channel || payload.creator || payload.uploader_id || ""),
     sourceUrl: webpageUrl || sourceUrl,
     mediaUrl: webpageUrl || sourceUrl,
+    audioUrl,
     coverUrl: stringValue(payload.thumbnail || firstThumbnail(payload.thumbnails)),
     durationSeconds: finiteNumber(payload.duration),
     subtitles: normalizeSubtitleTracks({
@@ -126,6 +129,14 @@ function normalizeYtDlpPayload(payload, { sourceUrl, platform, formatSelector })
       formatSelector
     }
   };
+}
+
+function selectedAudioUrl(payload) {
+  const formats = [
+    ...(Array.isArray(payload?.requested_formats) ? payload.requested_formats : []),
+    ...(Array.isArray(payload?.formats) ? payload.formats : [])
+  ];
+  return stringValue(formats.find((item) => item?.url && item?.acodec && item.acodec !== "none" && item?.vcodec === "none")?.url);
 }
 
 function classifyYtDlpFailure(error, stderr = "", code = null) {

@@ -20,6 +20,7 @@ enum V2AppRoute: Equatable {
 
 enum V2QuestionKind {
     case multipleChoice
+    case trueFalse
     case matching
 }
 

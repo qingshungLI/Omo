@@ -116,6 +116,10 @@ function serializeQuestionKind(type) {
     return "multipleChoice";
   }
 
+  if (type === "true_false") {
+    return "trueFalse";
+  }
+
   if (type === "matching") {
     return "matching";
   }
@@ -132,7 +136,7 @@ function deriveQuestionTitle(question) {
 }
 
 function serializeQuestionOptions(question) {
-  if (question.type !== "multiple_choice") {
+  if (!["multiple_choice", "true_false"].includes(question.type)) {
     return [];
   }
 
@@ -140,7 +144,7 @@ function serializeQuestionOptions(question) {
 }
 
 function serializeCorrectOptionIndex(question) {
-  if (question.type !== "multiple_choice") {
+  if (!["multiple_choice", "true_false"].includes(question.type)) {
     return null;
   }
 

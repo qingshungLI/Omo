@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>拾贝 - 截图复习流</title>
+  <style>
+    :root { color-scheme: light; --ink:#19211d; --muted:#68726b; --line:#dce4de; --page:#f4f7f3; --surface:#fff; --mint:#d9f0de; --green:#1f6c45; --peach:#ffead9; --amber:#b96916; --red:#a63737; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--page); color:var(--ink); font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; }
+    button,input { font:inherit; }
+    button { cursor:pointer; }
+    .shell { max-width:1180px; min-height:100vh; margin:auto; display:grid; grid-template-columns:300px minmax(0,1fr); background:var(--surface); border-inline:1px solid var(--line); }
+    aside { padding:30px 24px; border-right:1px solid var(--line); background:#fbfdfb; }
+    .brand { display:flex; align-items:center; gap:10px; font-weight:750; font-size:20px; letter-spacing:0; }
+    .mark { width:28px; height:28px; display:grid; place-items:center; border:2px solid var(--green); color:var(--green); border-radius:6px; font-size:15px; }
+    .eyebrow { margin:28px 0 8px; color:var(--muted); font-size:12px; }
+    h1 { margin:0; font-size:24px; line-height:1.25; letter-spacing:0; }
+    .hint { margin:10px 0 20px; color:var(--muted); font-size:13px; }
+    .upload { display:block; padding:18px 14px; border:1.5px dashed #aac4b1; border-radius:7px; background:#f5fbf6; text-align:center; color:var(--green); font-weight:650; }
+    .upload input { display:none; }
+    .file-name { min-height:22px; margin:10px 0 16px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+    .primary { width:100%; border:0; border-radius:6px; padding:12px 14px; background:var(--green); color:#fff; font-weight:700; }
+    .primary:disabled { opacity:.45; cursor:not-allowed; }
+    .steps { margin:32px 0 0; padding:0; list-style:none; display:grid; gap:13px; font-size:13px; }
+    .steps li { display:flex; gap:10px; color:var(--muted); align-items:flex-start; }
+    .steps b { width:20px; height:20px; display:grid; place-items:center; flex:0 0 20px; border:1px solid var(--line); border-radius:50%; font-size:11px; color:var(--muted); }
+    .steps li.active, .steps li.done { color:var(--ink); }
+    .steps li.active b { color:#fff; border-color:var(--green); background:var(--green); }
+    .steps li.done b { color:var(--green); border-color:#8bc49c; background:var(--mint); }
+    main { min-width:0; padding:34px 42px 52px; }
+    .topline { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .topline p { margin:0; color:var(--muted); font-size:13px; }
+    .status { display:inline-flex; align-items:center; gap:7px; border-radius:999px; padding:5px 10px; color:var(--muted); background:#edf1ee; font-size:12px; white-space:nowrap; }
+    .status::before { content:""; width:7px; height:7px; border-radius:50%; background:#9aa59d; }
+    .status.working::before { background:var(--amber); animation:pulse 1s infinite; }
+    .status.ready::before { background:#349354; }
+    .status.error::before { background:var(--red); }
+    .empty { max-width:620px; padding-top:100px; }
+    .empty h2 { margin:0 0 12px; font-size:32px; line-height:1.25; letter-spacing:0; }
+    .empty p { max-width:500px; margin:0; color:var(--muted); }
+    .placeholder { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:38px; }
+    .placeholder div { min-height:92px; padding:13px; border:1px solid var(--line); border-radius:7px; background:#fafcf9; color:var(--muted); font-size:12px; }
+    .result { display:none; }
+    .source { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; margin:28px 0 25px; padding:17px 0; border-block:1px solid var(--line); }
+    .source h2 { margin:0 0 5px; font-size:20px; line-height:1.35; }
+    .source p { margin:0; color:var(--muted); font-size:13px; }
+    .source a { align-self:center; color:var(--green); font-size:13px; font-weight:650; text-decoration:none; }
+    .tabs { display:flex; gap:18px; border-bottom:1px solid var(--line); }
+    .tab { padding:10px 2px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); font-weight:650; }
+    .tab[aria-selected="true"] { color:var(--green); border-bottom-color:var(--green); }
+    .panel { padding-top:23px; }
+    .panel[hidden] { display:none; }
+    .focus-meta { margin:0 0 10px; color:var(--green); font-size:13px; font-weight:700; }
+    .summary { margin:0 0 22px; max-width:740px; font-size:17px; line-height:1.7; }
+    .cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .flash { position:relative; min-height:245px; padding:17px; border:1px solid var(--line); border-radius:7px; background:#fff; text-align:left; overflow:hidden; transition:transform .16s ease, border-color .16s ease; }
+    .flash:hover { transform:translateY(-2px); border-color:#89af94; }
+    .card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:18px; color:var(--muted); font-size:12px; }
+    .time { color:var(--green); font-weight:750; }
+    .card-front, .card-back { display:flex; height:calc(100% - 35px); flex-direction:column; }
+    .card-front strong { font-size:16px; line-height:1.45; }
+    .flip-note { margin-top:auto; color:var(--muted); font-size:12px; }
+    .card-back { display:none; }
+    .flash.flipped .card-front { display:none; }
+    .flash.flipped .card-back { display:flex; }
+    .answer { margin:3px 0 12px; color:var(--green); font-size:16px; font-weight:750; }
+    .explanation { margin:0; color:var(--muted); font-size:13px; }
+    .choice-row { display:flex; gap:7px; margin-top:auto; }
+    .choice { flex:1; padding:7px 5px; border:1px solid var(--line); border-radius:5px; background:#fff; color:var(--muted); font-size:12px; }
+    .choice.correct { color:var(--green); border-color:#82b990; background:#f2faf3; }
+    .overview { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(220px,.65fr); gap:22px; }
+    .overview h3 { margin:0 0 10px; font-size:17px; }
+    .overview p { margin:0; line-height:1.75; }
+    .highlights { margin:0; padding:0; list-style:none; display:grid; gap:9px; }
+    .highlights li { padding:10px 11px; border-left:3px solid #8ac99a; background:#f6faf5; font-size:13px; }
+    .card-detail { margin-top:18px; padding:18px; border:1px solid #b7d5be; border-radius:7px; background:#f8fcf8; }
+    .card-detail-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .card-detail h3 { margin:0; font-size:17px; }
+    .card-detail h4 { margin:20px 0 7px; font-size:13px; color:var(--green); }
+    .card-detail .close { border:1px solid var(--line); border-radius:5px; background:#fff; color:var(--muted); padding:5px 8px; font-size:12px; }
+    .detail-answer { margin:8px 0; font-weight:750; color:var(--green); }
+    .notice { display:none; margin-top:22px; padding:12px; border-left:3px solid var(--amber); background:#fff8ef; color:#744c1d; font-size:13px; }
+    .notice.show { display:block; }
+    @keyframes pulse { 50% { opacity:.35; } }
+    @media (max-width:820px) { .shell { display:block; border:0; } aside { border-right:0; border-bottom:1px solid var(--line); } main { padding:25px 20px 42px; } .empty { padding-top:44px; } .cards { grid-template-columns:1fr; } .overview { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand"><span class="mark">拾</span>拾贝</div>
+      <p class="eyebrow">截图收藏</p>
+      <h1>把当下看到的内容，变成以后记得住的内容。</h1>
+      <p class="hint">上传平台截图。服务会提取标题、博主与播放位置，严格匹配来源后生成复习。</p>
+      <label class="upload" for="imageInput">选择截图<input id="imageInput" type="file" accept="image/png,image/jpeg,image/webp"></label>
+      <p id="fileName" class="file-name">尚未选择文件</p>
+      <button id="submit" class="primary" type="button" disabled>开始整理</button>
+      <ol id="steps" class="steps">
+        <li><b>1</b><span>读取截图中的标题、博主和时间</span></li>
+        <li><b>2</b><span>使用 TikHub 搜索并严格核对来源</span></li>
+        <li><b>3</b><span>定位截图附近内容，生成全片与复习卡</span></li>
+      </ol>
+    </aside>
+    <main>
+      <div class="topline"><p>截图 → 精确来源 → 可复习的记忆点</p><span id="status" class="status">等待截图</span></div>
+      <section id="empty" class="empty">
+        <h2>从一张截图开始</h2>
+        <p>优先处理 B 站、抖音、小红书、YouTube 等内容页。截图清楚包含标题和博主时，来源匹配更稳定。</p>
+        <div class="placeholder"><div>OCR 只提取<br>标题 · 博主 · 时间</div><div>严格匹配后才继续<br>避免把错内容存进来</div><div>截图附近的要点<br>与全片知识地图分开保存</div></div>
+      </section>
+      <section id="result" class="result" aria-live="polite">
+        <div class="source"><div><h2 id="sourceTitle"></h2><p id="sourceMeta"></p></div><a id="sourceLink" target="_blank" rel="noreferrer">打开原内容 ↗</a></div>
+        <div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" aria-controls="focusPanel" id="focusTab">截图附近</button><button class="tab" role="tab" aria-selected="false" aria-controls="overviewPanel" id="overviewTab">全片知识地图</button></div>
+        <section id="focusPanel" class="panel" role="tabpanel" aria-labelledby="focusTab"><p id="focusMeta" class="focus-meta"></p><p id="focusSummary" class="summary"></p><div id="cards" class="cards"></div><section id="cardDetail" class="card-detail" hidden><div class="card-detail-top"><div><p id="detailMeta" class="focus-meta"></p><h3 id="detailTitle"></h3></div><button id="detailClose" class="close" type="button">关闭</button></div><h4>本题答案</h4><p id="detailAnswer" class="detail-answer"></p><p id="detailExplanation" class="explanation"></p><h4>全片知识地图</h4><p id="detailOverview" class="explanation"></p><ul id="detailHighlights" class="highlights"></ul></section></section>
+        <section id="overviewPanel" class="panel" role="tabpanel" aria-labelledby="overviewTab" hidden><div class="overview"><div><h3>完整内容概览</h3><p id="overviewSummary"></p></div><div><h3>全片要点</h3><ul id="highlights" class="highlights"></ul></div></div></section>
+      </section>
+      <p id="notice" class="notice"></p>
+    </main>
+  </div>
+  <script>
+    const imageInput = document.querySelector('#imageInput');
+    const fileName = document.querySelector('#fileName');
+    const submit = document.querySelector('#submit');
+    const status = document.querySelector('#status');
+    const steps = [...document.querySelectorAll('#steps li')];
+    const empty = document.querySelector('#empty');
+    const result = document.querySelector('#result');
+    const notice = document.querySelector('#notice');
+    const cardDetail = document.querySelector('#cardDetail');
+    const apiOverride = new URLSearchParams(location.search).get('api');
+    // The demo is normally served from /demo. Keeping an explicit local
+    // fallback makes a copied or double-clicked HTML file usable as well.
+    const apiBase = apiOverride || (location.protocol === 'file:' ? 'http://127.0.0.1:5173' : '');
+    const imageFlowUrl = `${apiBase}/api/sources/image-flow`;
+    let currentOverview = {};
+    let imageData = '';
+
+    if (location.protocol === 'file:') {
+      showNotice('当前 Demo 是直接打开的文件。建议通过 http://127.0.0.1:5173/demo 打开；已自动连接本地 API。');
+    }
+
+    imageInput.addEventListener('change', async () => {
+      const file = imageInput.files?.[0];
+      imageData = file ? await fileToDataUrl(file) : '';
+      fileName.textContent = file ? `${file.name} · ${formatSize(file.size)}` : '尚未选择文件';
+      submit.disabled = !imageData;
+      hideNotice();
+    });
+
+    submit.addEventListener('click', async () => {
+      if (!imageData) return;
+      setBusy(true, '正在识别截图');
+      empty.style.display = 'none'; result.style.display = 'none'; hideNotice();
+      try {
+        const response = await fetch(imageFlowUrl, { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ imageBase64:imageData, async:true }) });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || payload.error?.message || '任务创建失败。');
+        const completed = payload.jobId ? await pollImageFlowJob(payload.jobId) : payload;
+        if (completed.status !== 'completed') throw new Error(completed.message || completed.error?.message || '内容暂时无法完成整理。');
+        render(completed);
+        setBusy(false, '已生成复习卡');
+      } catch (error) {
+        setBusy(false, '需要处理');
+        const message = error instanceof TypeError && /fetch/i.test(error.message)
+          ? `无法连接本地服务。请先在 backend 目录运行 npm run dev，并通过 http://127.0.0.1:5173/demo 打开。`
+          : (error.message || '请求失败，请重试。');
+        showNotice(message);
+        empty.style.display = 'block';
+      }
+    });
+
+    async function pollImageFlowJob(jobId) {
+      const startedAt = Date.now();
+      let networkFailures = 0;
+      while (Date.now() - startedAt < 15 * 60 * 1000) {
+        try {
+          const response = await fetch(`${imageFlowUrl}/jobs/${encodeURIComponent(jobId)}`, { cache:'no-store' });
+          const job = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(job.message || '无法读取任务状态。');
+          networkFailures = 0;
+          setFlowProgress(job.progress || {}, Date.now() - startedAt);
+          if (job.status === 'succeeded') return job.result || {};
+          if (job.status === 'failed') throw new Error(job.result?.error?.message || job.progress?.message || '内容处理失败。');
+        } catch (error) {
+          networkFailures += 1;
+          if (networkFailures >= 5 || !/fetch|network|读取任务状态/i.test(error.message || '')) throw error;
+        }
+        await delay(1200);
+      }
+      throw new Error('处理超过 15 分钟，请稍后重试。');
+    }
+
+    function setFlowProgress(progress, elapsedMs) {
+      const stage = progress.stage || 'queued';
+      const activeIndex = stage === 'ocr' || stage === 'queued' ? 0 : stage === 'search' ? 1 : 2;
+      const elapsed = formatElapsed(elapsedMs);
+      status.textContent = `${progress.message || '正在处理'}${elapsed ? ` · ${elapsed}` : ''}`;
+      status.className = 'status working';
+      steps.forEach((step, index) => { step.className = index < activeIndex ? 'done' : index === activeIndex ? 'active' : ''; });
+    }
+
+    function render(data) {
+      const source = data.source || {};
+      const identity = data.ocr?.identity || {};
+      document.querySelector('#sourceTitle').textContent = source.title || data.link?.title || identity.title || '已保存内容';
+      document.querySelector('#sourceMeta').textContent = [source.account || identity.account, source.platform, identity.timestampSeconds != null ? `截图位置 ${formatTime(identity.timestampSeconds)}` : '已按字幕文本定位'].filter(Boolean).join(' · ');
+      const link = document.querySelector('#sourceLink'); link.href = source.url || data.link?.url || '#';
+      const focus = source.focus || {};
+      document.querySelector('#focusMeta').textContent = focus.timestampSeconds != null ? `截图附近 · ${formatTime(focus.timestampSeconds)}${focus.startSeconds != null ? `（${formatTime(focus.startSeconds)} - ${formatTime(focus.endSeconds)}）` : ''}` : '截图附近的核心内容';
+      const review = data.review || {};
+      document.querySelector('#focusSummary').textContent = review.summaryCard?.text || '已提取截图附近的核心知识点。';
+      renderCards(review, focus.timestampSeconds);
+      const overview = data.videoOverview || {};
+      currentOverview = overview;
+      document.querySelector('#overviewSummary').textContent = overview.summary || '该来源不是视频，当前没有全片概览。';
+      const highlights = document.querySelector('#highlights'); highlights.innerHTML = '';
+      (overview.highlights || []).forEach((item) => { const li=document.createElement('li'); li.textContent=item; highlights.append(li); });
+      result.style.display = 'block';
+      selectTab('focus');
+    }
+
+    function renderCards(review, timestamp) {
+      const cards = document.querySelector('#cards'); cards.innerHTML = '';
+      const questions = review.units?.flatMap((unit) => unit.questions || []) || [];
+      questions.forEach((question, index) => {
+        const card = document.createElement('button'); card.className = 'flash'; card.type='button';
+        const point = question.knowledgePoint || shortPoint(question.stem, index + 1);
+        const label = timestamp != null ? `${formatTime(timestamp)} · ${point}` : `截图附近 · ${point}`;
+        const correct = question.options?.find((option) => option.id === question.correctOptionId)?.text || '';
+        card.innerHTML = `<span class="card-head"><span class="time">${escapeHtml(label)}</span><span>${escapeHtml(question.displayLabel || '复习卡')}</span></span><span class="card-front"><strong>${escapeHtml(question.stem || '')}</strong><span class="flip-note">点击查看答案与全片知识地图</span></span>`;
+        card.addEventListener('click', () => showCardDetail(question, label, correct));
+        cards.append(card);
+      });
+    }
+
+    function showCardDetail(question, label, correct) {
+      document.querySelector('#detailMeta').textContent = label;
+      document.querySelector('#detailTitle').textContent = question.stem || '';
+      document.querySelector('#detailAnswer').textContent = correct;
+      document.querySelector('#detailExplanation').textContent = question.explanation || '';
+      document.querySelector('#detailOverview').textContent = currentOverview.summary || '该来源没有可用的全片概览。';
+      const highlights = document.querySelector('#detailHighlights'); highlights.innerHTML = '';
+      (currentOverview.highlights || []).forEach((item) => { const li=document.createElement('li'); li.textContent=item; highlights.append(li); });
+      cardDetail.hidden = false;
+      cardDetail.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    }
+
+    document.querySelector('#focusTab').addEventListener('click', () => selectTab('focus'));
+    document.querySelector('#overviewTab').addEventListener('click', () => selectTab('overview'));
+    document.querySelector('#detailClose').addEventListener('click', () => { cardDetail.hidden = true; });
+    function selectTab(name) { const focus=name==='focus'; document.querySelector('#focusTab').setAttribute('aria-selected',String(focus)); document.querySelector('#overviewTab').setAttribute('aria-selected',String(!focus)); document.querySelector('#focusPanel').hidden=!focus; document.querySelector('#overviewPanel').hidden=focus; }
+    function setBusy(busy, text) { submit.disabled=busy || !imageData; status.textContent=text; status.className=`status ${busy ? 'working' : text === '已生成复习卡' ? 'ready' : 'error'}`; steps.forEach((step,index) => step.className=busy ? (index===0 ? 'active' : '') : (text === '已生成复习卡' ? 'done' : '')); }
+    function showNotice(text) { notice.textContent=text; notice.classList.add('show'); }
+    function hideNotice() { notice.classList.remove('show'); notice.textContent=''; }
+    function fileToDataUrl(file) { return new Promise((resolve,reject) => { const reader=new FileReader(); reader.onload=()=>resolve(String(reader.result)); reader.onerror=reject; reader.readAsDataURL(file); }); }
+    function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+    function formatElapsed(ms) { const seconds=Math.floor(ms/1000); if (seconds < 1) return ''; return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds/60)}m ${seconds%60}s`; }
+    function formatSize(bytes) { return `${(bytes / 1024 / 1024).toFixed(bytes > 1024 * 1024 ? 1 : 2)} MB`; }
+    function formatTime(seconds) { const total=Math.max(0,Number(seconds)||0); const h=Math.floor(total/3600); const m=Math.floor(total%3600/60); const s=Math.floor(total%60); return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`; }
+    function shortPoint(value, index) { const text=String(value || '').replace(/[？?。！!].*$/, '').trim(); return text ? text.slice(0, 18) : `核心知识点 ${index}`; }
+    function escapeHtml(value) { return String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
+  </script>
+</body>
+</html>

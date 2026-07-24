@@ -22,6 +22,10 @@ ios/
 !experiments/shibei-v2/ios/
 !experiments/shibei-v2/ios/**
 .DS_Store
+# Local OCR regression screenshots; not product assets.
+/image.jpg
+/image2.jpg
+/image3.jpg
 **/.DS_Store
 **/xcuserdata/
 **/UserInterfaceState.xcuserstate

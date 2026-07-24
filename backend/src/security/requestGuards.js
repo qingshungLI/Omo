@@ -1,5 +1,6 @@
 const DEFAULT_JSON_BODY_LIMIT_BYTES = 1024 * 1024;
 const DEFAULT_GENERATION_BODY_LIMIT_BYTES = 2 * 1024 * 1024;
+const DEFAULT_IMAGE_FLOW_BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
 const rateLimitBuckets = new Map();
@@ -145,6 +146,8 @@ export async function readJsonBodyWithLimit(req, {
 export function maxBodyBytesForRequest(req, env = process.env) {
   const explicit = readPositiveInt(env.SHIBEI_MAX_JSON_BODY_BYTES, 0);
   const generationExplicit = readPositiveInt(env.SHIBEI_MAX_GENERATION_BODY_BYTES, 0);
+  const imageFlowExplicit = readPositiveInt(env.SHIBEI_MAX_IMAGE_FLOW_BODY_BYTES, 0);
+  if (isImageFlowRoute(req)) return imageFlowExplicit || DEFAULT_IMAGE_FLOW_BODY_LIMIT_BYTES;
   if (isGenerationRoute(req)) return generationExplicit || DEFAULT_GENERATION_BODY_LIMIT_BYTES;
   return explicit || DEFAULT_JSON_BODY_LIMIT_BYTES;
 }
@@ -197,6 +200,8 @@ export function rateLimitGroupForRequest(req) {
   if (!url.startsWith("/api/")) return "none";
   if (method === "GET" && url === "/api/health") return "none";
   if (method === "GET" && url === "/api/version") return "none";
+  if (method === "GET" && /^\/api\/sources\/image-flow\/jobs\/[0-9a-f-]{36}$/i.test(url)) return "none";
+  if (isImageFlowRoute(req)) return "generation";
   if (isGenerationRoute(req)) return "generation";
   if (method === "POST" && /^\/api\/v2\/recommended-articles\/[^/]+\/import$/.test(url)) return "recommended-import";
   if (method !== "GET") return "mutation";
@@ -212,6 +217,11 @@ function isGenerationRoute(req) {
     url === "/api/chapters" ||
     url === "/api/v2/chapters"
   );
+}
+
+function isImageFlowRoute(req) {
+  return String(req?.method || "GET").toUpperCase() === "POST"
+    && String(req?.url || "") === "/api/sources/image-flow";
 }
 
 function rateLimitConfigForGroup(group, env) {

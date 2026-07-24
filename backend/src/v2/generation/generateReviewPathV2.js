@@ -1,11 +1,10 @@
-import {
-  activeV2GenerationStages,
-  runV2GenerationProgram,
-  V2_GENERATION_STAGES
-} from "./pipeline/v2GenerationProgram.js";
+import { generateQuickReviewPath } from "./quickReviewGenerator.js";
 
-export { activeV2GenerationStages, V2_GENERATION_STAGES };
+export const V2_GENERATION_STAGES = ["quickReview"];
+export function activeV2GenerationStages() {
+  return V2_GENERATION_STAGES;
+}
 
 export async function generateReviewPathV2(article, options = {}) {
-  return runV2GenerationProgram(article, options);
+  return generateQuickReviewPath(article, options);
 }

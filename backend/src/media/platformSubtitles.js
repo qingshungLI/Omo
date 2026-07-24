@@ -1,7 +1,7 @@
 import { normalizeTranscriptionPayload } from "./transcriptionResult.js";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
-const PREFERRED_LANGUAGES = ["zh-CN", "ai-zh", "zh-Hans", "source", "en-US"];
+const PREFERRED_LANGUAGES = ["zh-CN", "source", "en-US"];
 
 export async function fetchPlatformSubtitleTranscript({
   subtitles = null,
@@ -18,7 +18,7 @@ export async function fetchPlatformSubtitleTranscript({
     const response = await fetchImpl(subtitle.url, { signal: controller.signal });
     if (!response.ok) return null;
     const body = await response.text();
-    const segments = parseSubtitleBody(body, subtitle);
+    const segments = subtitle.format === "bilibili-json" ? parseBilibiliJson(body) : parseSrt(body);
     if (!segments.length) return null;
     return normalizeTranscriptionPayload(
       { segments },
@@ -63,36 +63,6 @@ function normalizeSubtitleTrack(track) {
   };
 }
 
-function parseSubtitleBody(body, subtitle) {
-  const format = String(subtitle?.format || "").trim().toLowerCase();
-  if (format === "bilibili-json" || looksLikeJson(body)) {
-    const segments = parseBilibiliJson(body);
-    if (segments.length || format === "bilibili-json") return segments;
-  }
-  return parseSrt(body);
-}
-
-function parseBilibiliJson(body) {
-  try {
-    const payload = JSON.parse(String(body || ""));
-    const items = Array.isArray(payload?.body) ? payload.body : [];
-    return items
-      .map((item, index) => ({
-        id: `subtitle-${String(index + 1).padStart(3, "0")}`,
-        startSeconds: finiteNumber(item?.from),
-        endSeconds: finiteNumber(item?.to),
-        text: String(item?.content || "").replace(/<[^>]+>/g, "").trim()
-      }))
-      .filter((segment) => segment.text);
-  } catch {
-    return [];
-  }
-}
-
-function looksLikeJson(body) {
-  return String(body || "").trimStart().startsWith("{");
-}
-
 function parseSrt(body) {
   return String(body || "")
     .replace(/\r/g, "")
@@ -130,7 +100,19 @@ function parseSrtTimestamp(value) {
     + Number(millis.padEnd(3, "0")) / 1000;
 }
 
-function finiteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+function parseBilibiliJson(body) {
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return [];
+  }
+  return (Array.isArray(payload?.body) ? payload.body : [])
+    .map((item, index) => ({
+      id: `subtitle-${String(index + 1).padStart(3, "0")}`,
+      startSeconds: Number(item?.from),
+      endSeconds: Number(item?.to),
+      text: String(item?.content || "").replace(/<[^>]+>/g, "").trim()
+    }))
+    .filter((item) => item.text && Number.isFinite(item.startSeconds) && Number.isFinite(item.endSeconds));
 }

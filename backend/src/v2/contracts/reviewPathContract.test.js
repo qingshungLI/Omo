@@ -155,7 +155,7 @@ test("valid payload accepts optional video source block metadata", () => {
 
 test("exports V2 contract constants", () => {
   assert.equal(V2_REVIEW_PATH_SCHEMA_VERSION, "v2_review_path_1");
-  assert.deepEqual(V2_QUESTION_TYPES, ["multiple_choice", "matching"]);
+  assert.deepEqual(V2_QUESTION_TYPES, ["multiple_choice", "true_false", "matching"]);
   assert.deepEqual(V2_REVIEW_CARD_TYPES, [
     "chapter_overview",
     "unit_overview",

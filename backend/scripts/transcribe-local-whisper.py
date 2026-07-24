@@ -11,6 +11,8 @@ def main():
     parser.add_argument("--device", default="auto")
     parser.add_argument("--compute-type", default="int8")
     parser.add_argument("--language", default="zh")
+    parser.add_argument("--beam-size", type=int, default=1)
+    parser.add_argument("--cpu-threads", type=int, default=2)
     args = parser.parse_args()
 
     try:
@@ -20,12 +22,18 @@ def main():
         return 2
 
     try:
-        model = WhisperModel(args.model, device=args.device, compute_type=args.compute_type)
+        model = WhisperModel(
+            args.model,
+            device=args.device,
+            compute_type=args.compute_type,
+            cpu_threads=max(1, args.cpu_threads),
+            num_workers=1,
+        )
         segments, _info = model.transcribe(
             args.audio,
             language=args.language or None,
             vad_filter=True,
-            beam_size=5,
+            beam_size=max(1, args.beam_size),
         )
         normalized_segments = []
         text_parts = []
