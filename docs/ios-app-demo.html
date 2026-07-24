@@ -1,0 +1,1710 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#E8EBBD">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%2398A84E'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-family='Arial' font-size='34' font-weight='700' fill='%23FDFAF2'%3ER%3C/text%3E%3C/svg%3E">
+  <title>Recallo · iOS 交互预览</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --primary: #98A84E;
+      --primary-action: #A5AE66;
+      --page: #E8EBBD;
+      --cream: #FDFAF2;
+      --nav: #FCF8ED;
+      --text: #44423D;
+      --text-2: #676767;
+      --muted: #8C8B82;
+      --border: #E0E5BA;
+      --upload: #E8E9C2;
+      --wrong: #FD9789;
+      --blue: #94D0E9;
+      --desktop: #F3F2EA;
+      --shadow: 0 18px 54px rgba(74, 78, 48, 0.16);
+      --soft-shadow: 0 4px 10px rgba(152, 163, 94, 0.2);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC",
+        "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      background: var(--desktop);
+      color: var(--text);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    [tabindex]:focus-visible {
+      outline: 3px solid rgba(79, 135, 185, 0.58);
+      outline-offset: 3px;
+    }
+
+    .preview-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(280px, 380px) minmax(390px, 520px);
+      place-content: center;
+      align-items: center;
+      gap: clamp(32px, 6vw, 96px);
+      padding: 24px;
+    }
+
+    .preview-copy {
+      max-width: 360px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      color: var(--cream);
+      background: var(--primary);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .preview-copy h1 {
+      margin: 0;
+      max-width: 350px;
+      font-size: clamp(34px, 4vw, 52px);
+      line-height: 1.08;
+      letter-spacing: -0.045em;
+    }
+
+    .preview-copy > p {
+      margin: 20px 0 0;
+      color: var(--text-2);
+      font-size: 16px;
+      line-height: 1.75;
+    }
+
+    .steps {
+      display: grid;
+      gap: 14px;
+      margin: 34px 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .steps li {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      align-items: start;
+      gap: 11px;
+      color: var(--text-2);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .step-number {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(152, 168, 78, 0.45);
+      border-radius: 9px;
+      color: var(--primary);
+      background: rgba(253, 250, 242, 0.72);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .preview-note {
+      padding: 14px 16px;
+      border-left: 3px solid var(--primary);
+      background: rgba(253, 250, 242, 0.7);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .reset-button {
+      margin-top: 18px;
+      padding: 0;
+      border: 0;
+      border-bottom: 1px solid currentColor;
+      color: var(--text-2);
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .device {
+      position: relative;
+      width: 414px;
+      height: min(884px, calc(100vh - 36px));
+      min-height: 700px;
+      justify-self: center;
+      overflow: hidden;
+      border: 10px solid #292A27;
+      border-radius: 52px;
+      background: var(--page);
+      box-shadow: var(--shadow), 0 0 0 1px rgba(0, 0, 0, 0.12);
+    }
+
+    .device::before {
+      content: "";
+      position: absolute;
+      z-index: 80;
+      top: 10px;
+      left: 50%;
+      width: 92px;
+      height: 25px;
+      border-radius: 18px;
+      background: #292A27;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    .app {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--page);
+    }
+
+    .status-bar {
+      position: absolute;
+      z-index: 70;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 23px 0;
+      color: #292A27;
+      font-size: 12px;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    .status-icons {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .signal {
+      width: 15px;
+      height: 10px;
+      border-bottom: 3px solid currentColor;
+      border-left: 3px solid transparent;
+      border-right: 3px solid transparent;
+    }
+
+    .battery {
+      width: 20px;
+      height: 10px;
+      border: 1.5px solid currentColor;
+      border-radius: 3px;
+      position: relative;
+    }
+
+    .battery::before {
+      content: "";
+      position: absolute;
+      inset: 1.5px;
+      border-radius: 1px;
+      background: currentColor;
+    }
+
+    .battery::after {
+      content: "";
+      position: absolute;
+      right: -3px;
+      top: 2px;
+      width: 1.5px;
+      height: 4px;
+      border-radius: 1px;
+      background: currentColor;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding-top: 46px;
+      overflow: hidden;
+      background: var(--page);
+      animation: screen-in 240ms ease-out;
+    }
+
+    @keyframes screen-in {
+      from { opacity: 0; transform: translateY(7px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .top-chrome {
+      z-index: 4;
+      height: 60px;
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+    }
+
+    .circle-button {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: var(--cream);
+      color: var(--text);
+      box-shadow: var(--soft-shadow);
+      cursor: pointer;
+    }
+
+    .circle-button svg {
+      width: 19px;
+      height: 19px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.8;
+    }
+
+    .top-title {
+      font-size: 18px;
+      font-weight: 650;
+      color: #575757;
+    }
+
+    .screen-scroll {
+      position: relative;
+      z-index: 2;
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+    }
+
+    .screen-scroll::-webkit-scrollbar {
+      display: none;
+    }
+
+    .home-content {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 25px 24px 126px;
+      text-align: center;
+    }
+
+    .home-content h2 {
+      margin: 0;
+      font-size: 25px;
+      line-height: 1.25;
+      letter-spacing: -0.025em;
+    }
+
+    .home-subtitle {
+      margin: 9px 0 0;
+      color: rgba(103, 103, 103, 0.76);
+      font-size: 14px;
+    }
+
+    .card-stack {
+      position: relative;
+      width: 280px;
+      height: 344px;
+      margin: auto 0 26px;
+    }
+
+    .stack-card {
+      position: absolute;
+      top: 14px;
+      left: 21px;
+      width: 238px;
+      height: 318px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: rgba(253, 250, 242, 0.84);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .stack-card:nth-child(1) {
+      opacity: 0.72;
+      transform: translate(-18px, 13px) rotate(-7deg);
+    }
+
+    .stack-card:nth-child(2) {
+      opacity: 0.84;
+      transform: translate(19px, 7px) rotate(6deg);
+    }
+
+    .stack-card.front {
+      display: grid;
+      place-items: center;
+      opacity: 1;
+      transform: none;
+    }
+
+    .stack-card-content {
+      display: grid;
+      justify-items: center;
+      gap: 13px;
+    }
+
+    .sparkle {
+      width: 44px;
+      height: 44px;
+      color: var(--primary);
+    }
+
+    .stack-title {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .stack-subtitle {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .button-row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .primary-button,
+    .secondary-button {
+      min-height: 53px;
+      border-radius: 14px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 650;
+    }
+
+    .primary-button {
+      border: 1px solid var(--primary-action);
+      background: var(--primary-action);
+      color: #fffef6;
+      box-shadow: 0 3px 7px rgba(125, 136, 61, 0.18);
+    }
+
+    .secondary-button {
+      border: 1px solid var(--primary);
+      background: var(--cream);
+      color: var(--primary);
+    }
+
+    .helper-copy {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .bottom-nav {
+      position: absolute;
+      z-index: 30;
+      right: 18px;
+      bottom: max(12px, env(safe-area-inset-bottom));
+      left: 18px;
+      height: 86px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      align-items: center;
+      padding: 0 7px;
+      border-radius: 29px;
+      background: var(--nav);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .nav-button {
+      height: 62px;
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 1px;
+      padding: 0;
+      border: 0;
+      color: var(--text);
+      background: transparent;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .nav-button img {
+      width: 32px;
+      height: 32px;
+    }
+
+    .nav-button.active {
+      color: var(--primary);
+    }
+
+    .nav-button.upload img {
+      width: 60px;
+      height: 60px;
+      transform: translateY(-5px);
+    }
+
+    .upload-content {
+      position: relative;
+      min-height: 100%;
+      padding: 15px 24px 126px;
+    }
+
+    .upload-lead {
+      position: relative;
+      min-height: 192px;
+      padding-top: 18px;
+      text-align: center;
+    }
+
+    .upload-lead h2 {
+      max-width: 290px;
+      margin: 0 auto;
+      font-size: 23px;
+      line-height: 1.34;
+      letter-spacing: -0.02em;
+    }
+
+    .upload-lead p {
+      margin: 9px auto 0;
+      color: var(--text-2);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .mascot {
+      position: relative;
+      width: 105px;
+      height: 122px;
+      margin: 13px auto 0;
+    }
+
+    .mascot img {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .mascot .back {
+      width: 83px;
+      top: 0;
+    }
+
+    .mascot .front {
+      width: 65px;
+      top: 48px;
+      left: 55%;
+    }
+
+    .upload-card {
+      position: relative;
+      z-index: 3;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--cream);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .upload-card h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .upload-card > p {
+      margin: 6px 0 16px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .upload-action {
+      width: 100%;
+      min-height: 53px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fffdf7;
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    .upload-action + .upload-action {
+      margin-top: 10px;
+    }
+
+    .upload-action.primary {
+      border-color: var(--primary-action);
+      color: #fffef6;
+      background: var(--primary-action);
+    }
+
+    .upload-action svg {
+      width: 19px;
+      height: 19px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.8;
+    }
+
+    .selected-preview {
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 13px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fffdf7;
+    }
+
+    .selected-preview img {
+      width: 58px;
+      height: 58px;
+      border-radius: 10px;
+      object-fit: cover;
+    }
+
+    .selected-preview strong,
+    .selected-preview span {
+      display: block;
+    }
+
+    .selected-preview strong {
+      font-size: 13px;
+    }
+
+    .selected-preview span {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .divider {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 8px;
+      margin: 16px 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: "";
+      height: 1px;
+      background: var(--border);
+    }
+
+    .link-input {
+      width: 100%;
+      height: 47px;
+      padding: 0 13px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fffdf7;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .privacy-copy {
+      margin: 13px 3px 0;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    .bg-deco {
+      position: absolute;
+      z-index: 1;
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    .bg-deco.left {
+      left: -4px;
+      bottom: 93px;
+      width: 114px;
+    }
+
+    .bg-deco.right {
+      right: -3px;
+      bottom: 90px;
+      width: 105px;
+    }
+
+    .analyzing {
+      min-height: 100%;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .scan-card {
+      position: relative;
+      width: 238px;
+      height: 318px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--cream);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .scan-card::after {
+      content: "";
+      position: absolute;
+      right: 18px;
+      left: 18px;
+      height: 2px;
+      background: var(--primary);
+      box-shadow: 0 0 12px rgba(152, 168, 78, 0.55);
+      animation: scanning 1.35s ease-in-out infinite;
+    }
+
+    @keyframes scanning {
+      0%, 100% { top: 40px; }
+      50% { top: 272px; }
+    }
+
+    .scan-core {
+      display: grid;
+      justify-items: center;
+      gap: 14px;
+      color: var(--primary);
+    }
+
+    .scan-core svg {
+      width: 42px;
+      height: 42px;
+    }
+
+    .analyzing h2 {
+      margin: 27px 0 8px;
+      font-size: 21px;
+    }
+
+    .analyzing p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .flow-top {
+      height: 68px;
+      display: grid;
+      grid-template-columns: 42px 1fr 42px;
+      align-items: center;
+      flex: 0 0 auto;
+      padding: 4px 24px 12px;
+    }
+
+    .flow-top .top-title {
+      text-align: center;
+    }
+
+    .draw-content {
+      padding: 4px 24px 38px;
+    }
+
+    .memory-card {
+      padding: 22px;
+      border: 1px solid rgba(224, 229, 186, 0.65);
+      border-radius: 24px;
+      background: var(--cream);
+      box-shadow: var(--soft-shadow);
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .rarity {
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    .rarity.r {
+      color: var(--text-2);
+      background: rgba(103, 103, 103, 0.11);
+    }
+
+    .rarity.sr {
+      color: #4F87B9;
+      background: rgba(79, 135, 185, 0.13);
+    }
+
+    .rarity.ssr {
+      color: #D9852C;
+      background: rgba(217, 133, 44, 0.13);
+    }
+
+    .source-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .source-status svg {
+      width: 15px;
+      height: 15px;
+      fill: currentColor;
+    }
+
+    .prompt-label {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .recall-cue {
+      margin: 0;
+      font-size: 23px;
+      line-height: 1.42;
+      letter-spacing: -0.02em;
+    }
+
+    .reveal-area {
+      margin-top: 24px;
+    }
+
+    .reveal-track {
+      position: relative;
+      height: 58px;
+      overflow: hidden;
+      border-radius: 29px;
+      background: var(--upload);
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .reveal-track:active {
+      cursor: grabbing;
+    }
+
+    .reveal-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      min-width: 58px;
+      width: 18%;
+      border-radius: inherit;
+      background: rgba(152, 168, 78, 0.3);
+    }
+
+    .reveal-copy {
+      position: relative;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 18px;
+      color: var(--text-2);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .reveal-copy svg {
+      width: 19px;
+      height: 19px;
+    }
+
+    .reveal-hint {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .direct-reveal {
+      display: block;
+      margin: 18px auto 0;
+      padding: 4px 0;
+      border: 0;
+      border-bottom: 1px solid rgba(103, 103, 103, 0.45);
+      color: var(--text-2);
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .answer {
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      animation: answer-in 260ms ease-out;
+    }
+
+    @keyframes answer-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .answer strong {
+      display: block;
+      color: var(--primary);
+      font-size: 21px;
+      line-height: 1.4;
+    }
+
+    .answer > p {
+      margin: 14px 0 0;
+      color: var(--text-2);
+      font-size: 15px;
+      line-height: 1.68;
+    }
+
+    .rarity-reason {
+      font-size: 11px !important;
+      color: var(--muted) !important;
+    }
+
+    .source-preview {
+      margin-top: 17px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #f2f2ed;
+    }
+
+    .source-preview img {
+      display: block;
+      width: 100%;
+      max-height: 242px;
+      object-fit: cover;
+    }
+
+    .mock-shot {
+      min-height: 194px;
+      background: #f6f5f0;
+    }
+
+    .mock-appbar {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      color: #fff;
+      background: #fb7299;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .mock-video {
+      height: 92px;
+      display: grid;
+      place-items: center;
+      padding: 15px 22px;
+      color: #fff;
+      background: #48484b;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    .mock-caption {
+      padding: 12px;
+      color: #555;
+      background: #fff;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .source-link {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 13px;
+      padding: 0;
+      border: 0;
+      color: var(--primary);
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 650;
+      text-align: left;
+    }
+
+    .assessment {
+      margin-top: 18px;
+      text-align: center;
+      animation: answer-in 260ms ease-out;
+    }
+
+    .assessment > p {
+      margin: 0 0 10px;
+      color: var(--text-2);
+      font-size: 14px;
+    }
+
+    .assessment-buttons {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .assessment-button {
+      min-height: 46px;
+      padding: 0 7px;
+      border: 1px solid currentColor;
+      border-radius: 12px;
+      background: var(--cream);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .assessment-button.remembered { color: var(--primary); }
+    .assessment-button.fuzzy { color: #D3A34A; }
+    .assessment-button.forgot { color: #E57668; }
+
+    .complete-content {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 42px 34px 70px;
+      text-align: center;
+    }
+
+    .complete-content img {
+      width: 166px;
+      height: 166px;
+      object-fit: contain;
+    }
+
+    .complete-content h2 {
+      margin: 22px 0 9px;
+      font-size: 25px;
+    }
+
+    .complete-content > p {
+      max-width: 286px;
+      margin: 0;
+      color: var(--text-2);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .memory-change {
+      width: 100%;
+      margin: 27px 0;
+      padding: 15px;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      background: var(--cream);
+      color: var(--primary);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .complete-actions {
+      width: 100%;
+      display: grid;
+      gap: 10px;
+    }
+
+    .toast {
+      position: absolute;
+      z-index: 90;
+      top: 56px;
+      left: 50%;
+      width: max-content;
+      max-width: calc(100% - 48px);
+      padding: 10px 14px;
+      border: 1px solid rgba(68, 66, 61, 0.08);
+      border-radius: 12px;
+      color: var(--cream);
+      background: rgba(68, 66, 61, 0.92);
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.16);
+      transform: translateX(-50%);
+      font-size: 12px;
+      text-align: center;
+      animation: toast-in 180ms ease-out;
+    }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translate(-50%, -6px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      margin: -1px !important;
+      overflow: hidden !important;
+      clip: rect(0, 0, 0, 0) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    @media (max-width: 820px) {
+      .preview-shell {
+        display: block;
+        min-height: 100dvh;
+        padding: 0;
+      }
+
+      .preview-copy {
+        display: none;
+      }
+
+      .device {
+        width: 100vw;
+        height: 100dvh;
+        min-height: 620px;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .device::before {
+        display: none;
+      }
+
+      .status-bar {
+        padding-top: env(safe-area-inset-top);
+      }
+    }
+
+    @media (max-height: 760px) and (min-width: 821px) {
+      .device {
+        width: 354px;
+        min-height: 680px;
+      }
+
+      .home-content {
+        padding-top: 10px;
+      }
+
+      .card-stack {
+        transform: scale(0.82);
+        margin-top: -20px;
+        margin-bottom: -18px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="preview-shell">
+    <section class="preview-copy" aria-labelledby="preview-title">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">R</span>
+        <span>Recallo · iOS MVP</span>
+      </div>
+      <h1 id="preview-title">把刷过的内容，变成会再次想起的记忆。</h1>
+      <p>这是当前 iOS 方向的 Web 交互预览。你可以完整体验截图导入、AI 分析、抽卡、拖拽揭晓和记忆自评。</p>
+      <ol class="steps">
+        <li><span class="step-number">1</span><span>点击手机底部的 <strong>+</strong>，选择自己的截图，或载入内置 B站演示截图。</span></li>
+        <li><span class="step-number">2</span><span>体验一张截图只提炼一个记忆点，降低碎片学习的启动压力。</span></li>
+        <li><span class="step-number">3</span><span>向右拖动卡片上的控制条，主动回忆后再看答案，最后进行自评。</span></li>
+      </ol>
+      <div class="preview-note">Web 页只演示产品交互，不会上传图片或调用模型；正式 iOS 流程由 Qwen 视觉模型分析内容。</div>
+      <button class="reset-button" id="desktop-reset" type="button">重置体验</button>
+    </section>
+
+    <section class="device" aria-label="Recallo iPhone 交互预览">
+      <div class="app" id="app"></div>
+    </section>
+  </main>
+
+  <script>
+    const icons = {
+      bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>',
+      person: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.3"/><path d="M5.5 20c.6-4 2.8-6 6.5-6s5.9 2 6.5 6"/></svg>',
+      close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>',
+      photo: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3"/><circle cx="9" cy="9" r="1.6"/><path d="m5.5 17 4.3-4 3.1 2.8 2.3-2.1 3.3 3.3"/></svg>',
+      sample: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/><path d="m5.5 5.5 13 13M18.5 5.5l-13 13" opacity=".25"/></svg>',
+      sparkle: '<svg class="sparkle" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 4c1.7 10.8 7.2 16.3 18 18-10.8 1.7-16.3 7.2-18 18-1.7-10.8-7.2-16.3-18-18C16.8 20.3 22.3 14.8 24 4Z" stroke="currentColor" stroke-width="2"/><path d="M39 4c.5 3.3 2.2 5 5.5 5.5-3.3.5-5 2.2-5.5 5.5-.5-3.3-2.2-5-5.5-5.5C36.8 9 38.5 7.3 39 4Z" fill="currentColor"/></svg>',
+      scan: '<svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M9 18V9h9M30 9h9v9M39 30v9h-9M18 39H9v-9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M15 24h18M20 18h8M18 30h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+      hand: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.5 11V7.2a1.5 1.5 0 0 1 3 0V10 5.7a1.5 1.5 0 0 1 3 0V10 7.1a1.5 1.5 0 0 1 3 0v3.4-1.3a1.5 1.5 0 0 1 3 0v5c0 4.1-2.7 6.8-6.8 6.8h-.8c-2.2 0-3.7-1-5-2.5L3.8 15a1.6 1.6 0 0 1 2.3-2.2L8 14.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      seal: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 2.1 1.5 2.6-.2 1.1 2.4 2.3 1.2-.2 2.6 1.5 2.1-1.5 2.1.2 2.6-2.3 1.2-1.1 2.4-2.6-.2L12 22l-2.1-1.5-2.6.2-1.1-2.4-2.3-1.2.2-2.6L2.6 12l1.5-2.1-.2-2.6 2.3-1.2 1.1-2.4 2.6.2L12 2Zm-3.1 9.8 2 2 4.3-4.4" fill="currentColor" fill-rule="evenodd"/></svg>'
+    };
+
+    const cards = [
+      {
+        rarity: "R",
+        cue: "截图里提到，《恋与深空》上线首年贡献了叠纸游戏约多少收入？",
+        answer: "约 48.86%",
+        explanation: "先记住接近一半这个量级。数字来自本次演示截图的文字区域，正式产品会把答案绑定到原始证据。",
+        rarityReason: "R · 单一明确事实，适合快速复习。",
+        source: "B站 · 演示视频页",
+        platform: "bilibili"
+      },
+      {
+        rarity: "SR",
+        cue: "为什么“收藏了”通常不等于“记住了”？",
+        answer: "收藏完成的是存储，记忆还需要后续主动提取。",
+        explanation: "重新尝试说出答案，比再次被动浏览更能暴露遗忘；Recallo 把消费后的内容转成一次短促的主动回忆。",
+        rarityReason: "SR · 可迁移的方法论，能影响之后的学习行为。",
+        source: "抖音 · 学习方法演示",
+        platform: "douyin"
+      },
+      {
+        rarity: "SSR",
+        cue: "面对持续刷新的信息流，最稀缺的能力可能不是什么？",
+        answer: "不是获取更多内容，而是决定什么值得在未来再次想起。",
+        explanation: "产品不试图把所有内容都变成课程，而是让用户从一次性消费中留下少量、可被唤醒的个人记忆。",
+        rarityReason: "SSR · 能改变信息消费方式的核心判断。",
+        source: "公众号 · 产品思考演示",
+        platform: "wechat"
+      }
+    ];
+
+    const state = {
+      screen: "home",
+      selectedImageUrl: "",
+      selectedFileName: "",
+      currentCard: 0,
+      drawMode: "single",
+      continuousLimit: 1,
+      revealed: false,
+      revealProgress: 0,
+      lastAssessment: "",
+      cardCount: 5,
+      toastTimer: null,
+      analysisTimer: null
+    };
+
+    const app = document.getElementById("app");
+
+    function statusBar() {
+      return `
+        <div class="status-bar" aria-hidden="true">
+          <span>9:41</span>
+          <span class="status-icons"><span class="signal"></span><span>⌁</span><span class="battery"></span></span>
+        </div>
+      `;
+    }
+
+    function navItem(tab, label, asset, selectedAsset, extraClass = "") {
+      const selected = state.screen === tab || (tab === "home" && ["draw", "complete"].includes(state.screen));
+      const src = `/app-demo-assets/${selected ? selectedAsset : asset}`;
+      return `
+        <button class="nav-button ${selected ? "active" : ""} ${extraClass}" data-nav="${tab}" type="button" aria-label="${label}">
+          <img src="${src}" alt="">
+          ${label ? `<span>${label}</span>` : ""}
+        </button>
+      `;
+    }
+
+    function bottomNav() {
+      return `
+        <nav class="bottom-nav" aria-label="主要导航">
+          ${navItem("home", "学习", "v2-nav-learning-inactive.svg", "v2-nav-learning-selected.svg")}
+          ${navItem("materials", "资料", "v2-nav-materials-inactive.svg", "v2-nav-materials-selected.svg")}
+          <button class="nav-button upload" data-nav="upload" type="button" aria-label="上传">
+            <img src="/app-demo-assets/v2-upload-tab-button.svg" alt="">
+          </button>
+          ${navItem("discover", "发现", "v2-nav-discover-inactive.svg", "v2-nav-discover-selected.svg")}
+          ${navItem("notes", "笔记", "v2-nav-notes-inactive.svg", "v2-nav-notes-selected.svg")}
+        </nav>
+      `;
+    }
+
+    function topChrome(title = "") {
+      return `
+        <header class="top-chrome">
+          <button class="circle-button" data-toast="今天没有新通知" type="button" aria-label="通知">${icons.bell}</button>
+          ${title ? `<div class="top-title">${title}</div>` : "<span></span>"}
+          <button class="circle-button" data-toast="个人页暂不在本次 MVP 中" type="button" aria-label="个人主页">${icons.person}</button>
+        </header>
+      `;
+    }
+
+    function homeScreen() {
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="home">
+          ${topChrome()}
+          <div class="screen-scroll">
+            <div class="home-content">
+              <h2>今天，唤醒一点记忆</h2>
+              <p class="home-subtitle">从你刷过的内容里，抽一张回来</p>
+              <div class="card-stack" aria-label="待唤醒记忆卡">
+                <div class="stack-card"></div>
+                <div class="stack-card"></div>
+                <div class="stack-card front">
+                  <div class="stack-card-content">
+                    ${icons.sparkle}
+                    <span class="stack-title">记忆卡</span>
+                    <span class="stack-subtitle">轻轻抽取一张</span>
+                  </div>
+                </div>
+              </div>
+              <div class="button-row">
+                <button class="primary-button" id="draw-one" type="button">抽 1 张</button>
+                <button class="secondary-button" id="draw-many" type="button">连续抽取</button>
+              </div>
+              <p class="helper-copy">已收集 ${state.cardCount} 张截图记忆 · 连续抽取也可随时退出</p>
+            </div>
+          </div>
+          <img class="bg-deco left" src="/app-demo-assets/bg-deco-left-hill-plant.svg" alt="">
+          <img class="bg-deco right" src="/app-demo-assets/bg-deco-right-hill-plant.svg" alt="">
+          ${bottomNav()}
+        </section>
+      `;
+    }
+
+    function uploadScreen() {
+      const selected = state.selectedImageUrl
+        ? `<div class="selected-preview">
+            <img src="${state.selectedImageUrl}" alt="已选择的截图预览">
+            <div><strong>${escapeHtml(state.selectedFileName || "我的截图")}</strong><span>已在浏览器本地读取 · 尚未上传</span></div>
+          </div>`
+        : "";
+
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="upload">
+          ${topChrome("上传")}
+          <div class="screen-scroll">
+            <div class="upload-content">
+              <div class="upload-lead">
+                <h2>把刚刚刷到的内容，留给未来的你</h2>
+                <p>一张截图，只提炼一个值得再想起的点</p>
+                <div class="mascot" aria-hidden="true">
+                  <img class="back" src="/app-demo-assets/upload-mascot-back.svg" alt="">
+                  <img class="front" src="/app-demo-assets/upload-mascot-front.svg" alt="">
+                </div>
+              </div>
+              <div class="upload-card">
+                <h3>从截图生成记忆卡</h3>
+                <p>支持 B站、抖音、公众号、小红书等内容截图</p>
+                ${selected}
+                <input class="visually-hidden" id="image-input" type="file" accept="image/*">
+                <button class="upload-action" id="choose-image" type="button">${icons.photo}<span>选择我的截图</span></button>
+                <button class="upload-action primary" id="use-sample" type="button">${icons.sample}<span>${selected ? "分析这张截图" : "载入 B站演示截图"}</span></button>
+                <div class="divider">或粘贴链接 / 正文</div>
+                <input class="link-input" id="source-link" type="url" inputmode="url" placeholder="粘贴 B站或抖音链接">
+                <p class="privacy-copy">Web 预览不会上传文件。正式 iOS 版本会在用户确认后调用视觉模型，并保留原始证据。</p>
+              </div>
+            </div>
+          </div>
+          <img class="bg-deco left" src="/app-demo-assets/bg-deco-left-hill-plant.svg" alt="">
+          <img class="bg-deco right" src="/app-demo-assets/bg-deco-right-hill-plant.svg" alt="">
+          ${bottomNav()}
+        </section>
+      `;
+    }
+
+    function analyzingScreen() {
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="analyzing">
+          <div class="analyzing">
+            <div class="scan-card">
+              <div class="scan-core">${icons.scan}<strong>正在读图</strong></div>
+            </div>
+            <h2>正在寻找最值得记住的一点</h2>
+            <p id="analysis-status" aria-live="polite">识别画面与文字证据…</p>
+          </div>
+        </section>
+      `;
+    }
+
+    function sourcePreview(card) {
+      if (state.selectedImageUrl) {
+        return `<div class="source-preview"><img src="${state.selectedImageUrl}" alt="原始截图"></div>`;
+      }
+      const accent = card.platform === "douyin" ? "#181818" : card.platform === "wechat" ? "#07C160" : "#fb7299";
+      return `
+        <div class="source-preview mock-shot">
+          <div class="mock-appbar" style="background:${accent}">
+            <span>${card.platform === "douyin" ? "抖音" : card.platform === "wechat" ? "公众号" : "bilibili"}</span>
+            <span>演示截图</span>
+          </div>
+          <div class="mock-video">${card.cue}</div>
+          <div class="mock-caption">这是一张内置的脱敏演示截图，用于展示证据回看位置。正式产品将显示用户保存的原图。</div>
+        </div>
+      `;
+    }
+
+    function drawScreen() {
+      const card = cards[state.currentCard];
+      const progressText = state.drawMode === "continuous"
+        ? `${state.currentCard + 1} / ${state.continuousLimit}`
+        : "唤醒一张记忆";
+      const answer = state.revealed
+        ? `<div class="answer" id="answer">
+            <strong>${card.answer}</strong>
+            <p>${card.explanation}</p>
+            <p class="rarity-reason">${card.rarityReason}</p>
+            ${sourcePreview(card)}
+            <button class="source-link" data-toast="演示页不跳转外部平台" type="button">↗ ${card.source}</button>
+          </div>`
+        : `<div class="reveal-area">
+            <div class="reveal-track" id="reveal-track" role="slider" tabindex="0" aria-label="向右拖动揭晓答案" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="reveal-fill" id="reveal-fill"></div>
+              <div class="reveal-copy">${icons.hand}<span id="reveal-label">向右拖动，唤醒语义</span></div>
+            </div>
+            <p class="reveal-hint">答案被遮住了，先在脑中说一遍</p>
+          </div>`;
+      const assessment = state.revealed
+        ? `<div class="assessment">
+            <p>刚才想起来了吗？</p>
+            <div class="assessment-buttons">
+              <button class="assessment-button remembered" data-assessment="想起来了" type="button">想起来了</button>
+              <button class="assessment-button fuzzy" data-assessment="有点印象" type="button">有点印象</button>
+              <button class="assessment-button forgot" data-assessment="没想起来" type="button">没想起来</button>
+            </div>
+          </div>`
+        : `<button class="direct-reveal" id="direct-reveal" type="button">直接揭晓</button>`;
+
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="draw">
+          <header class="flow-top">
+            <button class="circle-button" id="close-draw" type="button" aria-label="退出抽卡">${icons.close}</button>
+            <div class="top-title">${progressText}</div>
+            <span></span>
+          </header>
+          <div class="screen-scroll">
+            <div class="draw-content">
+              <article class="memory-card">
+                <div class="card-meta">
+                  <span class="rarity ${card.rarity.toLowerCase()}">${card.rarity}</span>
+                  <span class="source-status">${icons.seal}演示来源已关联</span>
+                </div>
+                <p class="prompt-label">先别看答案</p>
+                <h2 class="recall-cue">${card.cue}</h2>
+                ${answer}
+              </article>
+              ${assessment}
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function completeScreen() {
+      const transition = state.lastAssessment === "想起来了" ? "待唤醒 → 已稳固" : "待唤醒 → 需加固";
+      const detail = state.lastAssessment === "想起来了"
+        ? "这张记忆卡会稍后再出现，帮助你确认它真的留了下来。"
+        : "没关系，系统会缩短它的再次出现间隔。";
+      return `
+        ${statusBar()}
+        <section class="screen" data-screen="complete">
+          <div class="screen-scroll">
+            <div class="complete-content">
+              <img src="/app-demo-assets/mascot-completion.svg" alt="">
+              <h2>这张记忆，收下了</h2>
+              <p>${detail}</p>
+              <div class="memory-change">${transition}</div>
+              <div class="complete-actions">
+                <button class="primary-button" id="draw-again" type="button">再抽一张</button>
+                <button class="secondary-button" id="back-home" type="button">回到首页</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function render() {
+      clearTimeout(state.toastTimer);
+      const screens = {
+        home: homeScreen,
+        upload: uploadScreen,
+        analyzing: analyzingScreen,
+        draw: drawScreen,
+        complete: completeScreen
+      };
+      app.innerHTML = screens[state.screen]();
+      bindCommonEvents();
+      if (state.screen === "home") bindHomeEvents();
+      if (state.screen === "upload") bindUploadEvents();
+      if (state.screen === "draw") bindDrawEvents();
+      if (state.screen === "complete") bindCompleteEvents();
+    }
+
+    function bindCommonEvents() {
+      app.querySelectorAll("[data-nav]").forEach((button) => {
+        button.addEventListener("click", () => navigate(button.dataset.nav));
+      });
+      app.querySelectorAll("[data-toast]").forEach((button) => {
+        button.addEventListener("click", () => showToast(button.dataset.toast));
+      });
+    }
+
+    function bindHomeEvents() {
+      document.getElementById("draw-one").addEventListener("click", () => startDraw("single"));
+      document.getElementById("draw-many").addEventListener("click", () => startDraw("continuous"));
+    }
+
+    function bindUploadEvents() {
+      const input = document.getElementById("image-input");
+      document.getElementById("choose-image").addEventListener("click", () => input.click());
+      input.addEventListener("change", () => {
+        const [file] = input.files;
+        if (!file) return;
+        if (state.selectedImageUrl) URL.revokeObjectURL(state.selectedImageUrl);
+        state.selectedImageUrl = URL.createObjectURL(file);
+        state.selectedFileName = file.name;
+        render();
+        showToast("截图已在本地载入");
+      });
+      document.getElementById("use-sample").addEventListener("click", startAnalysis);
+      document.getElementById("source-link").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") startAnalysis();
+      });
+    }
+
+    function bindDrawEvents() {
+      document.getElementById("close-draw").addEventListener("click", () => {
+        state.screen = "home";
+        state.revealed = false;
+        state.revealProgress = 0;
+        render();
+      });
+
+      if (state.revealed) {
+        app.querySelectorAll("[data-assessment]").forEach((button) => {
+          button.addEventListener("click", () => assess(button.dataset.assessment));
+        });
+        return;
+      }
+
+      document.getElementById("direct-reveal").addEventListener("click", reveal);
+      const track = document.getElementById("reveal-track");
+      let dragging = false;
+      let startX = 0;
+
+      track.addEventListener("pointerdown", (event) => {
+        dragging = true;
+        startX = event.clientX;
+        track.setPointerCapture(event.pointerId);
+      });
+      track.addEventListener("pointermove", (event) => {
+        if (!dragging) return;
+        updateRevealProgress((event.clientX - startX) / Math.max(1, track.clientWidth - 58));
+      });
+      const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        if (state.revealProgress >= 0.65) {
+          reveal();
+        } else {
+          updateRevealProgress(0);
+        }
+      };
+      track.addEventListener("pointerup", endDrag);
+      track.addEventListener("pointercancel", endDrag);
+      track.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          updateRevealProgress(state.revealProgress + 0.2);
+          if (state.revealProgress >= 0.65) reveal();
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          reveal();
+        }
+      });
+    }
+
+    function bindCompleteEvents() {
+      document.getElementById("draw-again").addEventListener("click", () => {
+        state.currentCard = (state.currentCard + 1) % cards.length;
+        startDraw("single", false);
+      });
+      document.getElementById("back-home").addEventListener("click", () => navigate("home"));
+    }
+
+    function navigate(target) {
+      if (target === "home" || target === "upload") {
+        state.screen = target;
+        state.revealed = false;
+        state.revealProgress = 0;
+        render();
+        return;
+      }
+      showToast(`${target === "materials" ? "资料" : target === "discover" ? "发现" : "笔记"}页暂不在本次 MVP 中`);
+    }
+
+    function startAnalysis() {
+      const link = document.getElementById("source-link");
+      if (!state.selectedImageUrl && link && link.value.trim()) {
+        state.selectedFileName = "来自链接的内容";
+      }
+      state.screen = "analyzing";
+      render();
+      const status = document.getElementById("analysis-status");
+      const updates = [
+        [500, "定位标题、字幕与关键证据…"],
+        [1050, "正在生成一张记忆卡…"]
+      ];
+      updates.forEach(([delay, text]) => {
+        setTimeout(() => {
+          if (state.screen === "analyzing" && status) status.textContent = text;
+        }, delay);
+      });
+      clearTimeout(state.analysisTimer);
+      state.analysisTimer = setTimeout(() => {
+        state.cardCount += 1;
+        state.currentCard = 0;
+        startDraw("single");
+      }, 1650);
+    }
+
+    function startDraw(mode, resetIndex = true) {
+      state.drawMode = mode;
+      state.continuousLimit = mode === "continuous" ? cards.length : 1;
+      if (resetIndex) state.currentCard = mode === "continuous" ? 0 : state.currentCard % cards.length;
+      state.revealed = false;
+      state.revealProgress = 0;
+      state.screen = "draw";
+      render();
+    }
+
+    function updateRevealProgress(progress) {
+      state.revealProgress = Math.min(1, Math.max(0, progress));
+      const fill = document.getElementById("reveal-fill");
+      const track = document.getElementById("reveal-track");
+      const label = document.getElementById("reveal-label");
+      if (!fill || !track || !label) return;
+      fill.style.width = `${Math.max(18, state.revealProgress * 100)}%`;
+      track.setAttribute("aria-valuenow", String(Math.round(state.revealProgress * 100)));
+      label.textContent = state.revealProgress >= 0.65 ? "松开揭晓" : "向右拖动，唤醒语义";
+    }
+
+    function reveal() {
+      state.revealed = true;
+      state.revealProgress = 1;
+      render();
+      requestAnimationFrame(() => document.getElementById("answer")?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    }
+
+    function assess(value) {
+      state.lastAssessment = value;
+      if (state.drawMode === "continuous" && state.currentCard + 1 < state.continuousLimit) {
+        state.currentCard += 1;
+        state.revealed = false;
+        state.revealProgress = 0;
+        render();
+        showToast(`${value} · 下一张`);
+        return;
+      }
+      state.screen = "complete";
+      render();
+    }
+
+    function showToast(message) {
+      clearTimeout(state.toastTimer);
+      app.querySelector(".toast")?.remove();
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.setAttribute("role", "status");
+      toast.textContent = message;
+      app.appendChild(toast);
+      state.toastTimer = setTimeout(() => toast.remove(), 1800);
+    }
+
+    function resetExperience() {
+      clearTimeout(state.analysisTimer);
+      if (state.selectedImageUrl) URL.revokeObjectURL(state.selectedImageUrl);
+      Object.assign(state, {
+        screen: "home",
+        selectedImageUrl: "",
+        selectedFileName: "",
+        currentCard: 0,
+        drawMode: "single",
+        continuousLimit: 1,
+        revealed: false,
+        revealProgress: 0,
+        lastAssessment: "",
+        cardCount: 5
+      });
+      render();
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    document.getElementById("desktop-reset").addEventListener("click", resetExperience);
+    render();
+  </script>
+</body>
+</html>

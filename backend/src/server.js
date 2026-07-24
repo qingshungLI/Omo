@@ -173,6 +173,26 @@ async function sendPublicHtml(req, res, fileName) {
   sendText(res, 200, data, "text/html; charset=utf-8");
 }
 
+async function sendAppDemoAsset(req, res, fileName) {
+  const assetRoot = resolve(docsRoot, "app-demo-assets");
+  const filePath = resolve(assetRoot, fileName);
+  if (filePath !== assetRoot && !filePath.startsWith(`${assetRoot}/`)) {
+    sendText(res, 403, "Forbidden");
+    return;
+  }
+
+  const contentType = filePath.endsWith(".svg")
+    ? "image/svg+xml; charset=utf-8"
+    : "application/octet-stream";
+  const data = await readFile(filePath);
+  res.writeHead(200, {
+    "content-type": contentType,
+    "cache-control": "public, max-age=3600",
+    ...responseCorsHeaders(res)
+  });
+  res.end(req.method === "HEAD" ? undefined : data);
+}
+
 async function readBody(req) {
   return readJsonBodyWithLimit(req);
 }
@@ -2212,6 +2232,16 @@ const server = createServer(async (req, res) => {
 
   if (["GET", "HEAD"].includes(req.method) && pathname === "/demo") {
     await sendPublicHtml(req, res, "flow-demo.html");
+    return;
+  }
+
+  if (["GET", "HEAD"].includes(req.method) && ["/app-demo", "/ios-preview"].includes(pathname)) {
+    await sendPublicHtml(req, res, "ios-app-demo.html");
+    return;
+  }
+
+  if (["GET", "HEAD"].includes(req.method) && pathname.startsWith("/app-demo-assets/")) {
+    await sendAppDemoAsset(req, res, pathname.slice("/app-demo-assets/".length));
     return;
   }
 
