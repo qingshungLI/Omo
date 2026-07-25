@@ -2,8 +2,6 @@ import SwiftUI
 import UIKit
 
 struct V2AwakeningHomeView: View {
-    let response: V2AwakeningSessionResponse?
-    let hasReviewableContent: Bool
     let isLoading: Bool
     @Binding var selectedTab: V2HomeTab
     let showsUnreadNotificationBadge: Bool
@@ -11,9 +9,7 @@ struct V2AwakeningHomeView: View {
     let onOpenProfile: () -> Void
     let screenshotCardCount: Int
     let screenshotPoolCounts: [V2MemoryPool: Int]
-    let onDrawScreenshot: (V2MemoryPool) -> Void
     let onContinuousScreenshotDraw: (V2MemoryPool) -> Void
-    let onDraw: () -> Void
     let onAddContent: () -> Void
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
@@ -62,7 +58,7 @@ struct V2AwakeningHomeView: View {
 
     @ViewBuilder
     private var homeContent: some View {
-        if !hasReviewableContent && response?.hasActiveCard != true {
+        if screenshotCardCount == 0 {
             VStack(spacing: 18) {
                 Spacer()
                 V2RecallMascotView(state: .thinking, reduceMotion: reduceMotion)
@@ -453,6 +449,7 @@ enum V2RecallPresentationPhase: String, Codable, CaseIterable {
     case scratching
     case revealed
     case assessing
+    case repairing
     case checkpoint
     case stowing
     case paused

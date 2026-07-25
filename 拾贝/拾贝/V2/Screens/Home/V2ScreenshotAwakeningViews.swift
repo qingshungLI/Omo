@@ -47,7 +47,8 @@ private struct V2ScratchRevealCanvas: View {
                     )
                     context.fill(layer, with: .color(V2Color.uploadButtonFill))
                     context.blendMode = .destinationOut
-                    for points in paths where points.count > 1 {
+                    for normalizedPoints in paths where normalizedPoints.count > 1 {
+                        let points = normalizedPoints.map { renderedPoint($0, in: size) }
                         var stroke = Path()
                         stroke.move(to: points[0])
                         for point in points.dropFirst() {
@@ -86,7 +87,9 @@ private struct V2ScratchRevealCanvas: View {
                             paths.append([])
                             onScratchStart()
                         }
-                        paths[paths.count - 1].append(value.location)
+                        paths[paths.count - 1].append(
+                            normalizedPoint(value.location, in: geometry.size)
+                        )
                         markCoveredCells(at: value.location, size: geometry.size)
                     }
                     .onEnded { _ in
@@ -115,6 +118,21 @@ private struct V2ScratchRevealCanvas: View {
             }
         }
         .frame(minHeight: 86)
+    }
+
+    private func normalizedPoint(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        guard size.width > 0, size.height > 0 else { return .zero }
+        return CGPoint(
+            x: min(1, max(0, point.x / size.width)),
+            y: min(1, max(0, point.y / size.height))
+        )
+    }
+
+    private func renderedPoint(_ point: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(
+            x: point.x * size.width,
+            y: point.y * size.height
+        )
     }
 
     private func markCoveredCells(at point: CGPoint, size: CGSize) {
@@ -235,6 +253,8 @@ struct V2ScreenshotAwakeningFlowView: View {
                     ScrollView(showsIndicators: false) {
                         if phase == .checkpoint {
                             archiveLanding
+                        } else if phase == .repairing {
+                            repairingLanding
                         } else if phase == .assessing {
                             feedbackLanding
                         } else if currentCard.card.state == .formal {
@@ -246,7 +266,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 }
             }
         }
-        .interactiveDismissDisabled(phase == .assessing)
+        .interactiveDismissDisabled(phase == .assessing || phase == .repairing)
         .task(id: summonTaskID) {
             guard phase == .summoning else { return }
             currentSchedule = currentCard.schedule
@@ -263,10 +283,10 @@ struct V2ScreenshotAwakeningFlowView: View {
                 return
             }
 
-            // 首次过场：稀有度在 1250ms 才显示，1450ms 进入主动回忆；
-            // 继续下一张为约 700ms 短过场，且不重复扫光。
+            // 首次过场在 950ms 进入提示段，1250ms 进入主动回忆；
+            // 继续下一张保持 700ms 短过场，且不重复扫光。
             let timings: [UInt64] = currentIndex == 0
-                ? [250_000_000, 300_000_000, 400_000_000, 300_000_000, 200_000_000]
+                ? [250_000_000, 300_000_000, 400_000_000, 0, 300_000_000]
                 : [120_000_000, 180_000_000, 180_000_000, 120_000_000, 100_000_000]
             guard await advanceSummon(after: timings[0], to: .rise) else { return }
             guard await advanceSummon(after: timings[1], to: .orbit) else { return }
@@ -303,7 +323,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             case .inactive:
                 persistPresentationState()
             case .background:
-                guard phase != .assessing, phase != .stowing else {
+                guard phase != .assessing, phase != .repairing, phase != .stowing else {
                     persistPresentationState()
                     return
                 }
@@ -329,16 +349,20 @@ struct V2ScreenshotAwakeningFlowView: View {
                     .background(Circle().fill(V2Color.surfaceCream))
             }
             .accessibilityLabel("退出召回")
-            .disabled(phase == .assessing)
+            .disabled(phase == .assessing || phase == .repairing)
             .accessibilityHint(
-                phase == .assessing
+                phase == .assessing || phase == .repairing
                     ? "正在保存当前结果，完成后可以退出"
                     : "保留当前进度并返回首页"
             )
 
             Spacer()
 
-            Text(phase == .checkpoint ? "记忆收藏册" : "唤醒一张记忆")
+            Text(
+                phase == .repairing
+                    ? "修复记忆"
+                    : (phase == .checkpoint ? "记忆收藏册" : "唤醒一张记忆")
+            )
                 .font(V2Typography.sectionTitle)
                 .foregroundStyle(V2Color.topTitle)
 
@@ -355,12 +379,12 @@ struct V2ScreenshotAwakeningFlowView: View {
     private var summonTransition: some View {
         VStack(spacing: 28) {
             VStack(spacing: 8) {
-                Text(session.pool.title)
-                    .font(V2Typography.captionEmphasis)
-                    .foregroundStyle(V2Color.textMuted)
                 Text("正在从你的过去召回")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(V2Color.textPrimary)
+                Text("一张旧内容正在回来")
+                    .font(V2Typography.captionEmphasis)
+                    .foregroundStyle(V2Color.textMuted)
             }
 
             ZStack {
@@ -960,6 +984,49 @@ struct V2ScreenshotAwakeningFlowView: View {
         }
     }
 
+    private var repairingLanding: some View {
+        VStack(spacing: 18) {
+            ZStack {
+                if !reduceMotion {
+                    Image("RecalloParticleGlow")
+                        .resizable()
+                        .renderingMode(.template)
+                        .foregroundStyle(V2Color.primary.opacity(0.12))
+                        .frame(width: 190, height: 190)
+                        .accessibilityHidden(true)
+                }
+
+                V2RecallMascotView(state: .acknowledging, reduceMotion: reduceMotion)
+                    .frame(width: 164, height: 164)
+            }
+            .frame(height: 184)
+            .accessibilityHidden(true)
+
+            Text("这段记忆已经修复")
+                .font(.system(size: 25, weight: .bold))
+                .foregroundStyle(V2Color.textPrimary)
+
+            Text("正在把本次主动回忆与下次复习时间一起收进收藏册。")
+                .font(V2Typography.bodySmall)
+                .foregroundStyle(V2Color.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .v2PageColumn()
+        .padding(.top, 34)
+        .padding(.bottom, 36)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("记忆修复完成，正在收入收藏册")
+        .task(id: currentReviewCycleKey) {
+            try? await Task.sleep(
+                nanoseconds: reduceMotion ? 180_000_000 : 620_000_000
+            )
+            guard !Task.isCancelled, phase == .repairing else { return }
+            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.24)) {
+                phase = .checkpoint
+            }
+        }
+    }
+
     private var archiveLanding: some View {
         VStack(spacing: 18) {
             ZStack(alignment: .bottomTrailing) {
@@ -1167,7 +1234,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         case .summoning, .assessing: return .mistProcessing
         case .recall, .scratching: return .coralRecall
         case .revealed: return .creamReady
-        case .checkpoint, .stowing: return .sageLibrary
+        case .repairing, .checkpoint, .stowing: return .sageLibrary
         case .paused: return colorScheme == .dark ? .navyNight : .lavenderPaused
         }
     }
@@ -1201,6 +1268,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             case .forgot: return .thinking
             case nil: return .watching
             }
+        case .repairing: return .acknowledging
         case .checkpoint: return .turning
         case .stowing: return .farewell
         case .paused: return .sleeping
@@ -1326,7 +1394,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                     var updatedReviewCycles = assessedReviewCycles
                     updatedReviewCycles.insert(completedReviewCycleKey)
                     persistedAssessedReviewCycles = updatedReviewCycles.sorted().suffix(64).joined(separator: ",")
-                    phase = .checkpoint
+                    phase = .repairing
                 }
             } catch is CancellationError {
                 return
@@ -1395,6 +1463,8 @@ struct V2ScreenshotAwakeningFlowView: View {
             return .recall
         case .assessing:
             return isRevealed ? .revealed : .recall
+        case .repairing:
+            return .checkpoint
         case .stowing:
             return .checkpoint
         case .paused:
@@ -1452,16 +1522,31 @@ struct V2ScreenshotAwakeningFlowView: View {
         masteryAfter = V2MemoryMasteryStage(rawValue: persistedMasteryAfter) ?? masteryBefore
         revealProgress = CGFloat(persistedRevealCoverage)
         isRevealed = persistedIsRevealed
-        coveredScratchCells = Set(
+        let restoredCoveredScratchCells = Set(
             persistedCoveredCells.split(separator: ",").map(String.init)
         )
-        scratchPaths = persistedScratchPaths.split(separator: "|").map { rawPath in
+        let restoredScratchPaths = persistedScratchPaths.split(separator: "|").map { rawPath in
             rawPath.split(separator: ";").compactMap { rawPoint in
                 let values = rawPoint.split(separator: ":")
                 guard values.count == 2,
                       let x = Double(values[0]),
                       let y = Double(values[1]) else { return nil }
                 return CGPoint(x: x, y: y)
+            }
+        }
+        let scratchPointsAreNormalized = restoredScratchPaths
+            .flatMap { $0 }
+            .allSatisfy { point in
+                (0...1).contains(point.x) && (0...1).contains(point.y)
+            }
+        if scratchPointsAreNormalized {
+            coveredScratchCells = restoredCoveredScratchCells
+            scratchPaths = restoredScratchPaths
+        } else {
+            scratchPaths = []
+            coveredScratchCells = []
+            if !isRevealed {
+                revealProgress = 0
             }
         }
 

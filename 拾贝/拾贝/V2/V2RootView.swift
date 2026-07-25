@@ -220,8 +220,6 @@ struct V2RootView: View {
         switch selectedTab {
         case .learning:
             V2AwakeningHomeView(
-                response: awakeningResponse,
-                hasReviewableContent: !reviewableScreenshotCards.isEmpty || usesFixtures || backendChapters.contains(where: isHomeLearningCandidate),
                 isLoading: isAwakeningLoading,
                 selectedTab: $selectedTab,
                 showsUnreadNotificationBadge: hasUnreadNotifications,
@@ -229,16 +227,8 @@ struct V2RootView: View {
                 onOpenProfile: { selectedTab = .notes },
                 screenshotCardCount: reviewableScreenshotCards.count,
                 screenshotPoolCounts: screenshotPoolCounts,
-                onDrawScreenshot: { pool in
-                    openScreenshotDraw(mode: .single, pool: pool)
-                },
                 onContinuousScreenshotDraw: { pool in
                     openScreenshotDraw(mode: .continuous, pool: pool)
-                },
-                onDraw: {
-                    Task {
-                        await openAwakeningCard()
-                    }
                 },
                 onAddContent: { selectedTab = .upload }
             )
