@@ -317,10 +317,7 @@ struct V2AnswerFeedbackPanel: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Image("V2MascotFeedbackBack")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2AdaptiveRecallMascotView(state: isCorrect ? .acknowledging : .thinking)
                 .frame(width: 93, height: 136)
                 .offset(x: 302, y: 0)
                 .zIndex(1)
@@ -339,14 +336,6 @@ struct V2AnswerFeedbackPanel: View {
             .buttonStyle(.plain)
             .position(x: 363, y: V2AnswerFeedbackPanelMetrics.closeY)
             .zIndex(6)
-
-            Image("V2MascotFeedbackFront")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
-                .frame(width: 38, height: 58)
-                .offset(x: 313, y: 46)
-                .zIndex(5)
         }
         .frame(width: V2AnswerFeedbackPanelMetrics.width)
         .fixedSize(horizontal: false, vertical: true)

@@ -291,10 +291,7 @@ struct V2GenerationStartedDialog: View {
                 .frame(width: V2GenerationStartedDialogMetrics.waveWidth, height: V2GenerationStartedDialogMetrics.waveHeight)
                 .offset(x: V2GenerationStartedDialogMetrics.waveX, y: V2GenerationStartedDialogMetrics.waveY)
 
-            Image("V2GeneratingPopupMascot")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2AdaptiveRecallMascotView(state: .rummaging)
                 .frame(
                     width: V2GenerationStartedDialogMetrics.mascotWidth,
                     height: V2GenerationStartedDialogMetrics.mascotHeight

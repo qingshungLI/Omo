@@ -65,10 +65,7 @@ struct V2UnitOverviewBoardCard: View {
             .offset(x: V2UnitOverviewBoardMetrics.textX, y: V2UnitOverviewBoardMetrics.textY)
             .zIndex(2)
 
-            Image("V2UnitOverviewMascot")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2AdaptiveRecallMascotView(state: .watching)
                 .frame(width: V2UnitOverviewBoardMetrics.mascotWidth, height: V2UnitOverviewBoardMetrics.mascotHeight)
                 .offset(x: V2UnitOverviewBoardMetrics.mascotX, y: V2UnitOverviewBoardMetrics.mascotY)
                 .zIndex(3)

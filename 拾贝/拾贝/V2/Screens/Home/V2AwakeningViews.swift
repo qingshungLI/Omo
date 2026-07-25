@@ -597,6 +597,16 @@ struct V2RecallMascotView: View {
     }
 }
 
+
+struct V2AdaptiveRecallMascotView: View {
+    let state: V2RecallMascotState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        V2RecallMascotView(state: state, reduceMotion: reduceMotion)
+    }
+}
+
 private struct V2MemoryCardStack: View {
     let pool: V2MemoryPool
     let isActive: Bool

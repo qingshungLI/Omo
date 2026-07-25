@@ -94,10 +94,7 @@ struct V2NotificationSummaryBanner: View {
                 .v2Shadow()
                 .zIndex(0)
 
-            Image("V2NotificationMascot")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2AdaptiveRecallMascotView(state: .reacting)
                 .frame(width: V2NotificationSummaryBannerMetrics.mascotWidth, height: V2NotificationSummaryBannerMetrics.mascotHeight)
                 .offset(x: V2NotificationSummaryBannerMetrics.mascotX, y: V2NotificationSummaryBannerMetrics.mascotY)
                 .zIndex(2)

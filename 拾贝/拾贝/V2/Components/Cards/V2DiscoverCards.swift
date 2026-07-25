@@ -71,10 +71,7 @@ struct V2DiscoverHeroCard: View {
                 .offset(x: V2DiscoverHeroCardMetrics.waveX, y: V2DiscoverHeroCardMetrics.cardY)
                 .allowsHitTesting(false)
 
-            Image("V2DiscoverHeroMascot")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2AdaptiveRecallMascotView(state: .reacting)
                 .frame(width: V2DiscoverHeroCardMetrics.mascotWidth, height: V2DiscoverHeroCardMetrics.mascotHeight)
                 .offset(x: V2DiscoverHeroCardMetrics.mascotX, y: V2DiscoverHeroCardMetrics.mascotY)
                 .allowsHitTesting(false)
