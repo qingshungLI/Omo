@@ -9,10 +9,7 @@ struct V2ChapterOverviewView: View {
     var body: some View {
         V2FlowScreen(title: "章节概要", onBack: onBack) {
             ZStack(alignment: .top) {
-                Image("V2SummaryMascotBodyLayer")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
+                V2AdaptiveRecallMascotView(state: .carrying)
                     .frame(
                         width: V2ChapterOverviewPageMetrics.mascotBodyWidth,
                         height: V2ChapterOverviewPageMetrics.mascotBodyHeight
@@ -24,17 +21,6 @@ struct V2ChapterOverviewView: View {
                 V2ChapterOverviewSummaryCard(text: chapter.overview)
                 .offset(y: V2ChapterOverviewPageMetrics.cardY)
                 .zIndex(1)
-
-                Image("V2SummaryMascotHandsLayer")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(
-                        width: V2ChapterOverviewPageMetrics.mascotHandsWidth,
-                        height: V2ChapterOverviewPageMetrics.mascotHandsHeight
-                    )
-                    .offset(y: V2ChapterOverviewPageMetrics.mascotHandsY)
-                    .zIndex(2)
 
                 V2PrimaryActionButton(title: "继续", action: onContinue)
                     .frame(width: V2Layout.primaryActionWidth)
@@ -269,10 +255,7 @@ struct V2MultipleChoiceQuestionView: View {
     }
 
     private var multipleChoiceMascotImage: some View {
-        Image("V2MatchingMascot")
-            .resizable()
-            .renderingMode(.original)
-            .scaledToFit()
+        V2AdaptiveRecallMascotView(state: .watching)
             .frame(
                 width: V2MultipleChoicePageMetrics.mascotWidth,
                 height: V2MultipleChoicePageMetrics.mascotHeight
@@ -420,10 +403,7 @@ struct V2MatchingQuestionView: View {
     }
 
     private var matchingMascotImage: some View {
-        Image("V2MatchingPuzzleMascot")
-            .resizable()
-            .renderingMode(.original)
-            .scaledToFit()
+        V2AdaptiveRecallMascotView(state: .thinking)
             .frame(
                 width: V2MatchingPageMetrics.mascotWidth,
                 height: V2MatchingPageMetrics.mascotHeight
@@ -664,10 +644,7 @@ private struct V2UnitCompletionHero: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Image("V2MascotCompletion")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2AdaptiveRecallMascotView(state: .acknowledging)
                 .frame(width: V2UnitCompletionHeroMetrics.mascotWidth, height: V2UnitCompletionHeroMetrics.mascotHeight)
                 .offset(x: V2UnitCompletionHeroMetrics.mascotX, y: V2UnitCompletionHeroMetrics.mascotY)
                 .zIndex(0)
@@ -851,10 +828,7 @@ private struct V2ChapterSummaryDecorationLayer: View {
 
 private struct V2ChapterCompletionBottomLayer: View {
     var body: some View {
-        Image("V2ChapterCompletionMascot")
-            .resizable()
-            .renderingMode(.original)
-            .scaledToFit()
+        V2AdaptiveRecallMascotView(state: .acknowledging)
             .frame(
                 width: V2ChapterSummaryPageMetrics.mascotWidth,
                 height: V2ChapterSummaryPageMetrics.mascotHeight
@@ -1434,10 +1408,7 @@ private struct V2ChapterDetailHeroCard: View {
                 y: V2ChapterDetailLayoutMetrics.heroPrimaryActionY
             )
 
-            Image("V2ChapterDetailMascot")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2AdaptiveRecallMascotView(state: .watching)
                 .frame(
                     width: V2ChapterDetailLayoutMetrics.heroMascotWidth,
                     height: V2ChapterDetailLayoutMetrics.heroMascotHeight
