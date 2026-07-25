@@ -2,7 +2,7 @@
   "schemaVersion": "real_capture_ui_snapshot_1",
   "generatedAt": "2026-07-25T15:25:00.000Z",
   "provenance": {
-    "backend": "bridge-amax:http://127.0.0.1:18770",
+    "backend": "configured test backend",
     "endpoint": "GET /api/memory-cards",
     "analysisProvider": "qwen_vision",
     "note": "canonicalCaptures are unmodified final GET responses. uiPresentationFixtures are DEBUG-only deterministic view models and do not claim server disposition or rarity."
