@@ -289,13 +289,15 @@ final class APIClientDecodingTests: XCTestCase {
                 cleanedText: nil,
                 rawInput: nil,
                 extractedText: nil,
-                blocks: nil
+                blocks: nil,
+                contentBasis: nil
             ),
             summaryCard: nil,
             units: nil,
             chapterSummary: nil,
             generationProgress: nil,
-            v2ReviewSession: nil
+            v2ReviewSession: nil,
+            v2ReviewCompletedAt: nil
         )
 
         XCTAssertEqual(chapter.sourceLabel, "微信公众号")
@@ -320,13 +322,15 @@ final class APIClientDecodingTests: XCTestCase {
                 cleanedText: nil,
                 rawInput: nil,
                 extractedText: nil,
-                blocks: nil
+                blocks: nil,
+                contentBasis: nil
             ),
             summaryCard: nil,
             units: nil,
             chapterSummary: nil,
             generationProgress: nil,
-            v2ReviewSession: nil
+            v2ReviewSession: nil,
+            v2ReviewCompletedAt: nil
         )
 
         XCTAssertEqual(chapter.sourceLabel, "微信公众号")
