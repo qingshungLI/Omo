@@ -547,7 +547,9 @@ struct V2RecallMascotView: View {
 
     private var assetName: String {
         switch state {
-        case .idle, .reacting, .watching, .sleeping:
+        case .idle, .reacting, .watching:
+            return "RecallMascotShell"
+        case .sleeping:
             return "RecalloMascotIdle"
         case .turning, .rummaging, .farewell:
             return "RecalloMascotTilt"
@@ -605,32 +607,45 @@ private struct V2MemoryCardStack: View {
 
     var body: some View {
         ZStack {
-            card(rotation: -5, x: -20, y: 13 + stackSettle * 2, opacity: 0.72)
-            card(rotation: 5, x: 20, y: 7 + stackSettle * 2, opacity: 0.84)
+            Image("RecallFolder")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: 212, height: 212)
+                .offset(y: 88 + stackSettle * 2)
+                .opacity(isActive ? 1 : 0.66)
 
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(V2Color.surfaceCream)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(V2Color.borderSoftGreen, lineWidth: 1)
-                )
-                .v2Shadow()
-                .frame(width: 238, height: 318)
-                .overlay {
-                    VStack(spacing: 14) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 35, weight: .medium))
-                            .foregroundStyle(V2Color.primary)
-                        Text("记忆卡")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(V2Color.textPrimary)
-                        Text(isActive ? "向上拖动，召回一张" : "今天没有待召回内容")
-                            .font(V2Typography.caption)
-                            .foregroundStyle(V2Color.textMuted)
-                    }
-                }
+            Image("RecallCardStack")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: 276, height: 228)
+                .offset(y: -31 + stackSettle * 2)
                 .opacity(isActive ? 1 : 0.72)
+
+            Image("RecallCardSurface")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: 224, height: 165)
+                .offset(y: -35 + stackSettle * 2)
+                .opacity(isActive ? 0.18 : 0.1)
+
+            VStack(spacing: 11) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 27, weight: .medium))
+                    .foregroundStyle(V2Color.primary)
+                Text("记忆卡")
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(V2Color.textPrimary)
+                Text(isActive ? "向上拖动，召回一张" : "今天没有待召回内容")
+                    .font(V2Typography.caption)
+                    .foregroundStyle(V2Color.textMuted)
+            }
+            .frame(width: 206)
+            .offset(y: -36 + stackSettle * 2)
         }
+        .frame(width: 286, height: 318)
         .scaleEffect(isDragging && !reduceMotion ? 0.97 : 1)
         .rotation3DEffect(
             .degrees(reduceMotion ? 0 : dragTilt),
@@ -700,22 +715,6 @@ private struct V2MemoryCardStack: View {
         return Double(normalized) * 4
     }
 
-    private func card(
-        rotation: Double,
-        x: CGFloat,
-        y: CGFloat,
-        opacity: Double
-    ) -> some View {
-        RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .fill(V2Color.surfaceCream.opacity(opacity))
-            .overlay(
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .stroke(V2Color.borderSoftGreen.opacity(0.82), lineWidth: 1)
-            )
-            .frame(width: 238, height: 318)
-            .rotationEffect(.degrees(rotation))
-            .offset(x: x, y: y)
-    }
 }
 
 private struct V2AwakeningCardBack: View {

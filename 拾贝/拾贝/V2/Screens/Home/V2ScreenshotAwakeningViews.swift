@@ -584,8 +584,18 @@ struct V2ScreenshotAwakeningFlowView: View {
                 assessmentButtons
                     .transition(.opacity)
             } else if currentCard.masteryStage == .sealed || activeRecallVariant == nil {
-                Button("直接揭晓") {
+                Button {
                     reveal()
+                } label: {
+                    HStack(spacing: 7) {
+                        Image("RecallExpandIcon")
+                            .resizable()
+                            .renderingMode(.original)
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                            .accessibilityHidden(true)
+                        Text("直接揭晓")
+                    }
                 }
                 .font(V2Typography.bodySmallEmphasis)
                 .foregroundStyle(V2Color.textSecondary)
@@ -710,6 +720,15 @@ struct V2ScreenshotAwakeningFlowView: View {
             )
             .scaleEffect(x: 1, y: isRevealDragging && !reduceMotion ? 1.01 : 1)
             .accessibilityIdentifier("v2.semantic-reveal")
+
+            Image("RecallRevealTrack")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(height: 32)
+                .opacity(revealProgress > 0 ? 0.62 : 0.42)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: revealProgress)
+                .accessibilityHidden(true)
 
             Text("铅笔笔刷 26pt；刮开 45% 后完整揭示，也可以直接揭晓")
                 .font(V2Typography.caption)

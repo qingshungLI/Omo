@@ -458,7 +458,12 @@ struct V2UploadView: View {
                         photoLibrary: .shared()
                     ) {
                         HStack(spacing: 10) {
-                            Image(systemName: "photo.badge.plus")
+                            Image("CaptureUploadIcon")
+                                .resizable()
+                                .renderingMode(.original)
+                                .scaledToFit()
+                                .frame(width: 28, height: 28)
+                                .accessibilityHidden(true)
                             Text(screenshotButtonTitle)
                         }
                         .font(V2Typography.bodyEmphasis)
