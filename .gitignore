@@ -35,3 +35,4 @@ quality-test-set/results/20*.json
 quality-test-set/results/quality-workbench-*.json
 quality-test-set/results/quality-workbench-*.csv
 quality-test-set/results/single-article/*/raw/
+.vercel

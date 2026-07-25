@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm --prefix backend install",
+  "buildCommand": "echo 'Recallo serverless build ready'",
+  "outputDirectory": "docs",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.js"
+    }
+  ],
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "{docs/**,backend/content/**}",
+      "maxDuration": 60
+    }
+  }
+}
