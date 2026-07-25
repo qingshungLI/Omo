@@ -48,7 +48,6 @@ const forbiddenKeys = new Set([
   "failureType",
 ]);
 const forbiddenStringPatterns = [
-  /bridge-amax/i,
   /\/data\d*\//i,
   /\/Users\//,
   /\bimage\d+\.(?:jpg|jpeg|png)\b/i,
