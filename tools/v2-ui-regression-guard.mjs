@@ -169,7 +169,7 @@ const checks = [
       && !/currentIndex\s*\+\s*1|"继续下一张"|Button\("先收好"/.test(repairingLandingSource)
       && /phase\s*=\s*\.repairing/.test(submitAssessmentSource)
       && !/phase\s*=\s*\.checkpoint/.test(submitAssessmentSource)
-      && /(?:guard|if)\s+phase\s*==\s*\.repairing[\s\S]{0,700}phase\s*=\s*\.checkpoint/.test(source.screenshotAwakeningViews),
+      && /(?:guard|if)[^\n]*phase\s*==\s*\.repairing[^\n]*[\s\S]{0,300}phase\s*=\s*\.checkpoint/.test(repairingLandingSource),
     "Assessment must render repair separately, hide next/stow actions there, and only then advance to checkpoint."
   ),
   check(
