@@ -23,6 +23,7 @@
 | [`validation/2026-07-24-recallo-v06-mvp-validation.md`](validation/2026-07-24-recallo-v06-mvp-validation.md) | 后端/Web 合同验收及真实模型质量边界 |
 | [`validation/2026-07-24-recallo-v06-ios-interaction.md`](validation/2026-07-24-recallo-v06-ios-interaction.md) | iOS 交互合同、静态验收与 Apple 工具链边界 |
 | [`repository-audit-2026-07-25.md`](repository-audit-2026-07-25.md) | PR #1 关闭后的保留、迁移与不迁移清单 |
+| [`validation/2026-07-25-v07-reconciliation.md`](validation/2026-07-25-v07-reconciliation.md) | v0.7 外部草案与当前实现的取舍、已修差异和后续纵切片 |
 
 代码级数据真值位于：
 

@@ -287,11 +287,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                 return
             }
 
-            // 首次过场在 950ms 进入提示段，1250ms 进入主动回忆；
-            // 继续下一张保持 700ms 短过场，且不重复扫光。
+            // 首次过场在 1550ms 进入提示段，1800ms 进入主动回忆；
+            // 继续下一张保持 900ms 短过场，且不重复扫光。
             let timings: [UInt64] = currentIndex == 0
-                ? [250_000_000, 300_000_000, 400_000_000, 0, 300_000_000]
-                : [120_000_000, 180_000_000, 180_000_000, 120_000_000, 100_000_000]
+                ? [150_000_000, 210_000_000, 820_000_000, 370_000_000, 250_000_000]
+                : [100_000_000, 230_000_000, 260_000_000, 150_000_000, 160_000_000]
             guard await advanceSummon(after: timings[0], to: .rise) else { return }
             guard await advanceSummon(after: timings[1], to: .orbit) else { return }
             guard await advanceSummon(after: timings[2], to: .settle) else { return }

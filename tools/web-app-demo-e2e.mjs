@@ -113,6 +113,13 @@ async function main() {
     };
     await page.locator('[data-testid="capture-file"]').setInputFiles(fixture);
     await page.locator('[data-testid="submit-capture"]').click();
+    const captureProgress = page.locator('[data-testid="capture-progress"]');
+    await captureProgress.waitFor();
+    assert.doesNotMatch(
+      await captureProgress.textContent(),
+      /\d+\s*%/,
+      "capture processing must show a truthful stage label rather than a synthesized percentage"
+    );
     await page.locator('[data-testid="v06-upload-complete"]').waitFor({ timeout: Number(process.env.RECALLO_WEB_E2E_TIMEOUT || (realMode ? 180_000 : 8_000)) });
     assert.equal(api.capturePosts, 1, "upload must submit exactly one capture job");
     assert.equal(api.capturePolls >= 1, true, "the UI must poll the async job until success");
@@ -120,8 +127,13 @@ async function main() {
     assert.match(api.lastCaptureBody.imageBase64, /^data:image\/png;base64,/, "the selected user file must be sent as image data");
     assert.equal(api.lastCaptureBody.mimeType, "image/png");
 
-    await page.getByRole("button", { name: "让毛球取回这张", exact: true }).click();
+    await page.getByRole("button", { name: "请它取回这张", exact: true }).click();
     await page.locator('[data-testid="v06-summoning"]').waitFor();
+    assert.equal(
+      await page.locator(".summon-card").getAttribute("data-duration"),
+      "1800",
+      "the first standard-motion summon must use the frozen 1800ms duration"
+    );
     await page.getByRole("button", { name: "跳过" }).click();
     await page.locator('[data-testid="v06-recall"]').waitFor();
 
@@ -196,8 +208,28 @@ async function main() {
     assert.deepEqual(unexpectedRequestFailures, [], `request failures: ${unexpectedRequestFailures.join(" | ")}`);
     await context.close();
 
+    let nextDuration = null;
     let reducedDuration = null;
     if (!realMode) {
+      api.cards = [recordFor(memoryCard, firstSchedule, null)];
+      const nextContext = await browser.newContext({
+        viewport: { width: 375, height: 812 }
+      });
+      await installAPIRoutes(nextContext, api);
+      const nextPage = await nextContext.newPage();
+      await nextPage.addInitScript(() => {
+        window.__RECALLO_E2E__ = true;
+        localStorage.setItem("recallo-v06-web-state-v2", JSON.stringify({ summonCount: 1 }));
+      });
+      await nextPage.goto(`${baseURL}/app-demo`, { waitUntil: "networkidle" });
+      await nextPage.getByRole("button", { name: "请它取回一张" }).click();
+      await nextPage.locator('[data-testid="v06-summoning"]').waitFor();
+      nextDuration = Number(await nextPage.locator(".summon-card").getAttribute("data-duration"));
+      assert.equal(nextDuration, 900, "a subsequent standard-motion summon must use the frozen 900ms duration");
+      await nextPage.getByRole("button", { name: "跳过" }).click();
+      await nextPage.locator('[data-testid="v06-recall"]').waitFor();
+      await nextContext.close();
+
       api.cards = [recordFor(memoryCard, firstSchedule, null)];
       const reducedContext = await browser.newContext({
         viewport: { width: 375, height: 812 },
@@ -208,7 +240,13 @@ async function main() {
       await reducedPage.addInitScript(() => { window.__RECALLO_E2E__ = true; });
       await reducedPage.goto(`${baseURL}/app-demo`, { waitUntil: "networkidle" });
       const startedAt = Date.now();
-      await reducedPage.getByRole("button", { name: "让毛球取回一张" }).click();
+      await reducedPage.getByRole("button", { name: "请它取回一张" }).click();
+      await reducedPage.locator('[data-testid="v06-summoning"]').waitFor();
+      assert.equal(
+        await reducedPage.locator(".summon-card").getAttribute("data-duration"),
+        "180",
+        "Reduce Motion must use the frozen 180ms duration"
+      );
       await reducedPage.locator('[data-testid="v06-recall"]').waitFor({ timeout: 1_000 });
       reducedDuration = Date.now() - startedAt;
       assert.ok(reducedDuration < 800, `Reduce Motion summon must finish quickly, got ${reducedDuration}ms`);
@@ -222,7 +260,7 @@ async function main() {
       mode: realMode ? "real-backend-fixture" : "mock-route",
       viewport: "375x812",
       upload: { posts: api.capturePosts, polls: api.capturePolls, usedSelectedFile: true },
-      recall: { partialCoverage, restoredCoverage, assessmentPosts: api.assessmentPosts },
+      recall: { partialCoverage, restoredCoverage, assessmentPosts: api.assessmentPosts, nextDuration },
       schedule: observedNextReviewAt,
       deleteRequests: api.deleteRequests,
       failureStayedVisible,

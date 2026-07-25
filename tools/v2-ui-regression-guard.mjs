@@ -400,11 +400,20 @@ const checks = [
   ),
   check(
     "summon_timings_cover_first_next_and_reduced_motion",
-    summonTimingTotals?.first === 1_250_000_000
-      && summonTimingTotals?.next === 700_000_000
+    summonTimingTotals?.first === 1_800_000_000
+      && summonTimingTotals?.next === 900_000_000
       && /if\s+reduceMotion[\s\S]{0,240}Task\.sleep\(nanoseconds:\s*180_000_000\)[\s\S]{0,260}phase\s*=\s*\.recall/.test(summonTaskSource)
-      && /Task\.sleep\(nanoseconds:\s*timings\[4\]\)[\s\S]{0,220}phase\s*=\s*\.recall/.test(summonTaskSource),
-    "Summoning must enter recall after exactly 1250ms for the first card, 700ms later, and 180ms with Reduce Motion."
+      && /Task\.sleep\(nanoseconds:\s*timings\[4\]\)[\s\S]{0,220}phase\s*=\s*\.recall/.test(summonTaskSource)
+      && source.webDemo.includes("ui.lastSummonDuration = reduced.matches ? 180 : ui.summonCount === 0 ? 1800 : 900;"),
+    "iOS and Web summoning must enter recall after exactly 1800ms for the first card, 900ms later, and 180ms with Reduce Motion."
+  ),
+  check(
+    "web_capture_uses_stage_text_without_fake_percentages",
+    source.webDemo.includes('data-testid="capture-progress"')
+      && !source.webDemo.includes("progress-bar")
+      && !source.webDemo.includes('stage === "queued" ? 20')
+      && !source.webDemo.includes("uploadProgress"),
+    "Capture processing may show a truthful stage label, but must not synthesize percentages or a determinate progress bar."
   ),
   check(
     "rarity_has_no_default_r_fallback",
