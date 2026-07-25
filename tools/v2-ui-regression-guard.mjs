@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,6 +21,13 @@ const files = {
 const source = Object.fromEntries(
   Object.entries(files).map(([key, path]) => [key, readFileSync(path, "utf8")])
 );
+const rarityPresentationPath = resolve(
+  repoRoot,
+  "拾贝/拾贝/V2/Components/Cards/V2RarityPresentation.swift"
+);
+const rarityPresentationSource = existsSync(rarityPresentationPath)
+  ? readFileSync(rarityPresentationPath, "utf8")
+  : "";
 const matchingCardSource = extractMatchingCardSource(source.questionComponents);
 const matchingScreenSource = extractMatchingScreenSource(source.reviewFlowScreens);
 const awakeningHomeSource = extractBetween(
@@ -78,9 +85,59 @@ const drawSessionSource = extractBetween(
   "struct V2ScreenshotDrawSession",
   "private enum V2ScreenshotDateParser"
 );
+const capturedMemoryCardSource = extractBetween(
+  source.screenshotMemoryModels,
+  "struct V2CapturedMemoryCard",
+  "extension CaptureMemoryCardAssessmentResponse"
+);
 const captureApplySource = extractBetween(source.screenshotMemoryModels, "mutating func apply(", "func reviewCycleKey(");
 const rootAssessmentSource = extractBetween(source.v2Root, "private func applyScreenshotAssessment(", "private func deleteScreenshotMemoryCard(");
 const submitAssessmentSource = extractBetween(source.screenshotAwakeningViews, "private func submitPendingAssessment(", "private func advanceToNextCard(");
+const completeAssessmentSource = extractBetween(
+  source.screenshotAwakeningViews,
+  "private func completeAssessment(",
+  "private func retryAssessment("
+);
+const reviewableScreenshotCardsSource = extractBetween(
+  source.v2Root,
+  "private var reviewableScreenshotCards",
+  "private var screenshotPoolCounts"
+);
+const screenshotAnalysisSource = extractBetween(
+  source.v2Root,
+  "private func startScreenshotAnalysisAfterConsent(",
+  "private func openScreenshotDraw("
+);
+const formalCardSource = extractBetween(
+  source.screenshotAwakeningViews,
+  "private var formalCard",
+  "private var sourceStatusLabel"
+);
+const revealedContentSource = extractBetween(
+  source.screenshotAwakeningViews,
+  "private var revealedContent",
+  "private var screenshotPreview"
+);
+const archiveLandingSource = extractBetween(
+  source.screenshotAwakeningViews,
+  "private var archiveLanding",
+  "private func masteryStep("
+);
+const libraryCardSource = extractBetween(
+  source.tabScreens,
+  "private struct V2MemoryLibraryCard",
+  "private enum V2MaterialsMascotMetrics"
+);
+const rarityBranchingOutsidePresentation = [
+  source.screenshotAwakeningViews,
+  source.screenshotMemoryModels,
+  source.tabScreens,
+  source.v2Root
+].join("\n");
+const rarityFallbackSource = [
+  rarityBranchingOutsidePresentation,
+  rarityPresentationSource
+].join("\n");
 const summonTimingTotals = extractSummonTimingTotals(summonTaskSource);
 
 const checks = [
@@ -255,13 +312,13 @@ const checks = [
   ),
   check(
     "fragments_are_saved_but_never_reviewed",
-    source.screenshotMemoryModels.includes("guard card.state == .formal, disposition == .createCard")
-      && source.v2Root.includes("guard disposition == .createCard, memoryCard.state == .formal")
-      && source.v2Root.includes("selectedTab = .materials")
-      && source.tabScreens.includes('case .archiveOnly:\n            "已保存碎片"')
-      && source.tabScreens.includes('case .needsConfirmation:\n            "待确认"')
-      && source.tabScreens.includes("if isFormalReviewCard, let schedule = captured.schedule"),
-    "Archive-only and confirmation-needed captures must remain visible fragments without mastery, scheduling, or draw eligibility."
+    /var isFormalReviewCard:\s*Bool[\s\S]{0,180}card\.state\s*==\s*\.formal[\s\S]{0,120}disposition\s*==\s*\.createCard/.test(capturedMemoryCardSource)
+      && /guard\s+captured\.isReadyForReview\s+else/.test(screenshotAnalysisSource)
+      && screenshotAnalysisSource.includes("selectedTab = .materials")
+      && /case\s+\.archiveOnly:[\s\S]{0,100}libraryStatusText\("已保存碎片"\)/.test(libraryCardSource)
+      && /case\s+\.needsConfirmation:[\s\S]{0,100}libraryStatusText\("待确认"\)/.test(libraryCardSource)
+      && /if\s+captured\.isReadyForReview,\s*let schedule = captured\.schedule/.test(libraryCardSource),
+    "Fragments and ungraded formal cards must remain visible in the library without mastery, scheduling, or draw eligibility."
   ),
   check(
     "capture_delete_waits_for_server_success",
@@ -321,6 +378,68 @@ const checks = [
       && /if\s+reduceMotion[\s\S]{0,240}Task\.sleep\(nanoseconds:\s*180_000_000\)[\s\S]{0,260}phase\s*=\s*\.recall/.test(summonTaskSource)
       && /Task\.sleep\(nanoseconds:\s*timings\[4\]\)[\s\S]{0,220}phase\s*=\s*\.recall/.test(summonTaskSource),
     "Summoning must enter recall after exactly 1250ms for the first card, 700ms later, and 180ms with Reduce Motion."
+  ),
+  check(
+    "rarity_has_no_default_r_fallback",
+    !/rarity\?\.rawValue\s*\?\?\s*"R"/.test(rarityFallbackSource)
+      && !/\brarity\s*\?\?\s*\.r\b/.test(rarityFallbackSource)
+      && !/rarity\?\.rawValue\s*\?\?\s*"记忆卡"/.test(rarityFallbackSource),
+    "Missing rarity must remain ungraded; presentation code must never silently coerce it to R or a generic review card."
+  ),
+  check(
+    "rarity_is_required_for_review_and_feedback",
+    /var isUngradedFormalCard:\s*Bool[\s\S]{0,160}isFormalReviewCard\s*&&\s*card\.rarity\s*==\s*nil/.test(capturedMemoryCardSource)
+      && /var isReadyForReview:\s*Bool[\s\S]{0,160}isFormalReviewCard\s*&&\s*card\.rarity\s*!=\s*nil/.test(capturedMemoryCardSource)
+      && /mutating func apply\([\s\S]{0,260}guard\s+isReadyForReview\s+else/.test(captureApplySource)
+      && /func isEligible\([\s\S]{0,220}guard\s+isReadyForReview\s+else/.test(capturedMemoryCardSource)
+      && /screenshotCards\.filter\(\\\.isReadyForReview\)/.test(reviewableScreenshotCardsSource)
+      && /guard\s+captured\.isReadyForReview\s+else/.test(screenshotAnalysisSource)
+      && screenshotAnalysisSource.includes("captured.isUngradedFormalCard")
+      && screenshotAnalysisSource.includes("暂不进入复习")
+      && /guard\s+currentCard\.isReadyForReview\s+else/.test(completeAssessmentSource)
+      && /if\s+!currentCard\.isReadyForReview/.test(source.screenshotAwakeningViews),
+    "Only formal cards with an explicit rarity may enter a draw, submit feedback, receive mastery, or obtain a schedule."
+  ),
+  check(
+    "rarity_branches_live_in_shared_presentation",
+    rarityPresentationSource.length > 0
+      && /struct V2RarityVisualStyle\b/.test(rarityPresentationSource)
+      && /struct V2RarityBadge:\s*View\b/.test(rarityPresentationSource)
+      && /struct V2UngradedRarityBadge:\s*View\b/.test(rarityPresentationSource)
+      && /struct V2RarityMaterialOverlay:\s*View\b/.test(rarityPresentationSource)
+      && /struct V2RarityBadge:[\s\S]{0,180}let rarity:\s*ImageFlowMemoryCard\.Rarity\s*(?:\n|$)/.test(rarityPresentationSource)
+      && /switch\s+rarity\s*\{[\s\S]*case \.r:[\s\S]*case \.sr:[\s\S]*case \.ssr:/.test(rarityPresentationSource)
+      && !/case \.(?:r|sr|ssr):|switch[^\n]*rarity/.test(rarityBranchingOutsidePresentation)
+      && !/private var rarityColor\b/.test(source.screenshotAwakeningViews)
+      && source.screenshotAwakeningViews.includes("V2RarityBadge(")
+      && source.screenshotAwakeningViews.includes("V2RarityMaterialOverlay(")
+      && source.tabScreens.includes("V2RarityBadge(")
+      && source.tabScreens.includes("V2UngradedRarityBadge("),
+    "R, SR, and SSR may branch only inside the shared rarity presentation components, whose badge input is nonoptional."
+  ),
+  check(
+    "rarity_reason_is_revealed_only",
+    revealedContentSource.includes("rarityReason")
+      && ![
+        summonTransitionSource,
+        formalCardSource,
+        repairingLandingSource,
+        archiveLandingSource,
+        libraryCardSource,
+        rarityPresentationSource
+      ].join("\n").includes("rarityReason"),
+    "Rarity reasons may be rendered only after the answer is revealed, never during summoning, recall, repair, checkpoint, or library browsing."
+  ),
+  check(
+    "library_distinguishes_ungraded_from_mastery",
+    libraryCardSource.includes("captured.isUngradedFormalCard")
+      && libraryCardSource.includes("V2UngradedRarityBadge(")
+      && rarityPresentationSource.includes('Text("待定级")')
+      && /if\s+captured\.isReadyForReview\s*\{[\s\S]{0,240}captured\.masteryStage/.test(libraryCardSource)
+      && /if\s+captured\.isReadyForReview,\s*let schedule = captured\.schedule/.test(libraryCardSource)
+      && !/private var isFormalReviewCard\b/.test(libraryCardSource)
+      && !/\?\?\s*"记忆卡"/.test(libraryCardSource),
+    "The library must label missing rarity as ungraded and hide mastery and schedule until the card is ready for review."
   ),
   check(
     "rarity_does_not_affect_selection_or_feedback",
