@@ -257,8 +257,12 @@ struct V2ScreenshotAwakeningFlowView: View {
                             repairingLanding
                         } else if phase == .assessing {
                             feedbackLanding
-                        } else if currentCard.card.state == .formal {
-                            formalCard
+                        } else if currentCard.isFormalReviewCard {
+                            if !currentCard.isReadyForReview {
+                                ungradedFormalCard
+                            } else {
+                                formalCard
+                            }
                         } else {
                             fragmentCard
                         }
@@ -406,14 +410,14 @@ struct V2ScreenshotAwakeningFlowView: View {
                     Image("RecalloParticleGlow")
                         .resizable()
                         .renderingMode(.template)
-                        .foregroundStyle(rarityColor.opacity(0.16))
+                        .foregroundStyle(rarityAccentColor.opacity(0.16))
                         .frame(width: 190, height: 190)
                         .transition(.opacity)
 
                     Ellipse()
                         .trim(from: 0.08, to: 0.84)
                         .stroke(
-                            rarityColor.opacity(0.48),
+                            rarityAccentColor.opacity(0.48),
                             style: StrokeStyle(lineWidth: 8, lineCap: .round)
                         )
                         .frame(width: 330, height: 165)
@@ -432,7 +436,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                     Text("一段记忆正在苏醒")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(V2Color.textPrimary)
-                    Text(currentCard.masteryStage.title)
+                    Text("掌握 · \(currentCard.masteryStage.title)")
                         .font(V2Typography.caption)
                         .foregroundStyle(V2Color.textMuted)
                 }
@@ -442,13 +446,13 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .fill(V2Color.surfaceCream)
                         .overlay(
                             RoundedRectangle(cornerRadius: 25, style: .continuous)
-                                .stroke(rarityColor.opacity(0.56), lineWidth: 1.5)
+                                .stroke(rarityAccentColor.opacity(0.56), lineWidth: 1.5)
                         )
                         .v2Shadow()
                 )
                 .shadow(
                     color: !reduceMotion && summonStage == .orbit
-                        ? rarityColor.opacity(0.18)
+                        ? rarityAccentColor.opacity(0.18)
                         : Color.clear,
                     radius: !reduceMotion && summonStage == .orbit ? 6 : 0,
                     y: !reduceMotion && summonStage == .orbit ? 4 : 0
@@ -470,7 +474,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 if summonStage == .cue {
                     if !reduceMotion {
                         Circle()
-                            .fill(rarityColor.opacity(0.08))
+                            .fill(rarityAccentColor.opacity(0.08))
                             .frame(width: 220, height: 220)
                             .blur(radius: 30)
                             .offset(x: 126, y: 128)
@@ -530,7 +534,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 HStack {
                     rarityBadge
                     Spacer()
-                    Text(currentCard.masteryStage.title)
+                    Text("掌握 · \(currentCard.masteryStage.title)")
                         .font(V2Typography.captionEmphasis)
                         .foregroundStyle(V2Color.primary)
                         .padding(.horizontal, 9)
@@ -568,6 +572,11 @@ struct V2ScreenshotAwakeningFlowView: View {
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(V2Color.surfaceCream)
+                    .overlay {
+                        if let rarity = currentCard.card.rarity {
+                            V2RarityMaterialOverlay(rarity: rarity, cornerRadius: 24)
+                        }
+                    }
                     .v2Shadow()
             )
 
@@ -593,17 +602,13 @@ struct V2ScreenshotAwakeningFlowView: View {
         .padding(.bottom, 36)
     }
 
+    @ViewBuilder
     private var rarityBadge: some View {
-        Text(currentCard.card.rarity?.rawValue ?? "R")
-            .font(.system(size: 15, weight: .heavy, design: .rounded))
-            .foregroundStyle(rarityColor)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                Capsule()
-                    .fill(rarityColor.opacity(0.14))
-            )
-            .accessibilityLabel("稀有度 \(currentCard.card.rarity?.rawValue ?? "R")")
+        if let rarity = currentCard.card.rarity {
+            V2RarityBadge(rarity: rarity)
+        } else {
+            V2UngradedRarityBadge()
+        }
     }
 
     private var sourceStatusLabel: some View {
@@ -748,7 +753,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .foregroundStyle(V2Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let reason = currentCard.card.rarityReason {
+            ForEach(rarityReasonTexts, id: \.self) { reason in
                 Text(reason)
                     .font(V2Typography.caption)
                     .foregroundStyle(V2Color.textMuted)
@@ -756,6 +761,19 @@ struct V2ScreenshotAwakeningFlowView: View {
 
             screenshotPreview
             sourceFooter
+        }
+    }
+
+    private var rarityReasonTexts: [String] {
+        let reasons = ([currentCard.card.rarityReason].compactMap { $0 }
+            + (currentCard.card.rarityReasons ?? []))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return reasons.reduce(into: [String]()) { result, reason in
+            if !result.contains(reason) {
+                result.append(reason)
+            }
         }
     }
 
@@ -1096,7 +1114,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                     }
                 }
 
-                Text("\(masteryBefore.title) → \(masteryAfter.title) · \(currentSchedule?.displayText ?? "下次复习时间待同步")")
+                Text("掌握 · \(masteryBefore.title) → \(masteryAfter.title) · \(currentSchedule?.displayText ?? "下次复习时间待同步")")
                     .font(V2Typography.captionEmphasis)
                     .foregroundStyle(V2Color.primary)
                     .accessibilityIdentifier("v2.schedule.next-review")
@@ -1158,6 +1176,34 @@ struct V2ScreenshotAwakeningFlowView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var ungradedFormalCard: some View {
+        VStack(spacing: 18) {
+            V2UngradedRarityBadge()
+
+            V2RecallMascotView(state: .thinking, reduceMotion: reduceMotion)
+                .frame(width: 150, height: 150)
+
+            Text("这张卡尚未完成知识分级")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(V2Color.textPrimary)
+                .multilineTextAlignment(.center)
+
+            Text("内容已安全保存在知识库；完成 R / SR / SSR 分级前，不会进入抽取、反馈或复习调度。")
+                .font(V2Typography.bodySmall)
+                .foregroundStyle(V2Color.textSecondary)
+                .multilineTextAlignment(.center)
+
+            V2PrimaryActionButton(title: "暂不复习，返回") {
+                clearPersistedPresentation()
+                onClose()
+            }
+        }
+        .v2PageColumn()
+        .padding(.top, 24)
+        .padding(.bottom, 36)
+        .accessibilityElement(children: .contain)
+    }
+
     private var fragmentCard: some View {
         VStack(alignment: .leading, spacing: 18) {
             Label("记忆碎片 · \(sourceStatusTitle)", systemImage: "sparkles.rectangle.stack")
@@ -1193,15 +1239,11 @@ struct V2ScreenshotAwakeningFlowView: View {
         .padding(.bottom, 36)
     }
 
-    private var rarityColor: Color {
-        switch currentCard.card.rarity {
-        case .ssr:
-            Color(hex: 0xD9852C)
-        case .sr:
-            Color(hex: 0x4F87B9)
-        default:
-            V2Color.textSecondary
+    private var rarityAccentColor: Color {
+        guard let rarity = currentCard.card.rarity else {
+            return V2Color.textMuted
         }
+        return V2RarityVisualStyle(rarity).accent
     }
 
     private var sourceStatusTitle: String {
@@ -1333,6 +1375,7 @@ struct V2ScreenshotAwakeningFlowView: View {
     }
 
     private func completeAssessment(_ value: V2MemoryAssessment) {
+        guard currentCard.isReadyForReview else { return }
         guard pendingAssessment == nil, phase == .revealed else { return }
         guard !assessedReviewCycles.contains(currentReviewCycleKey) else {
             phase = .checkpoint

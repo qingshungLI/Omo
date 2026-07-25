@@ -92,9 +92,7 @@ struct V2RootView: View {
     }
 
     private var reviewableScreenshotCards: [V2CapturedMemoryCard] {
-        screenshotCards.filter {
-            $0.card.state == .formal && $0.disposition == .createCard
-        }
+        screenshotCards.filter(\.isReadyForReview)
     }
 
     private var screenshotPoolCounts: [V2MemoryPool: Int] {
@@ -1623,12 +1621,18 @@ struct V2RootView: View {
                 } else {
                     screenshotCards.append(captured)
                 }
-                guard disposition == .createCard, memoryCard.state == .formal else {
-                    screenshotAnalysisState = .generated(
-                        disposition == .needsConfirmation
-                            ? "证据不足，已保存为待确认碎片。"
-                            : "这条内容已保存为碎片，不进入复习。"
-                    )
+                guard captured.isReadyForReview else {
+                    if captured.isUngradedFormalCard {
+                        screenshotAnalysisState = .generated(
+                            "记忆卡已保存，但知识等级待确认，暂不进入复习。"
+                        )
+                    } else {
+                        screenshotAnalysisState = .generated(
+                            disposition == .needsConfirmation
+                                ? "证据不足，已保存为待确认碎片。"
+                                : "这条内容已保存为碎片，不进入复习。"
+                        )
+                    }
                     selectedTab = .materials
                     return
                 }

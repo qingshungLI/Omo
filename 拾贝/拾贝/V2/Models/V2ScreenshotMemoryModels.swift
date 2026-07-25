@@ -14,6 +14,18 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
 
     var id: String { card.id }
 
+    var isFormalReviewCard: Bool {
+        card.state == .formal && disposition == .createCard
+    }
+
+    var isUngradedFormalCard: Bool {
+        isFormalReviewCard && card.rarity == nil
+    }
+
+    var isReadyForReview: Bool {
+        isFormalReviewCard && card.rarity != nil
+    }
+
     init(
         card: ImageFlowMemoryCard,
         screenshotData: Data,
@@ -28,27 +40,29 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         let resolvedDisposition = disposition
             ?? (card.state == .formal ? .createCard : .archiveOnly)
         let isFormalReviewCard = card.state == .formal && resolvedDisposition == .createCard
+        let isReadyForReview = isFormalReviewCard && card.rarity != nil
         self.card = card
         self.screenshotData = screenshotData
-        self.schedule = isFormalReviewCard ? schedule : nil
+        self.schedule = isReadyForReview ? schedule : nil
         self.disposition = resolvedDisposition
-        self.masteryStage = isFormalReviewCard ? masteryStage : .sealed
-        self.successfulRecallCount = isFormalReviewCard ? successfulRecallCount : 0
-        self.reviewCount = isFormalReviewCard ? reviewCount : 0
-        self.lastAssessment = isFormalReviewCard ? lastAssessment : nil
+        self.masteryStage = isReadyForReview ? masteryStage : .sealed
+        self.successfulRecallCount = isReadyForReview ? successfulRecallCount : 0
+        self.reviewCount = isReadyForReview ? reviewCount : 0
+        self.lastAssessment = isReadyForReview ? lastAssessment : nil
         self.capturedAt = capturedAt
     }
 
     init(record: CaptureMemoryCardRecord) {
         let isFormalReviewCard = record.memoryCard.state == .formal && record.disposition == .createCard
+        let isReadyForReview = isFormalReviewCard && record.memoryCard.rarity != nil
         card = record.memoryCard
         screenshotData = Data()
-        schedule = isFormalReviewCard ? record.schedule : nil
+        schedule = isReadyForReview ? record.schedule : nil
         disposition = record.disposition
-        masteryStage = isFormalReviewCard ? (V2MemoryMasteryStage(rawServerValue: record.masteryStage) ?? .sealed) : .sealed
-        successfulRecallCount = isFormalReviewCard ? (record.successfulRecallCount ?? 0) : 0
-        reviewCount = isFormalReviewCard ? (record.reviewCount ?? 0) : 0
-        lastAssessment = isFormalReviewCard ? record.lastAssessment.flatMap(V2MemoryAssessment.init(rawValue:)) : nil
+        masteryStage = isReadyForReview ? (V2MemoryMasteryStage(rawServerValue: record.masteryStage) ?? .sealed) : .sealed
+        successfulRecallCount = isReadyForReview ? (record.successfulRecallCount ?? 0) : 0
+        reviewCount = isReadyForReview ? (record.reviewCount ?? 0) : 0
+        lastAssessment = isReadyForReview ? record.lastAssessment.flatMap(V2MemoryAssessment.init(rawValue:)) : nil
         capturedAt = V2ScreenshotDateParser.date(from: record.capturedAt)
             ?? V2ScreenshotDateParser.date(from: record.memoryCard.createdAt)
             ?? Date()
@@ -59,7 +73,7 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         schedule updatedSchedule: ImageFlowReviewSchedule,
         serverMastery: CaptureMemoryCardAssessmentResponse.Mastery? = nil
     ) {
-        guard card.state == .formal, disposition == .createCard else {
+        guard isReadyForReview else {
             return
         }
         lastAssessment = assessment
@@ -93,7 +107,7 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
     }
 
     func isEligible(for pool: V2MemoryPool, now: Date = Date()) -> Bool {
-        guard card.state == .formal, disposition == .createCard else {
+        guard isReadyForReview else {
             return false
         }
         switch pool {

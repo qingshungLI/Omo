@@ -190,12 +190,10 @@ private struct V2MemoryLibraryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(libraryStatusTitle)
-                    .font(V2Typography.captionEmphasis)
-                    .foregroundStyle(V2Color.primary)
+                libraryStatusBadge
                 Spacer()
-                if isFormalReviewCard {
-                    Text(captured.masteryStage.title)
+                if captured.isReadyForReview {
+                    Text("掌握 · \(captured.masteryStage.title)")
                         .font(V2Typography.caption)
                         .foregroundStyle(V2Color.textMuted)
                 }
@@ -219,7 +217,7 @@ private struct V2MemoryLibraryCard: View {
                 Text(sourceTitle)
                     .lineLimit(1)
                 Spacer()
-                if isFormalReviewCard, let schedule = captured.schedule {
+                if captured.isReadyForReview, let schedule = captured.schedule {
                     Text(schedule.displayText)
                         .lineLimit(1)
                 }
@@ -234,23 +232,44 @@ private struct V2MemoryLibraryCard: View {
                 .v2Shadow()
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(captured.card.coreKnowledge)，\(sourceTitle)")
+        .accessibilityLabel(
+            "\(captured.card.coreKnowledge)，\(libraryStatusAccessibilityTitle)，\(sourceTitle)"
+        )
         .accessibilityIdentifier("v2.library.card.\(captured.id)")
     }
 
-    private var isFormalReviewCard: Bool {
-        captured.card.state == .formal && captured.disposition == .createCard
-    }
-
-    private var libraryStatusTitle: String {
+    @ViewBuilder
+    private var libraryStatusBadge: some View {
         switch captured.disposition {
         case .archiveOnly:
-            "已保存碎片"
+            libraryStatusText("已保存碎片")
         case .needsConfirmation:
-            "待确认"
+            libraryStatusText("待确认")
         case .createCard:
-            captured.card.rarity?.rawValue ?? "记忆卡"
+            if captured.card.state == .formal, let rarity = captured.card.rarity {
+                V2RarityBadge(rarity: rarity, compact: true)
+            } else if captured.isUngradedFormalCard {
+                V2UngradedRarityBadge(compact: true)
+            } else {
+                libraryStatusText("已保存碎片")
+            }
         }
+    }
+
+    private func libraryStatusText(_ title: String) -> some View {
+        Text(title)
+            .font(V2Typography.captionEmphasis)
+            .foregroundStyle(V2Color.primary)
+    }
+
+    private var libraryStatusAccessibilityTitle: String {
+        if captured.isUngradedFormalCard {
+            return "知识等级待确认，暂不进入复习"
+        }
+        if let rarity = captured.card.rarity, captured.isReadyForReview {
+            return "知识核心潜力 \(rarity.rawValue)"
+        }
+        return captured.disposition == .needsConfirmation ? "待确认" : "已保存碎片"
     }
 
     private var sourceTitle: String {
