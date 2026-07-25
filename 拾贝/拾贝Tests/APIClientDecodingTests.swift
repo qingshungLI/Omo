@@ -1,6 +1,6 @@
 import XCTest
 import UIKit
-@testable import 拾贝
+@testable import Recallo
 
 final class APIClientDecodingTests: XCTestCase {
     func testDecodesChaptersResponseShape() throws {

@@ -1,5 +1,5 @@
 import XCTest
-@testable import 拾贝
+@testable import Recallo
 
 final class DeviceIdentityStoreTests: XCTestCase {
     func testCurrentDeviceIdIsStableAcrossReads() {
