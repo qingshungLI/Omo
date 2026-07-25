@@ -31,11 +31,22 @@
 
 ### 1.1 Figma 组件复用边界
 
-用户授权复用 [Pick The Shell（node `815:1693`）](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f) 中的通用纸卡、按钮与反馈控件；实现时优先使用 `origin/main` 中的 `Pick The Shell.zip`，避免重复重画已有组件。实现必须遵守：
+用户授权复用 [Pick The Shell（node `815:1693`）](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f)；实现时优先使用 `origin/main` 中的 `Pick The Shell.zip`，避免重复重画已有组件。压缩包审查得到七个正式 SVG，映射如下：
 
-- 可复用：纸张卡面、圆角容器、按钮层级、三档反馈控件及其非宠物装饰；
-- 必须替换：开屏及首页、等待、召回、回忆、反馈、空状态、结束页中的所有宠物层，一律使用仓库现有毛球；
-- 不直接复用：组件库中的其他动物形象、贝壳抽取叙事、概率 / 奖励暗示或与 Recallo 状态机冲突的页面；
+| 源组件 | 处理分类 | Recallo 映射与约束 |
+| --- | --- | --- |
+| `IP1-1.svg` | `reuse_as_is` | Recallo 官方毛球；用于开屏及全部宠物位，只允许尺寸、裁切和状态组合，不重新生成或替换 |
+| `收藏夹-1.svg` | `reuse_with_crop_or_recolor` | 知识库收藏夹与收卡落点；只做适配 Recallo 配色和容器尺寸的处理 |
+| `展开icon-1.svg` | `reuse_with_crop_or_recolor` | 证据 / 解析展开入口；保留明确标签与至少 44pt 的可点击区域 |
+| `上传icon-1.svg` | `reuse_with_crop_or_recolor` | 添加截图或内容的入口；不表达云端永久保存承诺 |
+| `题卡组.svg` | `reuse_with_crop_or_recolor` | 今日页召回卡叠与 checkpoint 的下一张边缘；不得出现卡池、连抽或 `1/10` 暗示 |
+| `滑动条.svg` | `rebuild_in_code` | 仅作为控件形态参考；如用于设置项则由原生控件重建，不得作为假进度或刮开进度条 |
+| `题卡-1.svg` | `reuse_with_crop_or_recolor` | 单张记忆卡的纸张外壳；真实文字、证据、稀有度与刮开层由原生界面渲染，不固化进 SVG |
+
+实现必须遵守：
+
+- `IP1-1.svg` 是官方毛球，不属于需要替换的“组件库原宠物”；只有其他非毛球动物形象或临时占位宠物必须替换；
+- 不直接复用贝壳抽取叙事、概率 / 奖励暗示或与 Recallo 状态机冲突的页面；
 - 任何实际导入的节点、导出文件和二次处理都要补录 `asset-provenance.md`；文件访问密码只用于访问，不得写入仓库或日志。
 
 ## 2. 动效时间轴
@@ -202,7 +213,7 @@ type RecallTaskKind = "masked_semantic" | "judgment" | "choice"
 | `sleeping` | 无可召回内容 / 低频夜间状态 | 静态打盹或极慢呼吸 |
 | `farewell` | 用户选择先收好 | 把卡放回文件夹并挥手 |
 
-实现约束：开屏和所有宠物位必须使用仓库现有毛球。优先复用仓库现有透明 PNG 和用户提供并授权的素材；SwiftUI / CSS 可通过缩放、位移、镜像、倾斜、遮挡和代码原生卡片 / 文件夹把一张姿态组合为多个情境；不为“风格统一”重复生成角色，也不得保留 Figma 组件库中的原宠物占位。
+实现约束：开屏和所有宠物位必须使用 `Pick The Shell/IP1-1.svg` 官方毛球，并按 `reuse_as_is` 处理。允许的变化仅为尺寸、裁切和状态组合；SwiftUI / CSS 只负责把已定义状态组合到代码原生卡片、文件夹和场景中，不得镜像、变形、重新生成、重绘或替换该角色。其他非毛球宠物层或临时占位动物必须替换。
 
 ## 6. 反赌博与无社交边界
 
@@ -231,7 +242,7 @@ type RecallTaskKind = "masked_semantic" | "judgment" | "choice"
 - 素材处理先分类为 `reuse_as_is`、`reuse_with_crop_or_recolor`、`rebuild_in_code`、`generate_only_if_missing`；
 - 固定顺序为仓库现有素材 → 用户提供并授权素材 → 已登记开源素材 → 关键缺口生成；
 - 用户提供 JPEG 可以直接裁切、去背景、调色和组合；派生文件必须登记原文件、处理方式与校验值；
-- 用户授权的 `Pick The Shell.zip` / Pick The Shell 通用控件按节点登记并优先复用；其中任何宠物图层不得进入应用，必须替换为现有毛球；
+- 用户授权的 `Pick The Shell.zip` 七组件按上表登记并优先复用；其中 `IP1-1.svg` 是官方毛球，固定为 `reuse_as_is`，其他非毛球宠物层才需要替换；
 - `image_2.zip` 仅用于测试图库和输入流程回归，不属于产品素材，不得进入 App bundle、开屏、卡面或营销导出；
 - MVP 不引入 Lottie / Rive 及任何动效运行时；
 - 不下载或使用授权不清的素材；拿不准就不进仓库；
@@ -256,5 +267,5 @@ type RecallTaskKind = "masked_semantic" | "judgment" | "choice"
 - 首次唤醒使用 26pt 自由路径刮开，覆盖网格达到 45% 后完整揭示，并保留一键揭示与 VoiceOver 等价入口；
 - 反馈后依次进入 `assessing → repairing → checkpoint`，先显示修复结算与真实下次时间，再露出下一张边缘及“继续召回 / 先收好”；
 - R / SR / SSR 沿用既有定义和判级规则：R 为局部事实 / 案例 / 操作提示，SR 为连接概念 / 可迁移方法，SSR 为可组织下游知识点的基础原理；它由证据与规则版本确定性计算，未来图谱出现新证据时只升阶不降级；掌握度与复习间隔独立，失败不改变稀有度；
-- 开屏及全部宠物层均为仓库现有毛球；优先复用 `Pick The Shell.zip` 的纸卡、按钮和反馈控件；`image_2.zip` 只用于测试图库，不进入正式产品素材；
+- 开屏及全部宠物位均使用 `Pick The Shell/IP1-1.svg` 官方毛球，并按 `reuse_as_is` 处理；其余六个 SVG 按七组件映射复用，其他非毛球宠物层才替换；`image_2.zip` 只用于测试图库，不进入正式产品素材；
 - 全流程没有概率、付费、保底、近失误、卡包、1/10 进度、剩余数量或社交挑战。

@@ -29,7 +29,7 @@
 5. 毛球定位为情境伙伴，通过待机、转头、翻找、抱卡、注视、回应、思考、打盹和收卡表达当前状态；它不发放奖励，也不催促用户。
 6. 锁定 Web 预览动效参数、素材复用优先级、素材白名单（Pow / Kenney / Phosphor）与“无假进度”红线；用户提供并授权的角色参考图可以直接裁切、去背景、调色和组合。
 7. 当前模型固定为 `qwen3.7-plus-2026-05-26`；设计、Web、iOS 与后端必须共同遵守同一状态机和证据合同，不将产品能力归因于开发代理。
-8. Figma `Pick The Shell`（node `815:1693`）只复用通用纸卡、按钮和反馈控件；开屏及所有宠物位统一替换为仓库现有毛球，不沿用组件库中的任何其他宠物形象。
+8. Figma `Pick The Shell`（node `815:1693`）的七个 SVG 按审查映射复用；其中 `IP1-1.svg` 就是 Recallo 官方毛球，固定为 `reuse_as_is`，只允许尺寸、裁切和状态组合。只有其他非毛球宠物层需要替换。
 9. 旧 MCQ 唤醒入口退出主链；选择题只作为已经完成首次语义唤醒的后续复现变式，旧入口需迁移或下线。
 
 ## 0. 本版确认的产品合同
@@ -53,7 +53,7 @@
 15. **素材先复用、后生成。** 顺序固定为仓库现有素材、用户提供并授权的素材、已登记开源素材，最后才是缺口生成。Pow `1.0.6`（MIT）、Kenney Particle Pack `1.1`（CC0）和 Phosphor Icons Core `2b75f3a`（MIT）继续保留；MVP 不引入 Lottie / Rive；登记见 `docs/asset-provenance.md`。
 16. **反馈保持克制，进度必须真实。** 记得 / 模糊 / 忘记三档克制反馈；全链路不出现假进度条、假百分比和伪造的加载动画。
 17. **入口只有一个。** 今日首页不出现卡池预选、单抽 / 连续双入口或 1/10 回合进度；上拖卡叠和“召回一张”按钮是同一动作的手势与无障碍等价入口。
-18. **Figma 只提供通用控件。** 优先复用 `origin/main` 中的 `Pick The Shell.zip` 及其对应 [Pick The Shell](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f) 纸卡、按钮与反馈控件；开屏及任何宠物层必须换成仓库现有毛球，文件访问密码不得写入仓库。`image_2.zip` 只进入测试图库，不得进入 App bundle 或正式产品素材。
+18. **Figma 七组件按映射复用。** 优先复用 `origin/main` 中的 `Pick The Shell.zip` 及其对应 [Pick The Shell](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f) 七个 SVG；`IP1-1.svg` 是官方毛球，分类为 `reuse_as_is`，只做尺寸、裁切和状态组合。其他六项分别映射到收藏夹、展开、上传、题卡组、滑动条和单题卡，详细边界见动效与素材规范；只有其他非毛球宠物层需要替换。文件访问密码不得写入仓库。`image_2.zip` 只进入测试图库，不得进入 App bundle 或正式产品素材。
 19. **旧 MCQ 流程迁移 / 下线。** 旧选择题唤醒入口不再从今日页可达；选择题数据仅适配为首次唤醒后的 `choice` 复现任务，历史记录保留但不维持两套并行主链。
 
 ## 1. 产品定义
@@ -678,9 +678,9 @@ POST /v3/captures
 
 ### 9.5 视觉来源与旧流程迁移
 
-- 优先复用 `origin/main` 中的 `Pick The Shell.zip` 及其对应 [Pick The Shell](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f) 通用纸卡、按钮与反馈控件；所有导入项在素材登记中标明节点、处理方式和使用位置。
+- 优先复用 `origin/main` 中的 `Pick The Shell.zip` 及其对应 [Pick The Shell](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f) 七个 SVG；逐项映射、处理分类和使用位置见 `docs/recallo-v06-motion-and-assets.md`，实际导入项仍须进入素材登记。
 - `image_2.zip` 只作为 Bilibili / 抖音等输入流程的测试图库；不得导入 App bundle、卡面装饰、开屏或任何正式产品素材。
-- 开屏及首页、等待、召回、回忆、反馈、空状态、结束页中的所有宠物位都使用仓库现有毛球；不得混入组件库原宠物或临时占位动物。
+- `Pick The Shell/IP1-1.svg` 就是开屏及首页、等待、召回、回忆、反馈、空状态、结束页统一使用的官方毛球，按 `reuse_as_is` 处理，只允许尺寸、裁切和状态组合；组件库中其他非毛球宠物或临时占位动物必须替换。
 - 旧 MCQ 唤醒入口在正式构建中不可达；历史选择题只在首次语义唤醒完成后适配为 `choice` 复现任务。旧页面完成数据迁移与回归后下线，不以隐藏入口维持第二条主链。
 - 验收测试必须明确拒绝旧文案与状态：卡池选择、单抽 / 连续选择、1/10 进度、抽中概率和“下一题”式自动连播。
 
@@ -730,7 +730,7 @@ POST /v3/captures
 
 - [`recallo-v06-motion-and-assets.md`](../docs/recallo-v06-motion-and-assets.md)：v0.6 动效时间轴、状态机、Reduce Motion 降级、毛球姿态、反赌博 / 无社交边界与素材授权策略。
 - [Agent UI Atlas](https://github.com/starvingarc/agent-ui-atlas)：只用于检索 Kawaii Minimal、Hand-Drawn Doodle、Soft UI 与克制动效案例；Atlas 的整理许可不替代链接素材各自的许可证。
-- [Pick The Shell（node 815:1693）](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f)：用户授权复用通用纸卡、按钮与反馈控件；所有宠物层和开屏宠物必须替换为仓库现有毛球。
+- [Pick The Shell（node 815:1693）](https://www.figma.com/design/MRw7QWzuuAqX6B5KpdqRy9/Pick-The-Shell?node-id=815-1693&p=f)：用户授权按七组件映射复用；`IP1-1.svg` 是官方毛球并按 `reuse_as_is` 处理，其他非毛球宠物层才需要替换。
 - [`asset-provenance.md`](../docs/asset-provenance.md)：仓库素材授权登记，区分实际使用与评估中。
 - [`ios-app-demo.html`](../docs/ios-app-demo.html)：v0.6 三 Tab 首页、召回、语义擦开与反馈的 Web 交互预览。
 - [`recallo-v06-web-home.png`](../docs/product-exploration/assets/recallo-v06-web-home.png)：375px 今日页验收截图。
