@@ -530,10 +530,10 @@ struct V2UploadView: View {
                 }
             }
             .frame(minHeight: V2UploadPageMetrics.contentHeight, alignment: .top)
-            .onChange(of: sourceText) { newValue in
+            .onChange(of: sourceText) { _, newValue in
                 schedulePreflight(for: newValue)
             }
-            .onChange(of: selectedScreenshotItem) { item in
+            .onChange(of: selectedScreenshotItem) { _, item in
                 guard let item else { return }
                 screenshotLoadMessage = ""
                 Task {
