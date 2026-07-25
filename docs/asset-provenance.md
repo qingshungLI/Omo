@@ -50,6 +50,23 @@
 | Kenney Particle Pack | `1.1`：`star_04.png`、`circle_05.png`、`smoke_06.png` | CC0 · <https://kenney.nl/assets/particle-pack> | `docs/app-demo-assets/kenney-particles/`、`RecalloParticle*.imageset/` | 暖色火花、圆环、烟雾粒子，运行时统一着色 |
 | Phosphor Icons Core | Git commit `2b75f3ad12b420c9504ef05df8d2564a28f8500e`：`sun.svg`、`cards-three.svg`、`user-circle.svg`、`plus.svg`、`arrow-up.svg` | MIT · <https://github.com/phosphor-icons/core> | `docs/app-demo-assets/phosphor/` | Web 三栏导航和导入/上拖提示图标 |
 
+
+### 2.3 用户授权的 Pick The Shell 组件
+
+来源归档：`/data1/yuxiao/recallo-artifacts/799828c/Pick The Shell.zip`（SHA-256 `67c418b7a6cf9b225f531d78c0979951675fe831840a4a9f364fadba5a66cce3`）。用户在本项目对话中明确允许复用；仅提取下列 7 个白名单文件，未导入 `__MACOSX`、`.DS_Store` 或 AppleDouble sidecar。
+
+| 原文件 → Asset 名 | 处理方式 | 实际用途 / 技术说明 |
+| --- | --- | --- |
+| `IP1-1.svg` → `RecallMascotShell` | `reuse_as_is` | 首页/召回伙伴形象；原 SVG 为 raster-in-SVG，未声明矢量保留 |
+| `收藏夹-1.svg` → `RecallFolder` | `reuse_with_crop_or_recolor` | 首页记忆卡文件夹；原 SVG 为 raster-in-SVG，未声明矢量保留 |
+| `题卡组.svg` → `RecallCardStack` | `reuse_as_is` | 首页可拖动的召回卡叠；保留矢量表示 |
+| `题卡-1.svg` → `RecallCardSurface` | `reuse_as_is` | 卡叠前景纸面；保留矢量表示 |
+| `滑动条.svg` → `RecallRevealTrack` | `reuse_as_is` | 语义刮开进度提示；保留矢量表示 |
+| `上传icon-1.svg` → `CaptureUploadIcon` | `reuse_as_is` | 截图导入入口；保留矢量表示 |
+| `展开icon-1.svg` → `RecallExpandIcon` | `reuse_as_is` | 直接揭晓入口；保留矢量表示 |
+
+`AppIcon.appiconset/shibei-app-icon.png` 是 `IP1-1.svg` 的授权派生：在服务器用 GdkPixbuf 按原始 `170×170 viewBox`、clip 与 transform 渲染，缩放为 `820×820` 后居中合成到设计系统 `#E8EBBD` 背景。输出为 `1024×1024` RGB PNG、无 Alpha；内容边界 `(136, 102, 882, 915)`，最小安全边距 `102px`。
+
 ## 3. considered：白名单内、评估中（未导入）
 
 | 素材 | 状态与授权 | 当前决策 |
@@ -103,3 +120,16 @@
 | `phosphor/user-circle.svg` | `96cc02045d8e1db183681f90ee21883b2cc45ce941a8ac5af5a6fa47bdd01f4b` |
 | `phosphor/plus.svg` | `96b24cf8fd7305767791d43231271c47d24f2be856eb2a474df0e67a80840f2f` |
 | `phosphor/arrow-up.svg` | `203081bc75bac0f1296da11e1225cd2315d8ae996b63a31f6ce133f3cd170bc5` |
+
+### Pick The Shell 与 AppIcon
+
+| 文件 | SHA-256 |
+| --- | --- |
+| `RecallMascotShell.imageset/IP1-1.svg` | `94c141133f0ad3e548a5d674eddb50ab294a256533ca92fd1fee0fda9f50b6a8` |
+| `RecallFolder.imageset/收藏夹-1.svg` | `f3fbcbc4210aee8da0a03bf02252bdb09f54f794f450ebf0c8aefb1be09dd73b` |
+| `RecallCardStack.imageset/题卡组.svg` | `ffe512a2d7324ce85e36ee581a399823e005601d16d2b655cbe063d5d5ff8a75` |
+| `RecallCardSurface.imageset/题卡-1.svg` | `aab7aff8bae3a21d7b7c0df96442fa633f42deaa047a1d07840b45e92c03a831` |
+| `RecallRevealTrack.imageset/滑动条.svg` | `55d2e7b7a977cde6c8aa477827cdabcbbcb4e06024e562942b64a851187b9606` |
+| `CaptureUploadIcon.imageset/上传icon-1.svg` | `a17487a9223f4af719476fdaa2397a904fcc08b5d8b09ea2b1090104b76f9391` |
+| `RecallExpandIcon.imageset/展开icon-1.svg` | `b1d85c8cf323fd1615f083a204313b18db96f278bc6a88819840d4863fbebd19` |
+| `AppIcon.appiconset/shibei-app-icon.png` | `d5786a833ca952296fb0fd14d49a5acc98827fc77ecce16934ae1a9e30de13f5` |
