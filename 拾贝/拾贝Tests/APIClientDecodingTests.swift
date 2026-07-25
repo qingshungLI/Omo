@@ -810,6 +810,312 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertNotNil(response.captureAnalysis?.schedule?.nextReviewDate)
     }
 
+    func testDecodesPreferredCaptureMemoryCardGroupAndSourceContext() throws {
+        let data = Data(
+            """
+            {
+              "status": "completed",
+              "memoryCard": {
+                "id": "legacy-card",
+                "coreKnowledge": "旧单卡",
+                "recallCue": "旧单卡？",
+                "explanation": "兼容字段。",
+                "rarity": "R",
+                "sourceStatus": "verified"
+              },
+              "memoryCards": [{
+                "id": "top-level-card",
+                "coreKnowledge": "顶层候选",
+                "recallCue": "顶层？",
+                "explanation": "仅在 captureAnalysis 缺失时使用。",
+                "rarity": "R",
+                "sourceStatus": "verified"
+              }],
+              "captureAnalysis": {
+                "schemaVersion": "capture_memory_card_2",
+                "disposition": "create_card",
+                "sourceStatus": "verified",
+                "memoryCard": {
+                  "id": "primary-card",
+                  "coreKnowledge": "主卡旧兼容字段",
+                  "recallCue": "主卡？",
+                  "explanation": "数组首项的镜像。",
+                  "rarity": "SR",
+                  "sourceStatus": "verified"
+                },
+                "memoryCards": [
+                  {
+                    "id": "primary-card",
+                    "coreKnowledge": "主动提取能够暴露遗忘。",
+                    "recallCue": "什么方式能够暴露遗忘？",
+                    "hiddenSemantic": "主动提取",
+                    "explanation": "先重建答案再核对证据。",
+                    "rarity": "SR",
+                    "sourceTitle": "主动回忆",
+                    "sourceStatus": "verified",
+                    "sourceContext": {
+                      "schemaVersion": "capture_source_context_1",
+                      "nearbyText": "主动回忆要求学习者先尝试提取答案。",
+                      "focusBlockIds": ["block-2"],
+                      "blocks": [
+                        {
+                          "id": "block-1",
+                          "type": "paragraph",
+                          "text": "重读会产生熟悉感。",
+                          "sourceRole": "background"
+                        },
+                        {
+                          "id": "block-2",
+                          "type": "transcript",
+                          "text": "主动回忆能够暴露遗忘。",
+                          "sourceRole": "evidence",
+                          "startSeconds": 18.5,
+                          "endSeconds": 23.0
+                        }
+                      ],
+                      "overview": {
+                        "summary": "比较重读与主动回忆。",
+                        "highlights": ["熟悉感不等于掌握"]
+                      },
+                      "completeness": "full"
+                    }
+                  },
+                  {
+                    "id": "secondary-card",
+                    "coreKnowledge": "熟悉感不等于真正掌握。",
+                    "recallCue": "熟悉感等于掌握吗？",
+                    "hiddenSemantic": "不等于",
+                    "explanation": "需要通过提取验证。",
+                    "rarity": "R",
+                    "sourceStatus": "verified"
+                  },
+                  {
+                    "id": "secondary-card",
+                    "coreKnowledge": "重复卡不应进入客户端。",
+                    "recallCue": "重复？",
+                    "explanation": "按 id 去重。",
+                    "rarity": "R",
+                    "sourceStatus": "verified"
+                  }
+                ],
+                "schedules": [
+                  {
+                    "cardId": "primary-card",
+                    "nextReviewAt": "2026-07-26T10:00:00.000Z",
+                    "intervalDays": 1,
+                    "state": "scheduled",
+                    "status": "scheduled",
+                    "stepIndex": 1
+                  },
+                  {
+                    "cardId": "secondary-card",
+                    "nextReviewAt": "2026-07-28T10:00:00.000Z",
+                    "intervalDays": 3,
+                    "state": "scheduled",
+                    "status": "scheduled",
+                    "stepIndex": 2
+                  }
+                ]
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(ImageFlowResponse.self, from: data)
+        let preferredCards = response.preferredMemoryCards
+
+        XCTAssertEqual(preferredCards.map(\.id), ["primary-card", "secondary-card"])
+        XCTAssertEqual(preferredCards.first?.sourceContext?.schemaVersion, "capture_source_context_1")
+        XCTAssertEqual(preferredCards.first?.sourceContext?.focusBlockIds, ["block-2"])
+        XCTAssertEqual(preferredCards.first?.sourceContext?.blocks.count, 2)
+        XCTAssertEqual(preferredCards.first?.sourceContext?.blocks.last?.startSeconds, 18.5)
+        XCTAssertEqual(preferredCards.first?.sourceContext?.overview?.highlights, ["熟悉感不等于掌握"])
+        XCTAssertEqual(preferredCards.first?.sourceContext?.completeness, .full)
+        XCTAssertEqual(response.reviewSchedule(for: "primary-card", at: 0)?.intervalDays, 1)
+        XCTAssertEqual(response.reviewSchedule(for: "secondary-card", at: 1)?.intervalDays, 3)
+        XCTAssertEqual(response.reviewSchedule(for: "secondary-card", at: 1)?.stepIndex, 2)
+    }
+
+    func testSourceContextCompletenessDecodesLegacyAliasesAndUnknownValues() throws {
+        func decodeCompleteness(_ rawCompleteness: String?) throws -> ImageFlowSourceContext.Completeness? {
+            let completenessField = rawCompleteness.map { ", \"completeness\": \"\($0)\"" } ?? ""
+            let json = """
+                {
+                  "id": "card-1",
+                  "coreKnowledge": "主动提取能够暴露遗忘。",
+                  "recallCue": "什么方式能够暴露遗忘？",
+                  "hiddenSemantic": "主动提取",
+                  "explanation": "先重建答案再核对证据。",
+                  "sourceContext": {
+                    "schemaVersion": "capture_source_context_1",
+                    "nearbyText": "主动回忆要求学习者先尝试提取答案。",
+                    "focusBlockIds": [],
+                    "blocks": []
+                    \(completenessField)
+                  }
+                }
+                """
+            let card = try JSONDecoder().decode(ImageFlowMemoryCard.self, from: Data(json.utf8))
+            return card.sourceContext?.completeness
+        }
+
+        XCTAssertEqual(try decodeCompleteness("full"), .full)
+        XCTAssertEqual(try decodeCompleteness("complete"), .full, "legacy complete must map to full")
+        XCTAssertEqual(try decodeCompleteness("partial"), .partial)
+        XCTAssertEqual(try decodeCompleteness("screenshot_only"), .screenshotOnly)
+        XCTAssertEqual(try decodeCompleteness("nearby_only"), .screenshotOnly, "legacy nearby_only must map to screenshotOnly")
+        XCTAssertEqual(try decodeCompleteness("transcript_only"), .screenshotOnly, "unknown future values must fall back instead of failing the card list")
+        XCTAssertEqual(try decodeCompleteness(nil), .screenshotOnly, "missing completeness keeps the screenshotOnly default")
+    }
+
+    func testRemovingGroupMemberNormalizesSurvivingCaptureGroup() {
+        let capturedAt = Date(timeIntervalSince1970: 1_900_000_000)
+        let survivor = V2CapturedMemoryCard(
+            card: ImageFlowMemoryCard(
+                id: "survivor",
+                state: .formal,
+                coreKnowledge: "知识",
+                recallCue: "问题",
+                hiddenSemantic: "答案",
+                explanation: "解释",
+                rarity: .sr,
+                rarityReason: "原因",
+                sourceTitle: nil,
+                sourceUrl: nil,
+                sourceStatus: .verified,
+                captureGroup: ImageFlowCaptureGroup(
+                    captureId: "capture-1",
+                    cardIds: ["deleted", "survivor"],
+                    count: 2,
+                    index: 1
+                )
+            ),
+            screenshotData: Data(),
+            schedule: schedule(days: 3),
+            masteryStage: .solidified,
+            successfulRecallCount: 2,
+            reviewCount: 4,
+            lastAssessment: .remembered,
+            capturedAt: capturedAt,
+            groupCardCount: 2,
+            groupCardIndex: 1
+        )
+
+        let normalized = survivor.removingGroupMember("deleted")
+
+        XCTAssertEqual(normalized.card.captureGroup?.cardIds, ["survivor"])
+        XCTAssertEqual(normalized.card.captureGroup?.count, 1)
+        XCTAssertEqual(normalized.card.captureGroup?.index, 0)
+        XCTAssertEqual(normalized.groupCardCount, 1)
+        XCTAssertEqual(normalized.groupCardIndex, 0)
+        XCTAssertEqual(normalized.masteryStage, .solidified)
+        XCTAssertEqual(normalized.successfulRecallCount, 2)
+        XCTAssertEqual(normalized.reviewCount, 4)
+        XCTAssertEqual(normalized.lastAssessment, .remembered)
+        XCTAssertEqual(normalized.schedule, schedule(days: 3))
+        XCTAssertEqual(normalized.capturedAt, capturedAt)
+
+        XCTAssertEqual(
+            survivor.removingGroupMember("survivor"),
+            survivor,
+            "the removed card itself is never normalized"
+        )
+        let singular = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "singular"),
+            screenshotData: Data()
+        )
+        XCTAssertEqual(
+            singular.removingGroupMember("deleted"),
+            singular,
+            "singular cards without a capture group stay untouched"
+        )
+    }
+
+    func testDuplicateCaptureMergesCanonicalPayloadWithLocalProgression() {
+        let capturedAt = Date(timeIntervalSince1970: 1_900_000_000)
+        let serverSchedule = schedule(days: 5)
+        let existing = V2CapturedMemoryCard(
+            card: makeScreenshotMemoryCard(id: "canonical"),
+            screenshotData: Data("old".utf8),
+            schedule: schedule(days: 3),
+            masteryStage: .engraved,
+            successfulRecallCount: 4,
+            reviewCount: 6,
+            lastAssessment: .fuzzy,
+            capturedAt: capturedAt
+        )
+
+        var freshCard = makeScreenshotMemoryCard(id: "canonical")
+        freshCard.coreKnowledge = "服务端更新的知识"
+        freshCard.sourceContext = ImageFlowSourceContext(
+            nearbyText: "新的来源片段",
+            completeness: .full
+        )
+        let fresh = V2CapturedMemoryCard(
+            card: freshCard,
+            screenshotData: Data("new".utf8),
+            schedule: nil,
+            groupCardCount: 2,
+            groupCardIndex: 1
+        )
+
+        let merged = fresh.mergedWithLocalProgression(of: existing)
+
+        XCTAssertEqual(merged.id, "canonical")
+        XCTAssertEqual(merged.card.coreKnowledge, "服务端更新的知识", "canonical payload fields come from the fresh response")
+        XCTAssertEqual(merged.card.sourceContext?.completeness, .full)
+        XCTAssertEqual(merged.groupCardCount, 2, "group metadata follows the canonical capture")
+        XCTAssertEqual(merged.groupCardIndex, 1)
+        XCTAssertEqual(merged.masteryStage, .engraved, "duplicate capture must not reset mastery")
+        XCTAssertEqual(merged.successfulRecallCount, 4)
+        XCTAssertEqual(merged.reviewCount, 6)
+        XCTAssertEqual(merged.lastAssessment, .fuzzy)
+        XCTAssertEqual(merged.capturedAt, capturedAt, "duplicate capture must not reset the original capture time")
+        XCTAssertEqual(merged.schedule, schedule(days: 3), "a missing server schedule keeps the existing one")
+        XCTAssertEqual(merged.screenshotData, Data("new".utf8))
+
+        let withServerSchedule = V2CapturedMemoryCard(
+            card: freshCard,
+            screenshotData: Data("new".utf8),
+            schedule: serverSchedule,
+            groupCardCount: 2,
+            groupCardIndex: 1
+        )
+        XCTAssertEqual(
+            withServerSchedule.mergedWithLocalProgression(of: existing).schedule,
+            serverSchedule,
+            "a schedule returned by the server is canonical and wins"
+        )
+    }
+
+    func testCaptureMemoryCardGroupFallsBackToLegacySingularCard() throws {
+        let data = Data(
+            """
+            {
+              "status": "completed",
+              "memoryCard": {
+                "id": "legacy-only",
+                "coreKnowledge": "旧客户端字段仍可读取。",
+                "recallCue": "旧响应是否仍兼容？",
+                "explanation": "使用 singular fallback。",
+                "rarity": "R",
+                "sourceStatus": "verified"
+              },
+              "schedule": {
+                "nextReviewAt": "2026-07-26T10:00:00.000Z",
+                "intervalDays": 1,
+                "state": "scheduled"
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(ImageFlowResponse.self, from: data)
+
+        XCTAssertEqual(response.preferredMemoryCards.map(\.id), ["legacy-only"])
+        XCTAssertEqual(response.reviewSchedule(for: "legacy-only", at: 0)?.intervalDays, 1)
+    }
+
     func testDecodesFlatCaptureCardListAndCanonicalScheduleState() throws {
         let data = Data(
             """
@@ -845,6 +1151,58 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertEqual(response.cards.first?.disposition, .createCard)
         XCTAssertEqual(response.cards.first?.schedule?.state, "due")
         XCTAssertEqual(response.cards.first?.capturedAt, "2026-07-20T09:00:00.000Z")
+        let legacyRecord = try XCTUnwrap(response.cards.first)
+        let legacyCaptured = V2CapturedMemoryCard(record: legacyRecord)
+        XCTAssertEqual(legacyCaptured.groupCardCount, 1)
+        XCTAssertEqual(legacyCaptured.groupCardIndex, 0)
+    }
+
+    func testDecodesCaptureRecordGroupAndRestoresCurrentCardPosition() throws {
+        let data = Data(
+            """
+            {
+              "cards": [{
+                "memoryCard": {
+                  "id": "capture-card-2",
+                  "state": "formal",
+                  "coreKnowledge": "第二张卡",
+                  "recallCue": "现在是哪张卡？",
+                  "hiddenSemantic": "第二张",
+                  "explanation": "这是同一截图生成的第二张卡。",
+                  "rarity": "R",
+                  "sourceStatus": "verified",
+                  "captureGroup": {
+                    "captureId": "capture-1",
+                    "cardIds": ["capture-card-1", "capture-card-2"],
+                    "count": 2,
+                    "index": 1
+                  }
+                },
+                "disposition": "create_card",
+                "schedule": {
+                  "cardId": "capture-card-2",
+                  "nextReviewAt": "2026-07-28T10:00:00.000Z",
+                  "intervalDays": 3,
+                  "state": "scheduled"
+                }
+              }]
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CaptureMemoryCardsResponse.self, from: data)
+        let record = try XCTUnwrap(response.cards.first)
+        let captured = V2CapturedMemoryCard(record: record)
+
+        XCTAssertNil(record.memoryCards)
+        XCTAssertEqual(record.memoryCard.captureGroup?.cardIds, [
+            "capture-card-1",
+            "capture-card-2"
+        ])
+        XCTAssertEqual(record.captureGroup?.captureId, "capture-1")
+        XCTAssertEqual(captured.id, "capture-card-2")
+        XCTAssertEqual(captured.groupCardCount, 2)
+        XCTAssertEqual(captured.groupCardIndex, 1)
     }
 
     func testDecodesIdempotentCaptureAssessmentSchedule() throws {
@@ -917,6 +1275,91 @@ final class APIClientDecodingTests: XCTestCase {
         XCTAssertNil(pending.lastAssessment)
         XCTAssertEqual(archived.successfulRecallCount, 0)
         XCTAssertEqual(pending.reviewCount, 0)
+    }
+
+    func testDecodesConfirmationNeedsInputAndReducerKeepsEditorOpen() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": "capture_memory_confirmation_1",
+              "status": "needs_user_input",
+              "action": "confirm",
+              "cardId": "pending-card",
+              "message": "请从已识别文字中选择核心知识。",
+              "requiredFields": ["coreKnowledge"],
+              "evidence": [
+                {
+                  "id": "evidence-1",
+                  "text": "间隔练习会把复习分散到不同时间。"
+                }
+              ]
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(
+            CaptureMemoryCardConfirmationResponse.self,
+            from: data
+        )
+        let outcome = V2CaptureConfirmationReducer.reduce(response)
+
+        guard case .needsUserInput(let message, let fields, let evidence) = outcome else {
+            return XCTFail("Expected needs-user-input outcome.")
+        }
+        XCTAssertEqual(message, "请从已识别文字中选择核心知识。")
+        XCTAssertEqual(fields, ["coreKnowledge"])
+        XCTAssertEqual(evidence.first?.id, "evidence-1")
+    }
+
+    func testDecodesConfirmedCanonicalCardAndReducerMakesItReviewable() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": "capture_memory_confirmation_1",
+              "status": "confirmed",
+              "action": "confirm",
+              "cardId": "pending-card",
+              "card": {
+                "id": "pending-card",
+                "captureId": "capture-1",
+                "disposition": "create_card",
+                "state": "formal",
+                "coreKnowledge": "间隔练习会把复习分散到不同时间。",
+                "recallCue": "你能回忆出这条已确认的知识吗？",
+                "hiddenSemantic": "分散到不同时间",
+                "explanation": "间隔练习会把复习分散到不同时间。",
+                "sourceEvidenceIds": ["evidence-1"],
+                "rarity": "R",
+                "rarityReason": "用户确认的局部知识。",
+                "sourceStatus": "partial",
+                "schedule": {
+                  "nextReviewAt": "2026-07-25T12:00:00.000Z",
+                  "intervalDays": 0,
+                  "state": "scheduled",
+                  "status": "scheduled"
+                },
+                "masteryStage": "sealed",
+                "successfulRecallCount": 0,
+                "reviewCount": 0,
+                "capturedAt": "2026-07-25T11:00:00.000Z"
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(
+            CaptureMemoryCardConfirmationResponse.self,
+            from: data
+        )
+        let outcome = V2CaptureConfirmationReducer.reduce(response)
+
+        guard case .confirmed(let card) = outcome else {
+            return XCTFail("Expected confirmed outcome.")
+        }
+        XCTAssertTrue(card.isReadyForReview)
+        XCTAssertEqual(card.disposition, .createCard)
+        XCTAssertEqual(card.schedule?.intervalDays, 0)
+        XCTAssertEqual(card.card.coreKnowledge, "间隔练习会把复习分散到不同时间。")
     }
 
     func testDecodesCaptureMemoryCardDeletionContract() throws {

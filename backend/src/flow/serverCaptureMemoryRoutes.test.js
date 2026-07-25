@@ -25,6 +25,14 @@ test("keeps persistence metadata outside capture_memory_card_2 payloads", () => 
     rarityRuleVersion: "capture_rarity_2",
     recallVariants: [],
     sourceStatus: "verified",
+    sourceContext: {
+      schemaVersion: "capture_source_context_1",
+      nearbyText: "主动回忆能够暴露记忆缺口。",
+      focusBlockIds: ["e-1"],
+      blocks: [{ id: "e-1", text: "主动回忆能够暴露记忆缺口。" }],
+      overview: { summary: "主动回忆", highlights: [] },
+      completeness: "partial"
+    },
     captureId: "capture-1",
     schedule: { intervalDays: 1 },
     masteryStage: "sealed",
@@ -34,6 +42,7 @@ test("keeps persistence metadata outside capture_memory_card_2 payloads", () => 
   });
   assert.equal(payload.id, "card-1");
   assert.equal(payload.rarityReason, "局部事实。");
+  assert.equal(payload.sourceContext.schemaVersion, "capture_source_context_1");
   assert.equal("schedule" in payload, false);
   assert.equal("masteryStage" in payload, false);
   assert.equal("durable" in payload, false);
@@ -61,18 +70,34 @@ test("persists a synchronous image-flow result without flattening repository met
       platform: "bilibili",
       rawText: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。",
       overviewText: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。",
-      blocks: [{
-        id: "e-1",
-        type: "paragraph",
-        text: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。"
-      }]
+      blocks: [
+        {
+          id: "e-1",
+          type: "paragraph",
+          text: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。"
+        },
+        {
+          id: "e-2",
+          type: "paragraph",
+          text: "学习者可以据此判断哪些内容需要再次练习。"
+        }
+      ],
+      overviewBlocks: [
+        {
+          id: "e-1",
+          type: "paragraph",
+          text: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。"
+        },
+        {
+          id: "e-2",
+          type: "paragraph",
+          text: "学习者可以据此判断哪些内容需要再次练习。"
+        }
+      ],
+      focus: { status: "transcript_match", blocks: [{ id: "e-1", text: "主动回忆要求学习者先尝试提取信息，从而暴露记忆缺口。" }] }
     }),
-    generateMemory: async () => ({
-      schemaVersion: "capture_memory_card_2",
-      disposition: "create_card",
-      sourceStatus: "verified",
-      decisionReason: "证据充分。",
-      memoryCard: {
+    generateMemory: async () => {
+      const first = {
         id: "generated-route-card",
         coreKnowledge: "主动回忆能够暴露记忆缺口。",
         recallCue: "主动回忆有什么作用？",
@@ -84,9 +109,33 @@ test("persists a synchronous image-flow result without flattening repository met
         rarityConfidence: 0.8,
         rarityRuleVersion: "capture_rarity_2",
         recallVariants: []
-      },
-      schedule: createInitialReviewSchedule({ now: new Date("2026-07-24T08:00:00.000Z") })
-    }),
+      };
+      const second = {
+        ...first,
+        id: "generated-route-card-2",
+        coreKnowledge: "学习者可以判断需要再次练习的内容。",
+        recallCue: "主动回忆后，学习者可以作出什么判断？",
+        hiddenSemantic: "需要再次练习的内容",
+        explanation: "证据说明学习者可以据此判断哪些内容需要再次练习。",
+        sourceEvidenceIds: ["e-2"]
+      };
+      const schedule = createInitialReviewSchedule({
+        now: new Date("2026-07-24T08:00:00.000Z")
+      });
+      return {
+        schemaVersion: "capture_memory_card_2",
+        disposition: "create_card",
+        sourceStatus: "verified",
+        decisionReason: "证据包含两个独立判断。",
+        memoryCards: [first, second],
+        memoryCard: first,
+        schedules: [
+          { cardId: first.id, ...schedule },
+          { cardId: second.id, ...schedule }
+        ],
+        schedule
+      };
+    },
     generateOverview: async () => ({ summary: "全片概览", highlights: [] })
   });
 
@@ -96,12 +145,94 @@ test("persists a synchronous image-flow result without flattening repository met
     persistenceEpoch
   });
   assert.equal(stored.disposition, "create_card");
-  assert.equal((await captureMemoryStore.list("image-flow-device")).cards.length, 1);
+  assert.equal((await captureMemoryStore.list("image-flow-device")).cards.length, 2);
+  assert.equal(result.captureAnalysis.memoryCards.length, 2);
+  assert.equal(result.memoryCards.length, 2);
+  assert.equal(result.captureAnalysis.memoryCard.id, result.captureAnalysis.memoryCards[0].id);
+  assert.equal(result.captureAnalysis.schedules.length, 2);
+  assert.equal(result.captureAnalysis.memoryCards[0].captureGroup.count, 2);
+  assert.equal(result.captureAnalysis.memoryCards[1].captureGroup.index, 1);
   assert.equal(result.captureAnalysis.memoryCard.id, stored.id);
   assert.equal("schedule" in result.captureAnalysis.memoryCard, false);
   assert.equal("durable" in result.captureAnalysis.memoryCard, false);
   assert.equal(result.memoryCard.state, "formal");
   assert.equal(result.memoryCard.rarityReason, "局部学习方法。");
+  captureMemoryStore.reset();
+});
+
+test("duplicate upload returns the stored canonical card contract", async () => {
+  captureMemoryStore.reset();
+  const deviceId = "duplicate-contract-device";
+  const imageSha256 = "e".repeat(64);
+  const schedule = createInitialReviewSchedule({
+    now: new Date("2026-07-24T08:00:00.000Z")
+  });
+  const canonicalCard = {
+    id: "canonical-generated-card",
+    coreKnowledge: "主动回忆能够暴露记忆缺口。",
+    recallCue: "主动回忆有什么作用？",
+    hiddenSemantic: "暴露记忆缺口",
+    explanation: "先提取信息。",
+    sourceEvidenceIds: ["e-1"],
+    rarity: "R",
+    rarityReason: "局部学习方法。",
+    rarityConfidence: 0.8,
+    rarityRuleVersion: "capture_rarity_2",
+    recallVariants: [],
+    sourceStatus: "verified"
+  };
+  const stored = captureMemoryStore.persistCaptureResult(deviceId, {
+    captureAnalysis: {
+      schemaVersion: "capture_memory_card_2",
+      disposition: "create_card",
+      sourceStatus: "verified",
+      decisionReason: "首次识别证据充分。",
+      memoryCards: [canonicalCard],
+      memoryCard: canonicalCard,
+      schedules: [{ cardId: canonicalCard.id, ...schedule }],
+      schedule
+    }
+  }, {
+    deviceId,
+    imageSha256,
+    evidence: [{ id: "e-1", type: "paragraph", text: canonicalCard.coreKnowledge }]
+  });
+  const retryResult = {
+    status: "completed",
+    captureAnalysis: {
+      schemaVersion: "capture_memory_card_2",
+      disposition: "needs_confirmation",
+      sourceStatus: "unconfirmed",
+      decisionReason: "重试时没有识别到足够上下文。",
+      memoryCards: [],
+      memoryCard: null,
+      schedules: [],
+      schedule: null
+    },
+    memoryCards: [],
+    schedules: [],
+    memoryCard: {
+      id: "retry-fragment",
+      state: "fragment",
+      coreKnowledge: "重试产生的非持久化内容。",
+      recallCue: "重试内容是什么？",
+      explanation: "这个内容不能覆盖正式卡。",
+      sourceStatus: "unconfirmed"
+    }
+  };
+
+  await persistCaptureMemoryResult(deviceId, retryResult, {
+    imageSha256,
+    persistenceEpoch: captureMemoryStore.beginPersistence(deviceId)
+  });
+
+  assert.equal(retryResult.captureAnalysis.sourceStatus, "verified");
+  assert.equal(retryResult.captureAnalysis.memoryCard.id, stored.id);
+  assert.equal(retryResult.captureAnalysis.memoryCard.coreKnowledge, canonicalCard.coreKnowledge);
+  assert.equal(retryResult.memoryCard.id, stored.id);
+  assert.equal(retryResult.memoryCard.coreKnowledge, canonicalCard.coreKnowledge);
+  assert.equal(retryResult.memoryCard.state, "formal");
+  assert.equal(retryResult.memoryCard.sourceStatus, "verified");
   captureMemoryStore.reset();
 });
 
@@ -134,7 +265,9 @@ test("does not restore a card when deletion wins while the model is running", as
     review: { units: [{ questions: [{ id: "stale-question" }] }] }
   };
 
-  captureMemoryStore.clearDevice("stale-device");
+  const existing = captureMemoryStore.upsertCaptureAnalysis("stale-device", modelResult.captureAnalysis);
+  assert.ok(existing?.id);
+  captureMemoryStore.deleteCard("stale-device", existing.id);
   const stored = await persistCaptureMemoryResult("stale-device", modelResult, {
     imageSha256: "d".repeat(64),
     persistenceEpoch
@@ -218,15 +351,33 @@ test("lists device-isolated cards and records idempotent assessments over HTTP",
   });
 
 
-  captureMemoryStore.upsertCaptureAnalysis("route-device", {
-    schemaVersion: "capture_memory_card_2",
-    disposition: "needs_confirmation",
-    sourceStatus: "unconfirmed",
-    decisionReason: "缺少完整上下文。",
-    memoryCard: null,
-    schedule: null
+  const pendingStored = captureMemoryStore.persistCaptureResult("route-device", {
+    captureAnalysis: {
+      schemaVersion: "capture_memory_card_2",
+      disposition: "needs_confirmation",
+      sourceStatus: "unconfirmed",
+      decisionReason: "缺少完整上下文。",
+      memoryCards: [],
+      memoryCard: null,
+      schedules: [],
+      schedule: null
+    },
+    memoryCard: {
+      id: "route-pending-fragment",
+      state: "fragment",
+      coreKnowledge: "来源标题不是知识点",
+      recallCue: "你想记住什么？",
+      explanation: "缺少完整上下文。",
+      sourceStatus: "unconfirmed"
+    }
   }, {
-    now: new Date("2026-07-24T08:00:00.000Z")
+    now: new Date("2026-07-24T08:00:00.000Z"),
+    imageSha256: "6".repeat(64),
+    evidence: [{
+      id: "route-evidence",
+      type: "paragraph",
+      text: "间隔练习会把复习分散到不同时间。"
+    }]
   });
 
   await new Promise((resolve, reject) => {
@@ -257,6 +408,43 @@ test("lists device-isolated cards and records idempotent assessments over HTTP",
   assert.equal(formal.disposition, "create_card");
   assert.equal(formal.masteryStage, "sealed");
   assert.equal(pending.schedule, null);
+  assert.equal(pending.id, pendingStored.id);
+
+  const needsInputResponse = await fetch(
+    `${baseUrl}/api/memory-cards/${encodeURIComponent(pending.id)}/confirmation`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "confirm" })
+    }
+  );
+  assert.equal(needsInputResponse.status, 200);
+  const needsInput = await needsInputResponse.json();
+  assert.equal(needsInput.status, "needs_user_input");
+  assert.deepEqual(needsInput.requiredFields, ["coreKnowledge"]);
+  assert.equal(needsInput.evidence[0].text, "间隔练习会把复习分散到不同时间。");
+
+  const confirmationResponse = await fetch(
+    `${baseUrl}/api/memory-cards/${encodeURIComponent(pending.id)}/confirmation`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "confirm",
+        coreKnowledge: "间隔练习会把复习分散到不同时间。",
+        hiddenSemantic: "分散到不同时间"
+      })
+    }
+  );
+  assert.equal(confirmationResponse.status, 200);
+  const confirmation = await confirmationResponse.json();
+  assert.equal(confirmation.schemaVersion, "capture_memory_confirmation_1");
+  assert.equal(confirmation.status, "confirmed");
+  assert.equal(confirmation.card.id, pending.id);
+  assert.equal(confirmation.card.state, "formal");
+  assert.equal(confirmation.card.disposition, "create_card");
+  assert.equal(confirmation.card.schedule.intervalDays, 0);
+  assert.deepEqual(confirmation.card.sourceEvidenceIds, ["route-evidence"]);
 
   const firstResponse = await fetch(
     `${baseUrl}/api/memory-cards/route-card/assessments`,

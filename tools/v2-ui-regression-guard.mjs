@@ -66,6 +66,11 @@ const mascotViewSource = extractBetween(
   "struct V2RecallMascotView",
   "struct V2AdaptiveRecallMascotView"
 );
+const memoryCardStackSource = extractBetween(
+  source.awakeningViews,
+  "private struct V2MemoryCardStack",
+  "private var isDragging"
+);
 const iosMascotAssetPath = resolve(
   repoRoot,
   "拾贝/拾贝/Assets.xcassets/RecallMascotShell.imageset/IP1-1.svg"
@@ -229,6 +234,13 @@ const checks = [
     "Zero screenshot cards must render the add-content empty state; fixture, chapter, and legacy flags must not expose a disabled recall shell."
   ),
   check(
+    "home_recall_front_card_is_opaque",
+    !memoryCardStackSource.includes("Image(\"RecallCardSurface\")")
+      && memoryCardStackSource.includes(".fill(V2Color.surfaceCream)")
+      && !memoryCardStackSource.includes(".fill(V2Color.surfaceCream.opacity"),
+    "The home recall stack must use an opaque code-drawn foreground card so rear artwork cannot overlap its labels."
+  ),
+  check(
     "recall_ritual_uses_frozen_phase_contract",
     /case home[\s\S]*case summoning[\s\S]*case recall[\s\S]*case scratching[\s\S]*case revealed[\s\S]*case assessing[\s\S]*case repairing[\s\S]*case checkpoint[\s\S]*case stowing[\s\S]*case paused/.test(recallPhaseSource),
     "The recall ritual must keep the frozen ten-phase contract, including an explicit repairing phase."
@@ -269,7 +281,7 @@ const checks = [
   check(
     "scratch_reveal_uses_canvas_grid_threshold",
     source.screenshotAwakeningViews.includes("Canvas { context, size in")
-      && source.screenshotAwakeningViews.includes("context.blendMode = .destinationOut")
+      && scratchCanvasSource.includes("coverContext.blendMode = .destinationOut")
       && source.screenshotAwakeningViews.includes("brushDiameter: CGFloat = 26")
       && source.screenshotAwakeningViews.includes("coverage >= 0.45"),
     "Scratch reveal must use a 26pt destination-out Canvas and a 45 percent grid threshold."
@@ -340,7 +352,7 @@ const checks = [
   check(
     "fragments_are_saved_but_never_reviewed",
     /var isFormalReviewCard:\s*Bool[\s\S]{0,180}card\.state\s*==\s*\.formal[\s\S]{0,120}disposition\s*==\s*\.createCard/.test(capturedMemoryCardSource)
-      && /guard\s+captured\.isReadyForReview\s+else/.test(screenshotAnalysisSource)
+      && /guard\s+(?:captured|primaryCard)\.isReadyForReview\s+else/.test(screenshotAnalysisSource)
       && screenshotAnalysisSource.includes("selectedTab = .materials")
       && /case\s+\.archiveOnly:[\s\S]{0,100}libraryStatusText\("已保存碎片"\)/.test(libraryCardSource)
       && /case\s+\.needsConfirmation:[\s\S]{0,100}libraryStatusText\("待确认"\)/.test(libraryCardSource)
@@ -393,6 +405,14 @@ const checks = [
     "VoiceOver adjustment and finger scratching must share one cell-based coverage source without inflating the brush radius."
   ),
   check(
+    "scratch_hidden_answer_is_not_accessible_before_reveal",
+    !scratchCanvasSource.includes("Text(hiddenText)")
+      && /Canvas \{ context, size in[\s\S]{0,520}Text\(verbatim:\s*hiddenText\)/.test(scratchCanvasSource)
+      && /context\.draw\(\s*renderedAnswer,\s*in:\s*answerFrame\s*\)/.test(scratchCanvasSource)
+      && revealedContentSource.includes("Text(currentCard.card.coreKnowledge)"),
+    "The covered answer must be Canvas-rendered without a semantic Text node, while revealed content keeps its formal accessible Text."
+  ),
+  check(
     "fuzzy_feedback_uses_tilt_without_inactive_pause",
     /case \.fuzzy: return \.turning/.test(source.screenshotAwakeningViews)
       && /case \.inactive:\s+persistPresentationState\(\)/.test(source.screenshotAwakeningViews),
@@ -416,6 +436,112 @@ const checks = [
     "Capture processing may show a truthful stage label, but must not synthesize percentages or a determinate progress bar."
   ),
   check(
+    "web_multi_card_group_keeps_singular_compatibility",
+    source.webDemo.includes("analysis.memoryCards || result?.memoryCards || []")
+      && source.webDemo.includes("analysis.memoryCard || result?.memoryCard || memoryCards[0]")
+      && source.webDemo.includes("record?.memoryCard || record?.card || memoryCards?.[0] || record")
+      && source.webDemo.includes("function normalizeRecords(records)")
+      && source.webDemo.includes("card.captureGroup?.cardIds || []")
+      && source.webDemo.includes("declared + 1")
+      && source.webDemo.includes('data-testid="memory-group"')
+      && source.webDemo.includes("每次只回忆一张"),
+    "Web must accept capture memoryCards, rebuild restart groups from zero-based captureGroup.cardIds/index, preserve singular fallback, and show one card at a time."
+  ),
+  check(
+    "web_source_context_preserves_frozen_contract",
+    source.webDemo.includes('schemaVersion:String(value.schemaVersion || "")')
+      && source.webDemo.includes('nearbyText:String(value.nearbyText || "")')
+      && source.webDemo.includes('return {summary:value,highlights:[]}')
+      && source.webDemo.includes('summary:String(value.summary || "")')
+      && source.webDemo.includes("highlights:(Array.isArray(value.highlights)")
+      && source.webDemo.includes('const legacyAliases = {complete:"full",nearby_only:"screenshot_only"}')
+      && source.webDemo.includes('["full","partial","screenshot_only"].includes(normalized)')
+      && source.webDemo.includes(".filter(Boolean).slice(0,64)")
+      && source.webDemo.includes("type:String(value.type || \"\")")
+      && source.webDemo.includes("sourceRole:String(value.sourceRole || \"\")")
+      && source.webDemo.includes("startSeconds:value.startSeconds !== null")
+      && source.webDemo.includes("endSeconds:value.endSeconds !== null")
+      && source.webDemo.includes("formatContextTimestamp(block.startSeconds)")
+      && source.webDemo.includes("overviewData.highlights.map")
+      && source.webDemo.includes('data-testid="context-nearby-fallback"')
+      && source.webDemo.includes('class="context-overview"'),
+    "Web source context must normalize the frozen overview, completeness and timestamp contract, retain up to 64 typed blocks, render summary/highlights/timestamps, and fall back truthfully to nearbyText."
+  ),
+  check(
+    "web_context_dialog_reveals_explicitly_and_returns_focus",
+    source.webDemo.includes('aria-haspopup="dialog"')
+      && source.webDemo.includes('role="dialog" aria-modal="true"')
+      && source.webDemo.includes('class="context-marker">截图附近</span>')
+      && source.webDemo.includes('reveal({openContext:true})')
+      && source.webDemo.includes('event.key==="Escape"')
+      && source.webDemo.includes('requestAnimationFrame(()=>app.querySelector(\'[data-testid="context-expand"]\')?.focus())'),
+    "Source context must be an explicit reveal action with dialog semantics, screenshot-nearby markers, Escape close, and focus restoration."
+  ),
+  check(
+    "web_hidden_semantic_is_not_dom_text_before_reveal",
+    source.webDemo.includes('class="scratch-answer-canvas" aria-hidden="true"')
+      && source.webDemo.includes("answerContext.fillText")
+      && !source.webDemo.includes('<div class="scratch-answer">${escapeHtml(card.hiddenSemantic)}</div><canvas class="scratch"'),
+    "Before explicit reveal, the hidden semantic may be painted under the scratch layer but must not appear as readable DOM text."
+  ),
+  check(
+    "web_visibility_resume_stabilizes_transient_phases",
+    source.webDemo.includes('const stableResumePhase = phase => ["summoning","stowing"].includes(phase) ? "recall" : phase;')
+      && source.webDemo.includes("ui.resumePhase=stableResumePhase(ui.phase)")
+      && source.webDemo.includes('ui.phase=stableResumePhase(ui.resumePhase)||"recall"')
+      && source.webDemo.includes('ui.phase=stableResumePhase(ui.resumePhase||"recall")'),
+    "Visibility resume must restore a stable phase (summoning/stowing -> recall) instead of a dead transient state; skip behavior stays unchanged."
+  ),
+  check(
+    "web_group_backing_layers_match_group_size",
+    source.webDemo.includes("Math.min(2,Math.max(0,count - 1))"),
+    "Recall card backing layers must equal min(2, groupCount-1) so a 2-card group never looks like 3 cards."
+  ),
+  check(
+    "web_context_timestamp_range_requires_end_after_start",
+    source.webDemo.includes("block.endSeconds > block.startSeconds"),
+    "Context timestamps may render a range only when endSeconds > startSeconds, matching the iOS guard."
+  ),
+  check(
+    "ios_source_context_completeness_tolerates_legacy_and_unknown_values",
+    source.apiClient.includes("init(normalizing rawValue: String?)")
+      && source.apiClient.includes('case "full", "complete":')
+      && source.apiClient.includes('case "screenshot_only", "nearby_only", .none:')
+      && source.apiClient.includes("completeness = Completeness(")
+      && !source.apiClient.includes("decodeIfPresent(Completeness.self, forKey: .completeness)"),
+    "iOS completeness decoding must map legacy complete/nearby_only and fall back safely on unknown values instead of failing the card list."
+  ),
+  check(
+    "ios_group_ui_renders_current_position",
+    source.screenshotAwakeningViews.includes("当前 \\(currentCard.groupCardIndex + 1) / \\(currentCard.groupCardCount)")
+      && source.screenshotAwakeningViews.includes("当前 \\(item.groupCardIndex + 1) / \\(item.groupCardCount)")
+      && source.screenshotAwakeningViews.includes("groupCardIndex: currentCard.groupCardIndex"),
+    "iOS group UI must render the current X / N position from the zero-based groupCardIndex, not the count alone."
+  ),
+  check(
+    "ios_source_context_matches_web_labels_and_nearby_fallback",
+    source.screenshotAwakeningViews.includes('case .full: "脉络较完整"')
+      && source.screenshotAwakeningViews.includes('case .partial: "脉络不完整"')
+      && source.screenshotAwakeningViews.includes('case .screenshotOnly: "仅截图附近"')
+      && !source.screenshotAwakeningViews.includes('case .full: "全文脉络"')
+      && source.screenshotAwakeningViews.includes("if visibleBlocks.isEmpty,"),
+    "iOS completeness labels must match the Web wording and nearbyText may render standalone only when no typed blocks exist."
+  ),
+  check(
+    "ios_delete_renormalizes_surviving_capture_group",
+    source.screenshotMemoryModels.includes("func removingGroupMember(_ removedCardID: String) -> V2CapturedMemoryCard")
+      && source.screenshotMemoryModels.includes("group.cardIds = remainingIDs.isEmpty ? [updatedCard.id] : remainingIDs")
+      && source.v2Root.includes("screenshotCards = screenshotCards.map { $0.removingGroupMember(id) }"),
+    "After a successful delete, surviving in-memory cards must re-normalize captureGroup count/index/cardIds so no session shows stale group metadata."
+  ),
+  check(
+    "ios_duplicate_capture_merges_local_progression",
+    source.screenshotMemoryModels.includes("func mergedWithLocalProgression(of existing: V2CapturedMemoryCard) -> V2CapturedMemoryCard")
+      && source.screenshotMemoryModels.includes("schedule: schedule ?? existing.schedule")
+      && source.v2Root.includes("capturedCard.mergedWithLocalProgression("),
+    "A duplicate screenshot returning the same canonical id must merge payload fields with existing mastery, counts, capture time, schedule, and assessment."
+  ),
+  check(
     "rarity_has_no_default_r_fallback",
     !/rarity\?\.rawValue\s*\?\?\s*"R"/.test(rarityFallbackSource)
       && !/\brarity\s*\?\?\s*\.r\b/.test(rarityFallbackSource)
@@ -429,8 +555,8 @@ const checks = [
       && /mutating func apply\([\s\S]{0,260}guard\s+isReadyForReview\s+else/.test(captureApplySource)
       && /func isEligible\([\s\S]{0,220}guard\s+isReadyForReview\s+else/.test(capturedMemoryCardSource)
       && /screenshotCards\.filter\(\\\.isReadyForReview\)/.test(reviewableScreenshotCardsSource)
-      && /guard\s+captured\.isReadyForReview\s+else/.test(screenshotAnalysisSource)
-      && screenshotAnalysisSource.includes("captured.isUngradedFormalCard")
+      && /guard\s+(?:captured|primaryCard)\.isReadyForReview\s+else/.test(screenshotAnalysisSource)
+      && /(?:captured|primaryCard)\.isUngradedFormalCard/.test(screenshotAnalysisSource)
       && screenshotAnalysisSource.includes("暂不进入复习")
       && /guard\s+currentCard\.isReadyForReview\s+else/.test(completeAssessmentSource)
       && /if\s+!currentCard\.isReadyForReview/.test(source.screenshotAwakeningViews),

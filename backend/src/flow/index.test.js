@@ -503,13 +503,31 @@ test("locates a missing player timestamp from OCR keywords in timed transcript",
     rawText: "全片转写",
     blocks: [
       { id: "a", text: "开场介绍", startSeconds: 0, endSeconds: 10 },
-      { id: "b", text: "垂死病中惊坐起，市场出现剧烈变化", startSeconds: 90, endSeconds: 110 },
-      { id: "c", text: "结尾总结", startSeconds: 250, endSeconds: 260 }
+      { id: "b", text: "背景说明", startSeconds: 40, endSeconds: 50 },
+      { id: "c", text: "垂死病中惊坐起，市场出现剧烈变化", startSeconds: 90, endSeconds: 110 },
+      { id: "d", text: "影响分析", startSeconds: 120, endSeconds: 130 },
+      { id: "e", text: "结尾总结", startSeconds: 250, endSeconds: 260 }
     ]
   }, null, { locatorTerms: ["垂死病中惊坐起"] });
   assert.equal(focus.status, "transcript_match");
   assert.equal(focus.timestampSeconds, 90);
-  assert.deepEqual(focus.blocks.map((block) => block.id), ["b"]);
+  assert.deepEqual(focus.blocks.map((block) => block.id), ["b", "c", "d"]);
+});
+
+test("locates screenshot-nearby text in untimed article blocks using the best block plus neighbors", () => {
+  const focus = focusSourceContent({
+    rawText: "全文",
+    blocks: [
+      { id: "a", text: "文章开头" },
+      { id: "b", text: "方法背景" },
+      { id: "c", text: "主动回忆会暴露记忆缺口" },
+      { id: "d", text: "方法应用" },
+      { id: "e", text: "文章结尾" }
+    ]
+  }, null, { locatorTerms: ["主动回忆", "记忆缺口"] });
+  assert.equal(focus.status, "text_match_window");
+  assert.equal(focus.timestampSeconds, null);
+  assert.deepEqual(focus.blocks.map((block) => block.id), ["b", "c", "d"]);
 });
 
 test("uses TikHub Bilibili search when its key is configured", async () => {

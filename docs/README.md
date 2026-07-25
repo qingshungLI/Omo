@@ -14,22 +14,25 @@
 | 文档 | 用途 |
 | --- | --- |
 | [`../README.md`](../README.md) | 当前产品闭环、运行入口与测试命令 |
-| [`../tasks/prd-recallo-2-screenshot-awakening-v0.6.md`](../tasks/prd-recallo-2-screenshot-awakening-v0.6.md) | v0.6 产品合同；一份内容一张主卡、召回、刮开、反馈与 R/SR/SSR |
+| [`../tasks/prd-recallo-2-screenshot-awakening-v0.6.md`](../tasks/prd-recallo-2-screenshot-awakening-v0.6.md) | v0.6 产品合同；默认一张、独立高密度内容最多三张，逐张召回、刮开、反馈与 R/SR/SSR |
+| [`ios-api-data-contract-zh.md`](ios-api-data-contract-zh.md) | 当前截图卡 `memoryCards` / `captureGroup` / `sourceContext` 合同，以及旧 Chapter API 兼容边界 |
 | [`../tasks/roadmap-recallo-2-10h-mvp-v0.2.md`](../tasks/roadmap-recallo-2-10h-mvp-v0.2.md) | 当前 10 小时 MVP 范围和完成定义 |
 | [`recallo-v06-motion-and-assets.md`](recallo-v06-motion-and-assets.md) | 毛球状态机、召回时间轴、刮开与 Reduce Motion 合同 |
 | [`recallo-v06-animation-production-checklist.md`](recallo-v06-animation-production-checklist.md) | 动画制作、复用与待补素材清单 |
 | [`asset-provenance.md`](asset-provenance.md) | 所有进入应用素材的来源、许可和处理登记 |
-| [`../backend/src/flow/README.md`](../backend/src/flow/README.md) | 截图到一张 Evidence 卡及调度的后端主链 |
+| [`../backend/src/flow/README.md`](../backend/src/flow/README.md) | 截图到 1–3 张独立 Evidence 卡及逐卡调度的后端主链 |
 | [`validation/2026-07-24-recallo-v06-mvp-validation.md`](validation/2026-07-24-recallo-v06-mvp-validation.md) | 后端/Web 合同验收及真实模型质量边界 |
 | [`validation/2026-07-24-recallo-v06-ios-interaction.md`](validation/2026-07-24-recallo-v06-ios-interaction.md) | iOS 交互合同、静态验收与 Apple 工具链边界 |
 | [`repository-audit-2026-07-25.md`](repository-audit-2026-07-25.md) | PR #1 关闭后的保留、迁移与不迁移清单 |
 | [`validation/2026-07-25-v07-reconciliation.md`](validation/2026-07-25-v07-reconciliation.md) | v0.7 外部草案与当前实现的取舍、已修差异和后续纵切片 |
+| [`validation/2026-07-25-issue-3-5-validation.md`](validation/2026-07-25-issue-3-5-validation.md) | Issue #3/#5 多卡、来源上下文和兼容合同的证据分层验收；未完成项保持 pending |
 
 代码级数据真值位于：
 
 - `backend/src/flow/captureMemoryCard.js`：`CaptureMemoryCardV2`、Evidence、稀有度和三种 recall variant；
 - `backend/src/flow/reviewSchedule.js`：反馈后的真实调度；
-- `backend/src/flow/captureMemoryRepository.js`：卡片、反馈、删除和调度持久化；
+- `backend/src/flow/captureMemoryRepository.js`：canonical capture group、逐卡反馈、删除和调度持久化；
+- `ios-api-data-contract-zh.md`：`memoryCards` / `captureGroup` / `capture_source_context_1` 的 iOS 正式读取合同；
 - `docs/ios-app-demo.html`，由 `/app-demo` 和兼容别名 `/demo` 提供：当前前端交互预览；
 - `拾贝/`：正式 SwiftUI App。
 
@@ -42,7 +45,6 @@
 | [`codebase-guide-zh.md`](codebase-guide-zh.md) | 目录与旧模块定位 | 把 quick review 三题链描述为当前唯一主链 |
 | [`fragment-memory-architecture-zh.md`](fragment-memory-architecture-zh.md) | 字幕优先、窗口化、缓存 | 截图不是主链、章节和三题式输出 |
 | [`media-learning-source-architecture-zh.md`](media-learning-source-architecture-zh.md) | Source-first、字幕/ASR、视频边界 | 复用旧 V2 章节出题作为最终输出 |
-| [`ios-api-data-contract-zh.md`](ios-api-data-contract-zh.md) | 设备隔离与旧 API 兼容 | Chapter 是当前主实体的表述 |
 | [`image-flow-code-detail-zh.md`](image-flow-code-detail-zh.md) | 截图来源恢复历史实现 | 与当前 `CaptureMemoryCardV2` 冲突的输出口径 |
 | [`content-modality-question-generation-research-zh.md`](content-modality-question-generation-research-zh.md) | 内容形态与题型研究 | 不作为 P0 功能承诺 |
 | [`question-type-learning-research-zh.md`](question-type-learning-research-zh.md) | 主动回忆与题型证据 | 不替代当前单卡合同 |

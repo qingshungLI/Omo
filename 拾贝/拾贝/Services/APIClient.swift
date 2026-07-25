@@ -142,6 +142,18 @@ struct APIClient {
         return response.cards
     }
 
+    func resolveCaptureMemoryCardConfirmation(
+        id: String,
+        request: CaptureMemoryCardConfirmationRequest
+    ) async throws -> CaptureMemoryCardConfirmationResponse {
+        try await send(
+            "/api/memory-cards/\(encodedPathComponent(id))/confirmation",
+            method: "POST",
+            body: request,
+            acceptsFailureBody: false
+        )
+    }
+
     func assessCaptureMemoryCard(
         id: String,
         assessment: String,
@@ -631,9 +643,11 @@ struct ImageFlowResponse: Decodable {
     var link: Link?
     var sourceFallback: Bool?
     var memoryCard: ImageFlowMemoryCard?
+    var memoryCards: [ImageFlowMemoryCard]?
     var schemaVersion: String?
     var disposition: CaptureAnalysisDisposition?
     var schedule: ImageFlowReviewSchedule?
+    var schedules: [ImageFlowReviewSchedule]?
     var captureAnalysis: CaptureAnalysisV2?
 }
 
@@ -673,6 +687,8 @@ struct ImageFlowMemoryCard: Decodable, Equatable, Identifiable {
     var sourceTitle: String?
     var sourceUrl: String?
     var sourceStatus: SourceStatus
+    var sourceContext: ImageFlowSourceContext? = nil
+    var captureGroup: ImageFlowCaptureGroup? = nil
     var createdAt: String? = nil
     var updatedAt: String? = nil
 }
@@ -697,6 +713,8 @@ extension ImageFlowMemoryCard {
         case sourceTitle
         case sourceUrl
         case sourceStatus
+        case sourceContext
+        case captureGroup
         case createdAt
         case updatedAt
     }
@@ -721,8 +739,131 @@ extension ImageFlowMemoryCard {
         sourceTitle = try container.decodeIfPresent(String.self, forKey: .sourceTitle)
         sourceUrl = try container.decodeIfPresent(String.self, forKey: .sourceUrl)
         sourceStatus = try container.decodeIfPresent(SourceStatus.self, forKey: .sourceStatus) ?? .unconfirmed
+        sourceContext = try container.decodeIfPresent(ImageFlowSourceContext.self, forKey: .sourceContext)
+        captureGroup = try container.decodeIfPresent(ImageFlowCaptureGroup.self, forKey: .captureGroup)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
+}
+
+struct ImageFlowCaptureGroup: Codable, Equatable {
+    var captureId: String
+    var cardIds: [String]
+    var count: Int
+    var index: Int
+}
+
+struct ImageFlowSourceContext: Codable, Equatable {
+    enum Completeness: String, Codable, Equatable {
+        case full
+        case partial
+        case screenshotOnly = "screenshot_only"
+
+        /// Accepts legacy aliases and unknown future values so one record can
+        /// never fail the whole card list decode (parity with the Web client).
+        init(normalizing rawValue: String?) {
+            switch rawValue {
+            case "full", "complete":
+                self = .full
+            case "partial":
+                self = .partial
+            case "screenshot_only", "nearby_only", .none:
+                self = .screenshotOnly
+            default:
+                self = .screenshotOnly
+            }
+        }
+    }
+
+    struct Block: Codable, Equatable, Identifiable {
+        var id: String
+        var type: String?
+        var text: String
+        var sourceRole: String?
+        var startSeconds: Double?
+        var endSeconds: Double?
+    }
+
+    struct Overview: Codable, Equatable {
+        var summary: String
+        var highlights: [String]
+
+        private enum CodingKeys: String, CodingKey {
+            case summary
+            case highlights
+        }
+
+        init(summary: String, highlights: [String] = []) {
+            self.summary = summary
+            self.highlights = highlights
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+            highlights = try container.decodeIfPresent([String].self, forKey: .highlights) ?? []
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(summary, forKey: .summary)
+            try container.encode(highlights, forKey: .highlights)
+        }
+    }
+
+    var schemaVersion: String
+    var nearbyText: String
+    var focusBlockIds: [String]
+    var blocks: [Block]
+    var overview: Overview?
+    var completeness: Completeness
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case nearbyText
+        case focusBlockIds
+        case blocks
+        case overview
+        case completeness
+    }
+
+    init(
+        schemaVersion: String = "capture_source_context_1",
+        nearbyText: String = "",
+        focusBlockIds: [String] = [],
+        blocks: [Block] = [],
+        overview: Overview? = nil,
+        completeness: Completeness = .screenshotOnly
+    ) {
+        self.schemaVersion = schemaVersion
+        self.nearbyText = nearbyText
+        self.focusBlockIds = focusBlockIds
+        self.blocks = blocks
+        self.overview = overview
+        self.completeness = completeness
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(String.self, forKey: .schemaVersion)
+            ?? "capture_source_context_1"
+        nearbyText = try container.decodeIfPresent(String.self, forKey: .nearbyText) ?? ""
+        focusBlockIds = try container.decodeIfPresent([String].self, forKey: .focusBlockIds) ?? []
+        blocks = try container.decodeIfPresent([Block].self, forKey: .blocks) ?? []
+        overview = try container.decodeIfPresent(Overview.self, forKey: .overview)
+        completeness = Completeness(
+            normalizing: try container.decodeIfPresent(String.self, forKey: .completeness)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(nearbyText, forKey: .nearbyText)
+        try container.encode(focusBlockIds, forKey: .focusBlockIds)
+        try container.encode(blocks, forKey: .blocks)
+        try container.encodeIfPresent(overview, forKey: .overview)
+        try container.encode(completeness, forKey: .completeness)
     }
 }
 
@@ -756,35 +897,45 @@ struct ImageFlowRecallOption: Codable, Equatable, Identifiable {
 }
 
 struct ImageFlowReviewSchedule: Decodable, Equatable {
+    var cardId: String?
     var nextReviewAt: String
     var intervalDays: Int
     var state: String
     var status: String?
+    var stepIndex: Int?
 
     init(
+        cardId: String? = nil,
         nextReviewAt: String,
         intervalDays: Int,
         state: String,
-        status: String? = nil
+        status: String? = nil,
+        stepIndex: Int? = nil
     ) {
+        self.cardId = cardId
         self.nextReviewAt = nextReviewAt
         self.intervalDays = intervalDays
         self.state = state
         self.status = status
+        self.stepIndex = stepIndex
     }
 
     private enum CodingKeys: String, CodingKey {
+        case cardId
         case nextReviewAt
         case intervalDays
         case state
         case status
+        case stepIndex
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        cardId = try container.decodeIfPresent(String.self, forKey: .cardId)
         nextReviewAt = try container.decode(String.self, forKey: .nextReviewAt)
         intervalDays = try container.decode(Int.self, forKey: .intervalDays)
         status = try container.decodeIfPresent(String.self, forKey: .status)
+        stepIndex = try container.decodeIfPresent(Int.self, forKey: .stepIndex)
         state = try container.decodeIfPresent(String.self, forKey: .state)
             ?? status
             ?? "scheduled"
@@ -821,7 +972,48 @@ struct CaptureAnalysisV2: Decodable, Equatable {
     var disposition: CaptureAnalysisDisposition
     var sourceStatus: ImageFlowMemoryCard.SourceStatus
     var memoryCard: ImageFlowMemoryCard?
+    var memoryCards: [ImageFlowMemoryCard]?
     var schedule: ImageFlowReviewSchedule?
+    var schedules: [ImageFlowReviewSchedule]?
+}
+
+extension ImageFlowResponse {
+    var preferredMemoryCards: [ImageFlowMemoryCard] {
+        let candidates: [ImageFlowMemoryCard]
+        if let captureCards = captureAnalysis?.memoryCards, !captureCards.isEmpty {
+            candidates = captureCards
+        } else if let responseCards = memoryCards, !responseCards.isEmpty {
+            candidates = responseCards
+        } else if let singularCard = captureAnalysis?.memoryCard ?? memoryCard {
+            candidates = [singularCard]
+        } else {
+            candidates = []
+        }
+
+        return candidates.reduce(into: [ImageFlowMemoryCard]()) { result, card in
+            guard result.count < 3, !result.contains(where: { $0.id == card.id }) else {
+                return
+            }
+            result.append(card)
+        }
+    }
+
+    func reviewSchedule(for cardID: String, at index: Int) -> ImageFlowReviewSchedule? {
+        let groupedSchedules: [ImageFlowReviewSchedule]
+        if let captureSchedules = captureAnalysis?.schedules, !captureSchedules.isEmpty {
+            groupedSchedules = captureSchedules
+        } else {
+            groupedSchedules = schedules ?? []
+        }
+        if let matched = groupedSchedules.first(where: { $0.cardId == cardID }) {
+            return matched
+        }
+        if groupedSchedules.indices.contains(index) {
+            return groupedSchedules[index]
+        }
+        guard index == 0 else { return nil }
+        return captureAnalysis?.schedule ?? schedule
+    }
 }
 
 struct CaptureMemoryCardsResponse: Decodable, Equatable {
@@ -842,6 +1034,8 @@ struct CaptureMemoryCardsResponse: Decodable, Equatable {
 
 struct CaptureMemoryCardRecord: Decodable, Equatable {
     var memoryCard: ImageFlowMemoryCard
+    var memoryCards: [ImageFlowMemoryCard]?
+    var captureGroup: ImageFlowCaptureGroup?
     var disposition: CaptureAnalysisDisposition
     var schedule: ImageFlowReviewSchedule?
     var masteryStage: String?
@@ -851,7 +1045,10 @@ struct CaptureMemoryCardRecord: Decodable, Equatable {
     var capturedAt: String?
 
     private enum CodingKeys: String, CodingKey {
+        case id
         case memoryCard
+        case memoryCards
+        case captureGroup
         case card
         case disposition
         case schedule
@@ -864,6 +1061,8 @@ struct CaptureMemoryCardRecord: Decodable, Equatable {
 
     init(
         memoryCard: ImageFlowMemoryCard,
+        memoryCards: [ImageFlowMemoryCard]? = nil,
+        captureGroup: ImageFlowCaptureGroup? = nil,
         disposition: CaptureAnalysisDisposition? = nil,
         schedule: ImageFlowReviewSchedule?,
         masteryStage: String?,
@@ -873,6 +1072,8 @@ struct CaptureMemoryCardRecord: Decodable, Equatable {
         capturedAt: String?
     ) {
         self.memoryCard = memoryCard
+        self.memoryCards = memoryCards
+        self.captureGroup = captureGroup ?? memoryCard.captureGroup
         self.disposition = disposition
             ?? (memoryCard.state == .formal ? .createCard : .archiveOnly)
         self.schedule = schedule
@@ -885,12 +1086,25 @@ struct CaptureMemoryCardRecord: Decodable, Equatable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let nestedCard = try container.decodeIfPresent(ImageFlowMemoryCard.self, forKey: .memoryCard)
+        memoryCards = try container.decodeIfPresent([ImageFlowMemoryCard].self, forKey: .memoryCards)
+        let recordCaptureGroup = try container.decodeIfPresent(
+            ImageFlowCaptureGroup.self,
+            forKey: .captureGroup
+        )
+        if var nestedCard = try container.decodeIfPresent(ImageFlowMemoryCard.self, forKey: .memoryCard)
             ?? container.decodeIfPresent(ImageFlowMemoryCard.self, forKey: .card) {
+            if nestedCard.captureGroup == nil {
+                nestedCard.captureGroup = recordCaptureGroup
+            }
             memoryCard = nestedCard
+        } else if container.contains(.id) {
+            memoryCard = try ImageFlowMemoryCard(from: decoder)
+        } else if let firstGroupedCard = memoryCards?.first {
+            memoryCard = firstGroupedCard
         } else {
             memoryCard = try ImageFlowMemoryCard(from: decoder)
         }
+        captureGroup = memoryCard.captureGroup ?? recordCaptureGroup
         disposition = try container.decodeIfPresent(CaptureAnalysisDisposition.self, forKey: .disposition)
             ?? (memoryCard.state == .formal ? .createCard : .archiveOnly)
         schedule = try container.decodeIfPresent(ImageFlowReviewSchedule.self, forKey: .schedule)
@@ -901,6 +1115,42 @@ struct CaptureMemoryCardRecord: Decodable, Equatable {
         capturedAt = try container.decodeIfPresent(String.self, forKey: .capturedAt)
             ?? memoryCard.createdAt
     }
+}
+
+struct CaptureMemoryCardConfirmationRequest: Encodable, Equatable {
+    enum Action: String, Encodable, Equatable {
+        case confirm
+        case archive
+    }
+
+    var action: Action
+    var coreKnowledge: String?
+    var hiddenSemantic: String?
+    var recallCue: String?
+    var sourceEvidenceId: String?
+}
+
+struct CaptureMemoryCardConfirmationResponse: Decodable, Equatable {
+    enum Status: String, Decodable {
+        case confirmed
+        case archived
+        case needsUserInput = "needs_user_input"
+    }
+
+    struct Evidence: Decodable, Equatable, Identifiable {
+        var id: String
+        var text: String
+    }
+
+    var schemaVersion: String
+    var status: Status
+    var action: String?
+    var cardId: String?
+    var repeated: Bool?
+    var message: String?
+    var requiredFields: [String]?
+    var evidence: [Evidence]?
+    var card: CaptureMemoryCardRecord?
 }
 
 struct CaptureMemoryCardAssessmentRequest: Encodable {

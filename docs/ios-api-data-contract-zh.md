@@ -1,15 +1,15 @@
 # 拾贝 iOS API / 数据结构契约
 
-> 这份文档用于 MacBook / Xcode 迁移阶段。它定义 iOS 端应使用的 Swift `Codable` 模型、Service 方法和状态处理口径。PRD 仍是产品需求源头；本文只收口当前 HTML Demo + Node 后端已经验证过的接口和数据形状。
+> 这份文档用于 MacBook / Xcode 迁移阶段。它定义 iOS 端应使用的 Swift `Codable` 模型、Service 方法和状态处理口径。PRD 仍是产品需求源头；当前截图唤醒主链以 `CaptureMemoryCardV2` 为准，后半部分的 Chapter API 仅用于旧内容兼容。
 
 ## 1. 使用原则
 
 - iOS 端不直接调用大模型，不承载 prompt、题目质量判断或文章正文提取逻辑。
-- iOS 端通过后端 API 获取章节、题目、复习会话、通知和失败状态。
+- iOS 端通过后端 API 获取截图记忆卡、来源上下文、调度与反馈；旧章节、题目、复习会话和通知继续作为兼容数据读取。
 - iOS 端在云端 / 本地 API 模式下为每个请求附带匿名设备身份请求头 `X-Device-Id`。第一版不做账号，后端按设备隔离数据。
-- MVP 中 `Chapter` 同时保存来源信息，不单独拆 `Source` 表。
-- 当前云端原型使用 PostgreSQL 持久化章节、生成任务和通知；本地没有 `DATABASE_URL` 时仍 fallback 到内存，方便 HTML Demo 和调试。
-- `/api/chapters` 是未来 iOS 主入口；`/api/generate` 只保留给 HTML Demo 和调试兼容。
+- 截图主链中 `Capture`、Evidence、Memory Card 和 Schedule 是独立边界；旧 MVP 的 `Chapter` 仍同时保存来源信息，不单独拆 `Source` 表。
+- 当前云端原型使用 PostgreSQL 持久化截图捕获、记忆卡、章节、生成任务和通知；本地没有 `DATABASE_URL` 时仍 fallback 到内存，方便 HTML Demo 和调试。
+- `/api/sources/image-flow`、`/api/memory-cards` 及卡片反馈 / 删除接口是截图唤醒主入口；`/api/chapters` 和 `/api/generate` 只保留给旧章节、HTML Demo 与调试兼容，不得再描述成当前未来主入口。
 
 ## 2. 枚举
 
@@ -100,7 +100,157 @@ unrelated_to_source
 严重反馈：`answer_wrong`、`unclear`、`unrelated_to_source`。  
 轻反馈：`too_easy`。
 
+### 截图主链枚举
+
+```text
+CaptureDisposition:
+create_card
+archive_only
+needs_confirmation
+
+CaptureSourceStatus:
+verified
+partial
+unconfirmed
+
+CaptureContextCompleteness:
+full
+partial
+screenshot_only
+
+MemoryAssessment:
+remembered
+fuzzy
+forgot
+```
+
 ## 3. 核心模型
+
+### CaptureMemoryCardV2（当前截图主合同）
+
+模型分析保持 `schemaVersion = "capture_memory_card_2"`。数组是当前正式字段，单数 `memoryCard` / `schedule` 是至少保留一个兼容版本的首卡镜像：
+
+```json
+{
+  "schemaVersion": "capture_memory_card_2",
+  "disposition": "create_card",
+  "sourceStatus": "verified",
+  "decisionReason": "证据充分，生成两张语义独立的卡。",
+  "sourceContext": {},
+  "memoryCards": [{}, {}],
+  "memoryCard": {},
+  "schedules": [
+    { "cardId": "card-a", "nextReviewAt": "2026-07-25T08:00:00.000Z", "intervalDays": 0 },
+    { "cardId": "card-b", "nextReviewAt": "2026-07-25T08:00:00.000Z", "intervalDays": 0 }
+  ],
+  "schedule": {
+    "cardId": "card-a",
+    "nextReviewAt": "2026-07-25T08:00:00.000Z",
+    "intervalDays": 0
+  }
+}
+```
+
+规则：
+
+- `create_card` 时 `memoryCards` 为 1–3 张，默认一张；只有 2–3 个候选语义独立、分别可主动回忆且各自证据充分时才允许多卡；
+- `archive_only` / `needs_confirmation` 时 `memoryCards = []`、`memoryCard = null`、`schedules = []`、`schedule = null`；
+- `memoryCard` 恒等于 `memoryCards[0]`，`schedule` 恒等于 `schedules[0]`；新客户端优先读取数组，旧响应没有数组时回退到单数；
+- 三种 recall variant 是每张卡的复现形式，不是把同一知识点拆成三张卡；
+- 服务端最多做一次质量修复；四张以上、语义重复、Evidence ID 无效或答案不唯一时不得由客户端静默截断。
+
+单张正式卡的核心字段：
+
+```json
+{
+  "id": "card-a",
+  "coreKnowledge": "主动回忆能够暴露记忆缺口。",
+  "recallCue": "主动回忆有什么作用？",
+  "hiddenSemantic": "暴露记忆缺口",
+  "explanation": "尝试提取比直接重读更容易发现没有真正记住的部分。",
+  "sourceEvidenceIds": ["block-2"],
+  "rarity": "R",
+  "rarityReason": "这是可直接使用的局部学习方法。",
+  "rarityConfidence": 0.84,
+  "rarityRuleVersion": "capture_rarity_2",
+  "recallVariants": [],
+  "sourceStatus": "verified",
+  "sourceTitle": "主动回忆",
+  "sourceUrl": "https://example.com/source",
+  "sourceContext": {},
+  "captureGroup": {}
+}
+```
+
+### CaptureGroup（持久化分组）
+
+每张通过 `GET /api/memory-cards` 返回的正式卡都是独立可寻址记录，并携带：
+
+```json
+{
+  "captureId": "capture-1",
+  "cardIds": ["card-a", "card-b"],
+  "count": 2,
+  "index": 0
+}
+```
+
+- `index` 是 0-based；`cardIds` 是 canonical 顺序；
+- 刷新、数据库返回顺序变化或重复截图不得改变 canonical 顺序；
+- 重复截图返回首次持久化的完整 group，不用新模型输出覆盖既有卡、调度或掌握状态；
+- 每张卡拥有独立 Schedule、Assessment、mastery 和删除生命周期；
+- 删除一张卡后，兄弟卡继续存在；服务端返回的剩余组重新保持一致的 `cardIds`、`count` 和 0-based `index`；
+- UI 仍一次只呈现一张；卡叠与 `1/N` 只说明同一内容含有多个独立记忆点，不要求一次完成整组。
+
+### CaptureSourceContextV1（当前截图附近的内容）
+
+正式 shape：
+
+```json
+{
+  "schemaVersion": "capture_source_context_1",
+  "nearbyText": "截图附近的来源原文。",
+  "focusBlockIds": ["block-2"],
+  "blocks": [
+    {
+      "id": "block-1",
+      "type": "paragraph",
+      "text": "来源概览段落。",
+      "sourceRole": "overview"
+    },
+    {
+      "id": "block-2",
+      "type": "subtitle",
+      "text": "截图附近的来源原文。",
+      "sourceRole": "focus",
+      "startSeconds": 18.5,
+      "endSeconds": 31
+    }
+  ],
+  "overview": {
+    "summary": "来源整体脉络摘要。",
+    "highlights": ["主动回忆先于反馈", "熟悉感不等于掌握"]
+  },
+  "completeness": "full"
+}
+```
+
+字段与上限：
+
+- `sourceContext` 由服务端从来源 block 和截图焦点确定性构建，不由模型另写一段“附近内容”；
+- `focusBlockIds` 只能引用 `blocks[].id`；视频 block 的 `startSeconds` / `endSeconds` 均为可选秒数；
+- 最多 64 个 block、合计 40,000 字符；`nearbyText` 最多 8,000 字符，`overview.summary` 最多 800 字符，`overview.highlights` 最多 3 条；
+- `completeness` 只能是 `full`、`partial`、`screenshot_only`，不得把局部转写展示成完整视频理解；
+- 客户端按 `overview` 在前、blocks 在后的顺序显示，并对 `focusBlockIds` 对应项标记“当前截图附近”；
+- 缺少正式上下文时显示“内容脉络仍在补全”，不得在本地生成替代原文。
+
+揭示与无障碍约束：
+
+- 回忆答案尚未揭示时，入口文案为“查看脉络并揭晓”；
+- 点击该入口必须先调用与刮开 / 一键揭示相同的 reveal 状态转换，再打开上下文；
+- 揭示前不得把 `hiddenSemantic`、证据原句或能直接推出答案的文本放入可读 DOM、VoiceOver label / value / hint 或其他无障碍树；
+- 已揭示后可直接打开“当前截图附近的内容”；Sheet 关闭后焦点回到原入口；
+- Dynamic Type 下 block 允许自然增高，Reduce Motion 只取消过场，不改变揭示门槛。
 
 ### Chapter
 
@@ -400,6 +550,111 @@ v7 以后，部分低置信原因会被拆成更具体的可修复标签，例�
 `push*` 字段用于后端诊断系统推送发送结果，iOS 用户侧不展示。它们可以帮助判断通知没有出现时是 token 未上传、APNs 环境不匹配，还是 Apple 返回了具体发送错误。
 
 ## 4. API 契约
+
+### 截图提交与任务轮询（当前主链）
+
+```text
+POST /api/sources/image-flow
+GET  /api/sources/image-flow/jobs/:jobId
+```
+
+提交成功后客户端按真实任务阶段轮询。完成响应优先读取：
+
+```json
+{
+  "captureId": "capture-1",
+  "captureAnalysis": {
+    "schemaVersion": "capture_memory_card_2",
+    "disposition": "create_card",
+    "sourceStatus": "verified",
+    "sourceContext": {},
+    "memoryCards": [{}, {}],
+    "memoryCard": {},
+    "schedules": [{}, {}],
+    "schedule": {}
+  },
+  "memoryCards": [{}, {}],
+  "memoryCard": {}
+}
+```
+
+顶层数组与 `captureAnalysis` 数组用于兼容不同任务读取路径；客户端优先使用 `captureAnalysis.memoryCards`，其次使用顶层 `memoryCards`，最后回退到单数 `memoryCard`。不要把两个数组拼接，否则会制造重复卡。
+
+### 读取截图卡
+
+```text
+GET /api/memory-cards
+GET /api/memory-cards?pool=due
+```
+
+返回的 `cards` 是逐卡记录。同一 capture 的兄弟卡通过每张记录上的 `captureGroup.cardIds` 重建；不要假定相邻数组元素一定属于同一组，也不要用响应行顺序替代 `captureGroup.index`。
+
+若旧服务器只返回单卡且没有 `captureGroup`，客户端按 `count = 1` 兼容展示，不伪造多卡。
+
+### 处理待确认片段
+
+```text
+POST /api/memory-cards/:id/confirmation
+```
+
+确认请求：
+
+```json
+{
+  "action": "confirm",
+  "coreKnowledge": "已持久化识别证据中的连续片段",
+  "hiddenSemantic": "可选的连续遮挡片段",
+  "recallCue": "可选的回忆提示",
+  "sourceEvidenceId": "可选的证据 ID"
+}
+```
+
+仅存档请求：
+
+```json
+{ "action": "archive" }
+```
+
+响应的 `schemaVersion` 为 `capture_memory_confirmation_1`：
+
+- `status = confirmed`：`card` 是服务端 canonical 正式卡，客户端用它替换待确认记录并刷新召回池；
+- `status = archived`：`card` 保持为碎片，客户端显示“已保存碎片”，不得进入召回池；
+- `status = needs_user_input`：HTTP 200，包含 `message`、`requiredFields` 和最多八条 `evidence`；确认面板保持打开，用户继续编辑，不得当作失败后重跑识别。
+
+该接口只复用服务端已经持久化的 Evidence，不上传图片、不调用视觉模型、不搜索来源，也不重新生成原分析。知识库交互固定为：
+
+```text
+点击 needs_confirmation
+→ 查看来源状态、已保留内容、原因与证据
+→ 确认 / 编辑 | 仅存档 | 删除 | 取消
+```
+
+删除沿用 `DELETE /api/memory-cards/:id`；取消只关闭面板。`archive_only` 与 `needs_confirmation` 必须使用不同文案和状态，前者不得继续显示“待确认”。
+
+### 记录截图卡反馈
+
+```text
+POST /api/memory-cards/:id/assessments
+```
+
+请求：
+
+```json
+{
+  "attemptId": "card-a:2026-07-25T08:00:00.000Z",
+  "assessment": "remembered"
+}
+```
+
+每张卡独立提交，`attemptId` 在同一复习周期内幂等。响应中的服务端 canonical assessment、mastery 和 schedule 优先于客户端预测；不得把该响应复制给同组兄弟卡。
+
+### 删除截图卡
+
+```text
+DELETE /api/memory-cards/:id
+```
+
+删除是单卡操作。只有服务端确认成功后客户端才从本地移除该卡；兄弟卡继续存在并保留自己的 schedule / mastery。重新获取列表时以服务端最新 `captureGroup` 为准，不复活已删除成员。
 
 ### 匿名设备身份
 
@@ -757,6 +1012,14 @@ DELETE /api/favorites/questions/:id
 
 SwiftUI 第一版建议拆出：
 
+- `CaptureMemoryService`
+  - `submitScreenshot(input:)`
+  - `getImageFlowJob(id:)`
+  - `listMemoryCards(pool:)`
+  - `resolveConfirmation(cardId:request:)`
+  - `submitAssessment(cardId:attemptId:assessment:)`
+  - `deleteMemoryCard(id:)`
+
 - `ChapterService`
   - `createChapter(input:)`
   - `listChapters()`
@@ -780,12 +1043,15 @@ SwiftUI 第一版建议拆出：
   - `createFavoriteQuestion(chapterId:questionId:)`
   - `deleteFavoriteQuestion(id:)`
 
-第一轮 Xcode 可以先用 mock 实现这些 service，再切换到真实 HTTP 实现。
+`CaptureMemoryService` 是当前截图主链；Chapter、Review、Notification 和 Favorite service 只服务旧章节兼容。Xcode 可用 Fixture 验证 Codable 和状态恢复，但最终截图闭环必须切换到真实 HTTP 实现。前端集中迭代允许录制少量真实图片的 canonical `GET /api/memory-cards` 结果作为版本化 DEBUG Fixture；缓存不得包含图片字节、base64、密钥或完整模型响应。R / SR / SSR 视觉覆盖卡必须与 canonical disposition 分开标记，不得冒充模型正式判级。Schema、Prompt、模型或 Adapter 未变化时，普通 UI 改动默认复用该缓存，不重复调用真实 API。
 
 ## 6. 当前限制
 
 - Railway 云端通过 PostgreSQL 保存数据；本地未配置 `DATABASE_URL` 时使用内存存储，不保证跨重启。
-- 当前 API 未做账号和鉴权，但已经按匿名设备 ID 做基础数据隔离。章节、通知、复习状态、反馈和收藏题目都应绑定同一个匿名设备身份。
-- 当前生成流程是提交后后台执行，客户端轮询章节状态；后续正式生产版可再升级为队列、SSE、APNs 或后台任务系统。
+- 当前 API 未做账号和鉴权，但已经按匿名设备 ID 做基础数据隔离。截图卡、章节、通知、复习状态、反馈和收藏题目都应绑定同一个匿名设备身份。
+- 当前截图与旧章节生成流程都是提交后后台执行，客户端分别轮询 image-flow job 或章节状态；后续正式生产版可再升级为队列、SSE、APNs 或后台任务系统。
 - 公众号抓取受平台限制，失败时应提示用户改为粘贴正文。
-- 视频链接只识别并友好失败，不提取视频文本。
+- 旧 Chapter API 的视频链接仍只识别并友好失败；截图 image-flow 是否取得平台字幕或局部内容，以其 `sourceContext.completeness` 和实际来源结果为准。
+- 当前截图 API 已支持 1–3 张独立卡、canonical capture group 和 `capture_source_context_1`；这不表示知识图谱、社交或新平台 Adapter 已实现。
+- 当前前端集中迭代不改截图识别、来源恢复和平台 Adapter；待确认接口只复用已有 Evidence。
+- live Qwen/TikHub、真实 Postgres worker 恢复、Xcode 编译、Simulator、真机 VoiceOver 必须分别留存验证证据，Fixture 或静态合同测试不能替代。

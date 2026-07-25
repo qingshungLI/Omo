@@ -93,6 +93,59 @@ function input(sourceStatus = "verified") {
   };
 }
 
+function secondMemoryCard() {
+  return {
+    coreKnowledge: "主动回忆可以用于概念学习、语言学习和考试复习。",
+    recallCue: "主动回忆可以迁移到哪些学习场景？",
+    hiddenSemantic: "概念学习、语言学习和考试复习",
+    explanation: "证据列出了概念学习、语言学习和考试复习三个应用场景。",
+    sourceEvidenceIds: ["e-2"],
+    rarity: "SR",
+    rarityReason: "证据明确支持这种方法迁移到多个学习场景。",
+    rarityConfidence: 0.84,
+    recallVariants: [
+      {
+        id: "cloze-2",
+        type: "semantic_cloze",
+        prompt: "主动回忆可用于 ____。",
+        answer: "概念学习、语言学习和考试复习",
+        options: [],
+        correctOptionId: null,
+        correctBoolean: null,
+        explanation: "证据直接列出了这三个应用场景。",
+        sourceEvidenceIds: ["e-2"]
+      },
+      {
+        id: "tf-2",
+        type: "true_false",
+        prompt: "主动回忆可以用于语言学习。",
+        answer: "true",
+        options: [],
+        correctOptionId: null,
+        correctBoolean: true,
+        explanation: "语言学习是证据列出的场景之一。",
+        sourceEvidenceIds: ["e-2"]
+      },
+      {
+        id: "mcq-2",
+        type: "multiple_choice",
+        prompt: "证据明确列出的主动回忆应用场景是哪一项？",
+        answer: "语言学习",
+        options: [
+          { id: "e", text: "语言学习" },
+          { id: "f", text: "页面排版" },
+          { id: "g", text: "图标绘制" },
+          { id: "h", text: "设备维修" }
+        ],
+        correctOptionId: "e",
+        correctBoolean: null,
+        explanation: "证据明确提到语言学习。",
+        sourceEvidenceIds: ["e-2"]
+      }
+    ]
+  };
+}
+
 test("generates one evidence-bound card with explicit Qwen model and initial schedule", async () => {
   let request;
   const result = await generateCaptureMemoryCard(input(), {
@@ -105,6 +158,7 @@ test("generates one evidence-bound card with explicit Qwen model and initial sch
   assert.equal(request.provider, "qwen");
   assert.equal(request.model, "qwen3.7-plus-2026-05-26");
   assert.equal(request.schemaName, CAPTURE_MEMORY_CARD_SCHEMA_VERSION);
+  assert.equal(request.estimatedOutputTokens, 4_800);
   assert.equal(result.disposition, "create_card");
   assert.equal(result.sourceStatus, "verified");
   assert.equal(result.memoryCard.sourceStatus, "verified");
@@ -112,6 +166,52 @@ test("generates one evidence-bound card with explicit Qwen model and initial sch
   assert.equal(result.memoryCard.recallVariants.length, 3);
   assert.equal(result.schedule.intervalDays, 0);
   assert.equal(result.schedule.nextReviewAt, NOW.toISOString());
+});
+
+test("generates up to three independent cards, legacy-first mirrors, and deterministic source context", async () => {
+  let request;
+  const result = await generateCaptureMemoryCard({
+    ...input(),
+    overviewBlocks: EVIDENCE,
+    focus: { status: "timestamp_window", blocks: [EVIDENCE[1]] }
+  }, {
+    now: NOW,
+    modelJsonCaller: async (value) => {
+      request = value;
+      return {
+        disposition: "create_card",
+        decisionReason: "证据包含两个彼此独立的可复习判断。",
+        memoryCards: [validOutput().memoryCard, secondMemoryCard()]
+      };
+    }
+  });
+  assert.equal(result.memoryCards.length, 2);
+  assert.equal(result.memoryCard.id, result.memoryCards[0].id);
+  assert.equal(result.schedules.length, 2);
+  assert.equal(result.schedules[1].cardId, result.memoryCards[1].id);
+  assert.equal(result.sourceContext.schemaVersion, "capture_source_context_1");
+  assert.deepEqual(result.sourceContext.focusBlockIds, ["e-2"]);
+  assert.equal(result.sourceContext.nearbyText, EVIDENCE[1].text);
+  assert.equal(result.sourceContext.completeness, "full");
+  assert.equal(result.memoryCards[1].sourceContext.nearbyText, EVIDENCE[1].text);
+  assert.match(request.system, /信息密度按独立判断的数量决定，不按文字长度决定/);
+});
+
+test("rejects cross-card semantic duplicates and globally duplicated variant IDs", () => {
+  const first = validOutput().memoryCard;
+  const duplicate = {
+    ...structuredClone(first),
+    coreKnowledge: `${first.coreKnowledge}。`,
+    recallVariants: structuredClone(first.recallVariants)
+  };
+  const validation = validateCaptureMemoryOutput({
+    disposition: "create_card",
+    decisionReason: "错误地拆成两张。",
+    memoryCards: [first, duplicate]
+  }, { evidence: EVIDENCE, sourceStatus: "verified" });
+  assert.equal(validation.ok, false);
+  assert.match(validation.errors.join("\n"), /语义重复/);
+  assert.match(validation.errors.join("\n"), /全局互不重复/);
 });
 
 test("repairs a deterministic validation failure once", async () => {
@@ -128,6 +228,28 @@ test("repairs a deterministic validation failure once", async () => {
   });
   assert.equal(calls, 2);
   assert.equal(result.disposition, "create_card");
+});
+
+test("does not silently truncate a fourth model card and repairs the over-limit output", async () => {
+  let calls = 0;
+  let repairRequest;
+  const result = await generateCaptureMemoryCard(input(), {
+    modelJsonCaller: async (request) => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          disposition: "create_card",
+          decisionReason: "错误地生成了四张卡。",
+          memoryCards: Array.from({ length: 4 }, () => structuredClone(validOutput().memoryCard))
+        };
+      }
+      repairRequest = request;
+      return validOutput();
+    }
+  });
+  assert.equal(calls, 2);
+  assert.match(repairRequest.user, /1 至 3 张卡/);
+  assert.equal(result.memoryCards.length, 1);
 });
 
 test("never calls the model more than twice and degrades to confirmation", async () => {
@@ -170,6 +292,72 @@ test("blocks invalid evidence, unsupported numbers and names, and unsafe certain
   }), { evidence: EVIDENCE, sourceStatus: "verified" });
   assert.equal(unsafe.ok, false);
   assert.match(unsafe.errors.join("\n"), /高风险/);
+});
+
+test("does not treat 确认为 as an attribution when the numeric claim has evidence", () => {
+  const chartEvidence = [{
+    id: "chart-1",
+    type: "chart",
+    text: "恋与深空的收入占比为 48.86%。"
+  }];
+  const output = validOutput({
+    memoryCard: {
+      coreKnowledge: "《恋与深空》的收入占比确认为 48.86%。",
+      recallCue: "截图中《恋与深空》的收入占比是多少？",
+      hiddenSemantic: "48.86%",
+      explanation: "截图明确列出《恋与深空》的收入占比为 48.86%。",
+      sourceEvidenceIds: ["chart-1"],
+      rarity: "R",
+      rarityReason: "这是截图直接支持的一项局部数据。",
+      recallVariants: [
+        {
+          id: "chart-cloze",
+          type: "semantic_cloze",
+          prompt: "《恋与深空》的收入占比是 ____。",
+          answer: "48.86%",
+          options: [],
+          correctOptionId: null,
+          correctBoolean: null,
+          explanation: "截图中的收入占比为 48.86%。",
+          sourceEvidenceIds: ["chart-1"]
+        },
+        {
+          id: "chart-tf",
+          type: "true_false",
+          prompt: "《恋与深空》的收入占比为 48.86%。",
+          answer: "true",
+          options: [],
+          correctOptionId: null,
+          correctBoolean: true,
+          explanation: "该数值与截图中的 48.86% 一致。",
+          sourceEvidenceIds: ["chart-1"]
+        },
+        {
+          id: "chart-mcq",
+          type: "multiple_choice",
+          prompt: "截图中《恋与深空》的收入占比是多少？",
+          answer: "48.86%",
+          options: [
+            { id: "a", text: "48.86%" },
+            { id: "b", text: "较低" },
+            { id: "c", text: "未知" },
+            { id: "d", text: "未展示" }
+          ],
+          correctOptionId: "a",
+          correctBoolean: null,
+          explanation: "截图直接给出的占比是 48.86%。",
+          sourceEvidenceIds: ["chart-1"]
+        }
+      ]
+    }
+  });
+
+  const validation = validateCaptureMemoryOutput(output, {
+    evidence: chartEvidence,
+    sourceStatus: "verified"
+  });
+  assert.deepEqual(validation.errors, []);
+  assert.equal(validation.ok, true);
 });
 
 test("requires exact cloze, boolean true-false, and one unique MCQ answer", () => {

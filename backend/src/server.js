@@ -345,27 +345,43 @@ async function persistCaptureMemoryResult(deviceId, result, {
     result.errorCode = stored.errorCode;
     result.message = "任务处理期间数据已被删除，本次结果未保存。";
     result.captureAnalysis = null;
+    result.memoryCards = [];
     result.memoryCard = null;
     result.review = null;
+    result.schedules = [];
     result.schedule = null;
     delete result.captureId;
     return stored;
   }
   if (stored && result?.captureAnalysis) {
-    const payload = captureMemoryCardPayload(stored);
+    const storedCards = Array.isArray(stored.memoryCards) && stored.memoryCards.length > 0
+      ? stored.memoryCards
+      : [stored];
+    const payloads = stored.disposition === "create_card"
+      ? storedCards.map(captureMemoryCardPayload)
+      : [];
+    const payload = payloads[0] || captureMemoryCardPayload(stored);
+    const schedules = stored.disposition === "create_card"
+      ? storedCards.map((card) => ({ cardId: card.id, ...(card.schedule || {}) }))
+      : [];
     result.captureId = stored.captureId;
     result.captureAnalysis.disposition = stored.disposition;
-    result.captureAnalysis.memoryCard = stored.disposition === "create_card" ? payload : null;
-    result.captureAnalysis.schedule = stored.schedule || null;
+    result.captureAnalysis.sourceStatus = stored.sourceStatus;
+    result.captureAnalysis.memoryCards = payloads;
+    result.captureAnalysis.memoryCard = payloads[0] || null;
+    result.captureAnalysis.schedules = schedules;
+    result.captureAnalysis.schedule = schedules[0] || null;
+    result.captureAnalysis.sourceContext = payloads[0]?.sourceContext || null;
+    result.memoryCards = payloads;
+    result.schedules = schedules;
     result.memoryCard = stored.disposition === "create_card"
       ? {
-          ...(result.memoryCard || {}),
-          id: stored.id,
+          ...payload,
           state: "formal",
-          nextReviewAt: stored.schedule?.nextReviewAt
+          nextReviewAt: storedCards[0].schedule?.nextReviewAt
         }
       : { ...payload, state: "fragment" };
-    result.schedule = stored.schedule || null;
+    result.schedule = schedules[0] || null;
     if (stored.disposition !== "create_card") result.review = null;
   }
   return stored;
@@ -376,7 +392,8 @@ function captureMemoryCardPayload(stored) {
     ? [
         "id", "coreKnowledge", "recallCue", "hiddenSemantic", "explanation",
         "sourceEvidenceIds", "rarity", "rarityReason", "rarityConfidence",
-        "rarityRuleVersion", "recallVariants", "sourceStatus", "sourceTitle", "sourceUrl"
+        "rarityRuleVersion", "recallVariants", "sourceStatus", "sourceTitle", "sourceUrl",
+        "sourceContext", "captureGroup"
       ]
     : ["id", "coreKnowledge", "recallCue", "explanation", "sourceStatus"];
   const payload = {};
@@ -2447,6 +2464,40 @@ const server = createServer(async (req, res) => {
       });
     } else {
       sendJson(res, 200, result);
+    }
+    return;
+  }
+
+  const captureMemoryConfirmationMatch = pathname.match(
+    /^\/api\/memory-cards\/([^/]+)\/confirmation$/
+  );
+  if (req.method === "POST" && captureMemoryConfirmationMatch) {
+    try {
+      const body = await readBody(req);
+      const result = await captureMemoryRepository.resolveConfirmation(
+        deviceId,
+        decodeURIComponent(captureMemoryConfirmationMatch[1]),
+        {
+          action: body.action,
+          coreKnowledge: body.coreKnowledge,
+          hiddenSemantic: body.hiddenSemantic,
+          recallCue: body.recallCue,
+          sourceEvidenceId: body.sourceEvidenceId
+        }
+      );
+      if (!result) {
+        sendJson(res, 404, {
+          errorCode: "capture_memory_card_not_found",
+          message: "记忆卡不存在。"
+        });
+      } else {
+        sendJson(res, 200, result);
+      }
+    } catch (error) {
+      sendJson(res, error.statusCode || 422, {
+        errorCode: error.code || "capture_memory_confirmation_not_recorded",
+        message: error.message || "待确认状态保存失败。"
+      });
     }
     return;
   }

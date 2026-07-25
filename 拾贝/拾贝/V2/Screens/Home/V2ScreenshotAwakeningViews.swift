@@ -3,16 +3,286 @@ import UIKit
 import Pow
 
 private enum V2ScreenshotSummonVisualStage: Equatable {
-    case compress
-    case rise
+    case turn
+    case approach
+    case rummage
+    case carrying
     case orbit
     case settle
     case cue
 }
 
+private enum V2ScreenshotStowVisualStage: Equatable {
+    case cardReady
+    case dropping
+    case closing
+    case farewell
+}
+
 private struct V2PendingScreenshotAssessment: Equatable {
     let assessment: V2MemoryAssessment
     let attemptId: String
+}
+
+struct V2CardStackGlyph: View {
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Image("RecallCardStack")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: 38, height: 34)
+
+            Image("RecallExpandIcon")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: 17, height: 17)
+                .offset(x: 2, y: -2)
+        }
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct V2SourceContextSheetItem: Identifiable, Equatable {
+    let cardID: String
+    let sourceTitle: String?
+    let groupCardCount: Int
+    let groupCardIndex: Int
+    let context: ImageFlowSourceContext
+
+    var id: String { cardID }
+}
+
+private struct V2SourceContextSheetView: View {
+    @Environment(\.dismiss)
+    private var dismiss
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
+    let item: V2SourceContextSheetItem
+
+    private var visibleBlocks: [ImageFlowSourceContext.Block] {
+        Array(item.context.blocks.prefix(64))
+    }
+
+    private var focusBlockIDs: Set<String> {
+        Set(item.context.focusBlockIds)
+    }
+
+    private var firstFocusBlockID: String? {
+        visibleBlocks.first(where: { focusBlockIDs.contains($0.id) })?.id
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        sourceSummary
+
+                        // nearbyText repeats typed blocks; show it standalone only as a no-blocks fallback (Web parity).
+                        if visibleBlocks.isEmpty,
+                           !item.context.nearbyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label("当前截图附近的内容", systemImage: "viewfinder")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(V2Color.primary)
+                                Text(item.context.nearbyText)
+                                    .font(.body)
+                                    .foregroundStyle(V2Color.textPrimary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(V2Color.pageGreenBackground.opacity(0.48))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(V2Color.primary.opacity(0.34), lineWidth: 1)
+                                    )
+                            )
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("v2.source-context.nearby")
+                        }
+
+                        if visibleBlocks.isEmpty {
+                            Text("原内容脉络仍在补全；当前先展示截图附近的片段。")
+                                .font(.subheadline)
+                                .foregroundStyle(V2Color.textMuted)
+                                .padding(.vertical, 10)
+                        } else {
+                            Text("原内容脉络")
+                                .font(.headline)
+                                .foregroundStyle(V2Color.textPrimary)
+                                .padding(.top, 4)
+
+                            ForEach(visibleBlocks) { block in
+                                sourceBlock(block)
+                                    .id(block.id)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, V2Layout.pageHorizontalInset)
+                    .padding(.vertical, 18)
+                }
+                .onAppear {
+                    guard let firstFocusBlockID else { return }
+                    DispatchQueue.main.async {
+                        if reduceMotion {
+                            proxy.scrollTo(firstFocusBlockID, anchor: .center)
+                        } else {
+                            withAnimation(.easeOut(duration: 0.28)) {
+                                proxy.scrollTo(firstFocusBlockID, anchor: .center)
+                            }
+                        }
+                        UIAccessibility.post(
+                            notification: .layoutChanged,
+                            argument: "已定位到当前截图附近的内容"
+                        )
+                    }
+                }
+            }
+            .background(Color(hex: 0xFFF6E8).ignoresSafeArea())
+            .navigationTitle("内容脉络")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") {
+                        dismiss()
+                    }
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityHint("关闭内容脉络并回到当前记忆卡")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    @ViewBuilder
+    private var sourceSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let sourceTitle = item.sourceTitle,
+               !sourceTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(sourceTitle)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(V2Color.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Label(
+                    item.groupCardCount > 1
+                        ? "这份内容生成了 \(item.groupCardCount) 张记忆卡 · 当前 \(item.groupCardIndex + 1) / \(item.groupCardCount)"
+                        : "这张记忆卡来自以下内容",
+                    systemImage: "rectangle.stack"
+                )
+                Spacer(minLength: 4)
+                Text(completenessTitle)
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(V2Color.textMuted)
+
+            if let overview = item.context.overview {
+                if !overview.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(overview.summary)
+                        .font(.body)
+                        .foregroundStyle(V2Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(
+                    Array(overview.highlights.prefix(6).enumerated()),
+                    id: \.offset
+                ) { _, highlight in
+                    Label(highlight, systemImage: "sparkle")
+                        .font(.subheadline)
+                        .foregroundStyle(V2Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func sourceBlock(_ block: ImageFlowSourceContext.Block) -> some View {
+        let isFocus = focusBlockIDs.contains(block.id)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if isFocus {
+                    Label("当前截图附近", systemImage: "scope")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(V2Color.primary)
+                } else if let sourceRole = block.sourceRole, !sourceRole.isEmpty {
+                    Text(sourceRole)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(V2Color.textMuted)
+                } else if let type = block.type, !type.isEmpty {
+                    Text(type)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(V2Color.textMuted)
+                }
+
+                Spacer(minLength: 4)
+
+                if let timestamp = timestampText(for: block) {
+                    Text(timestamp)
+                        .font(.caption)
+                        .foregroundStyle(V2Color.textMuted)
+                }
+            }
+
+            Text(block.text)
+                .font(.body)
+                .foregroundStyle(V2Color.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(15)
+        .background(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(isFocus ? V2Color.pageGreenBackground.opacity(0.52) : V2Color.surfaceCream)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .stroke(
+                            isFocus ? V2Color.primary.opacity(0.52) : V2Color.borderSoftGreen.opacity(0.8),
+                            lineWidth: isFocus ? 1.5 : 1
+                        )
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            isFocus
+                ? "当前截图附近的内容，\(block.text)"
+                : block.text
+        )
+        .accessibilityIdentifier(
+            isFocus ? "v2.source-context.focus" : "v2.source-context.block"
+        )
+    }
+
+    private var completenessTitle: String {
+        // Frozen with the Web labels (docs/ios-app-demo.html contextCompletenessLabel).
+        switch item.context.completeness {
+        case .full: "脉络较完整"
+        case .partial: "脉络不完整"
+        case .screenshotOnly: "仅截图附近"
+        }
+    }
+
+    private func timestampText(for block: ImageFlowSourceContext.Block) -> String? {
+        guard let startSeconds = block.startSeconds else { return nil }
+        let start = formatTimestamp(startSeconds)
+        guard let endSeconds = block.endSeconds, endSeconds > startSeconds else {
+            return start
+        }
+        return "\(start)–\(formatTimestamp(endSeconds))"
+    }
+
+    private func formatTimestamp(_ seconds: Double) -> String {
+        let clamped = max(0, Int(seconds.rounded()))
+        return String(format: "%d:%02d", clamped / 60, clamped % 60)
+    }
 }
 
 
@@ -33,36 +303,44 @@ private struct V2ScratchRevealCanvas: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Text(hiddenText)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(V2Color.primary)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 17)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-
                 Canvas { context, size in
+                    let answerFrame = CGRect(
+                        x: 18,
+                        y: 17,
+                        width: max(0, size.width - 36),
+                        height: max(0, size.height - 34)
+                    )
+                    let renderedAnswer = context.resolve(
+                        Text(verbatim: hiddenText)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundColor(V2Color.primary)
+                    )
+                    context.draw(renderedAnswer, in: answerFrame)
+
                     let layer = Path(
                         roundedRect: CGRect(origin: .zero, size: size),
                         cornerRadius: 16
                     )
-                    context.fill(layer, with: .color(V2Color.uploadButtonFill))
-                    context.blendMode = .destinationOut
-                    for normalizedPoints in paths where normalizedPoints.count > 1 {
-                        let points = normalizedPoints.map { renderedPoint($0, in: size) }
-                        var stroke = Path()
-                        stroke.move(to: points[0])
-                        for point in points.dropFirst() {
-                            stroke.addLine(to: point)
-                        }
-                        context.stroke(
-                            stroke,
-                            with: .color(.black),
-                            style: StrokeStyle(
-                                lineWidth: brushDiameter,
-                                lineCap: .round,
-                                lineJoin: .round
+                    context.drawLayer { coverContext in
+                        coverContext.fill(layer, with: .color(V2Color.uploadButtonFill))
+                        coverContext.blendMode = .destinationOut
+                        for normalizedPoints in paths where normalizedPoints.count > 1 {
+                            let points = normalizedPoints.map { renderedPoint($0, in: size) }
+                            var stroke = Path()
+                            stroke.move(to: points[0])
+                            for point in points.dropFirst() {
+                                stroke.addLine(to: point)
+                            }
+                            coverContext.stroke(
+                                stroke,
+                                with: .color(.black),
+                                style: StrokeStyle(
+                                    lineWidth: brushDiameter,
+                                    lineCap: .round,
+                                    lineJoin: .round
+                                )
                             )
-                        )
+                        }
                     }
                 }
                 .drawingGroup()
@@ -80,7 +358,7 @@ private struct V2ScratchRevealCanvas: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                DragGesture(minimumDistance: 3, coordinateSpace: .local)
                     .onChanged { value in
                         if !isDrawing {
                             isDrawing = true
@@ -99,10 +377,16 @@ private struct V2ScratchRevealCanvas: View {
                         }
                     }
             )
+            .simultaneousGesture(
+                TapGesture()
+                    .onEnded {
+                        onReveal()
+                    }
+            )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("被铅笔涂层遮住的语义")
             .accessibilityValue("\(Int(coverage * 100))% 已刮开")
-            .accessibilityHint("上下滑动调整揭示进度，或使用完整揭示操作")
+            .accessibilityHint("轻点完整揭示；上下滑动可逐步刮开")
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment:
@@ -196,7 +480,9 @@ struct V2ScreenshotAwakeningFlowView: View {
     @State private var currentIndex = 0
     @State private var phase = V2RecallPresentationPhase.summoning
     @State private var phaseBeforePause = V2RecallPresentationPhase.recall
-    @State private var summonStage = V2ScreenshotSummonVisualStage.compress
+    @State private var summonStage = V2ScreenshotSummonVisualStage.turn
+    @State private var stowStage = V2ScreenshotStowVisualStage.cardReady
+    @State private var stowCompletionHandled = false
     @State private var isRevealed = false
     @State private var revealProgress: CGFloat = 0
     @State private var isRevealDragging = false
@@ -209,9 +495,14 @@ struct V2ScreenshotAwakeningFlowView: View {
     @State private var variantFeedback = ""
     @State private var assessmentError = ""
     @State private var assessmentTask: Task<Void, Never>?
+    @State private var recallCompanionState = V2RecallMascotState.watching
+    @State private var recallCompanionHasTilted = false
+    @State private var assessmentReactionTick = 0
     @State private var fuzzyBreathActive = false
+    @State private var forgotReactionActive = false
     @State private var scratchPaths: [[CGPoint]] = []
     @State private var coveredScratchCells: Set<String> = []
+    @State private var activeSourceContext: V2SourceContextSheetItem?
     @AppStorage("recallo.v06.currentCardID") private var persistedCardID = ""
     @AppStorage("recallo.v06.currentIndex") private var persistedCurrentIndex = 0
     @AppStorage("recallo.v06.phase") private var persistedPhase = V2RecallPresentationPhase.home.rawValue
@@ -271,13 +562,16 @@ struct V2ScreenshotAwakeningFlowView: View {
             }
         }
         .interactiveDismissDisabled(phase == .assessing || phase == .repairing)
+        .sheet(item: $activeSourceContext) { sourceContext in
+            V2SourceContextSheetView(item: sourceContext)
+        }
         .task(id: summonTaskID) {
             guard phase == .summoning else { return }
             currentSchedule = currentCard.schedule
             if presentationReviewCycleKey.isEmpty {
                 presentationReviewCycleKey = currentCard.reviewCycleKey(scheduleOverride: currentSchedule)
             }
-            summonStage = .compress
+            summonStage = .turn
             if reduceMotion {
                 try? await Task.sleep(nanoseconds: 180_000_000)
                 guard !Task.isCancelled, phase == .summoning else { return }
@@ -287,15 +581,18 @@ struct V2ScreenshotAwakeningFlowView: View {
                 return
             }
 
-            // 首次过场在 1550ms 进入提示段，1800ms 进入主动回忆；
-            // 继续下一张保持 900ms 短过场，且不重复扫光。
+            // 首张 1800ms 完整演出；后续 900ms 省略环绕，避免连续复习疲劳。
             let timings: [UInt64] = currentIndex == 0
-                ? [150_000_000, 210_000_000, 820_000_000, 370_000_000, 250_000_000]
-                : [100_000_000, 230_000_000, 260_000_000, 150_000_000, 160_000_000]
-            guard await advanceSummon(after: timings[0], to: .rise) else { return }
-            guard await advanceSummon(after: timings[1], to: .orbit) else { return }
-            guard await advanceSummon(after: timings[2], to: .settle) else { return }
-            guard await advanceSummon(after: timings[3], to: .cue) else { return }
+                ? [120_000_000, 220_000_000, 340_000_000, 300_000_000, 420_000_000, 240_000_000, 160_000_000]
+                : [80_000_000, 130_000_000, 190_000_000, 0, 120_000_000, 250_000_000, 130_000_000]
+            guard await advanceSummon(after: timings[0], to: .approach) else { return }
+            guard await advanceSummon(after: timings[1], to: .rummage) else { return }
+            guard await advanceSummon(after: timings[2], to: .carrying) else { return }
+            if currentIndex == 0 {
+                guard await advanceSummon(after: timings[3], to: .orbit) else { return }
+            }
+            guard await advanceSummon(after: timings[5], to: .settle) else { return }
+            guard await advanceSummon(after: timings[6], to: .cue) else { return }
             try? await Task.sleep(nanoseconds: timings[4])
             guard !Task.isCancelled, phase == .summoning else { return }
             withAnimation(.easeOut(duration: 0.18)) {
@@ -392,6 +689,20 @@ struct V2ScreenshotAwakeningFlowView: View {
             }
 
             ZStack {
+                Image("RecallFolder")
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .frame(width: 126, height: 126)
+                    .offset(x: -128, y: 116)
+                    .scaleEffect(summonStage == .rummage ? 1.04 : 1)
+                    .rotationEffect(.degrees(summonStage == .rummage ? -2 : 0))
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.74),
+                        value: summonStage
+                    )
+                    .accessibilityHidden(true)
+
                 ForEach(0..<2, id: \.self) { index in
                     RoundedRectangle(cornerRadius: 25, style: .continuous)
                         .fill(V2Color.surfaceCream.opacity(index == 0 ? 0.5 : 0.72))
@@ -399,7 +710,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .rotationEffect(.degrees(index == 0 ? -6 : 5))
                         .offset(x: index == 0 ? -16 : 18, y: index == 0 ? 17 : 12)
                         .v2Shadow()
-                        .opacity(!reduceMotion && summonStage == .rise ? 0.62 : 1)
+                        .opacity(rarityIsRevealed ? 1 : 0)
                         .animation(
                             reduceMotion ? nil : .easeInOut(duration: 0.3),
                             value: summonStage
@@ -410,14 +721,14 @@ struct V2ScreenshotAwakeningFlowView: View {
                     Image("RecalloParticleGlow")
                         .resizable()
                         .renderingMode(.template)
-                        .foregroundStyle(rarityAccentColor.opacity(0.16))
+                        .foregroundStyle(V2Color.textMuted.opacity(0.13))
                         .frame(width: 190, height: 190)
                         .transition(.opacity)
 
                     Ellipse()
                         .trim(from: 0.08, to: 0.84)
                         .stroke(
-                            rarityAccentColor.opacity(0.48),
+                            V2Color.textMuted.opacity(0.38),
                             style: StrokeStyle(lineWidth: 8, lineCap: .round)
                         )
                         .frame(width: 330, height: 165)
@@ -428,8 +739,8 @@ struct V2ScreenshotAwakeningFlowView: View {
 
                 VStack(spacing: 18) {
                     rarityBadge
-                        .opacity(summonStage == .cue ? 1 : 0)
-                        .accessibilityHidden(summonStage != .cue)
+                        .opacity(rarityIsRevealed ? 1 : 0)
+                        .accessibilityHidden(!rarityIsRevealed)
                     Image(systemName: "sparkles")
                         .font(.system(size: 42, weight: .light))
                         .foregroundStyle(V2Color.primary)
@@ -446,13 +757,18 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .fill(V2Color.surfaceCream)
                         .overlay(
                             RoundedRectangle(cornerRadius: 25, style: .continuous)
-                                .stroke(rarityAccentColor.opacity(0.56), lineWidth: 1.5)
+                                .stroke(
+                                    rarityIsRevealed
+                                        ? rarityAccentColor.opacity(0.56)
+                                        : V2Color.textMuted.opacity(0.34),
+                                    lineWidth: 1.5
+                                )
                         )
                         .v2Shadow()
                 )
                 .shadow(
                     color: !reduceMotion && summonStage == .orbit
-                        ? rarityAccentColor.opacity(0.18)
+                        ? V2Color.textMuted.opacity(0.13)
                         : Color.clear,
                     radius: !reduceMotion && summonStage == .orbit ? 6 : 0,
                     y: !reduceMotion && summonStage == .orbit ? 4 : 0
@@ -460,14 +776,14 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .scaleEffect(summonCardScale)
                 .offset(summonCardOffset)
                 .rotationEffect(.degrees(summonCardRotation))
-                .opacity(summonStage == .compress ? 0.86 : 1)
+                .opacity(summonCardOpacity)
                 .animation(
                     reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.8),
                     value: summonStage
                 )
                 .changeEffect(
                     .shine(duration: 0.5),
-                    value: summonStage == .cue && currentIndex == 0,
+                    value: rarityIsRevealed && currentIndex == 0,
                     isEnabled: !reduceMotion
                 )
 
@@ -485,7 +801,12 @@ struct V2ScreenshotAwakeningFlowView: View {
 
                 V2RecallMascotView(state: mascotState, reduceMotion: reduceMotion)
                     .frame(width: 98, height: 98)
-                    .offset(x: 126, y: 128)
+                    .scaleEffect(summonMascotScale)
+                    .offset(summonMascotOffset)
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.76),
+                        value: summonStage
+                    )
                     .transition(.scale(scale: 0.88).combined(with: .opacity))
             }
             .frame(height: 350)
@@ -503,8 +824,8 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private var summonCardScale: CGFloat {
         switch summonStage {
-        case .compress: 0.94
-        case .rise: 0.98
+        case .turn, .approach, .rummage: 0.32
+        case .carrying: 0.56
         case .orbit: 1.035
         case .settle, .cue: 1
         }
@@ -512,8 +833,9 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private var summonCardOffset: CGSize {
         switch summonStage {
-        case .compress: CGSize(width: -2, height: 28)
-        case .rise: CGSize(width: 0, height: -22)
+        case .turn, .approach: CGSize(width: -126, height: 92)
+        case .rummage: CGSize(width: -112, height: 64)
+        case .carrying: CGSize(width: -38, height: 42)
         case .orbit: CGSize(width: -8, height: -12)
         case .settle, .cue: .zero
         }
@@ -521,15 +843,65 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private var summonCardRotation: Double {
         switch summonStage {
-        case .compress: -2
-        case .rise: 3
+        case .turn, .approach: -8
+        case .rummage: -5
+        case .carrying: 4
         case .orbit: -3
         case .settle, .cue: 0
         }
     }
 
+    private var summonCardOpacity: Double {
+        switch summonStage {
+        case .turn, .approach: 0
+        case .rummage: 0.48
+        default: 1
+        }
+    }
+
+    private var summonMascotOffset: CGSize {
+        switch summonStage {
+        case .turn: CGSize(width: 126, height: 128)
+        case .approach: CGSize(width: -48, height: 128)
+        case .rummage: CGSize(width: -86, height: 112)
+        case .carrying: CGSize(width: -12, height: 126)
+        case .orbit, .settle, .cue: CGSize(width: 126, height: 128)
+        }
+    }
+
+    private var summonMascotScale: CGFloat {
+        summonStage == .rummage ? 0.94 : 1
+    }
+
+    private var rarityIsRevealed: Bool {
+        summonStage == .settle || summonStage == .cue
+    }
+
     private var formalCard: some View {
         VStack(spacing: 18) {
+            V2RecallMascotView(state: recallCompanionState, reduceMotion: reduceMotion)
+                .frame(width: 86, height: 86)
+                .accessibilityLabel("记忆伙伴安静陪你回想")
+                .task(id: currentCard.id) {
+                    recallCompanionState = .watching
+                    guard !recallCompanionHasTilted,
+                          !reduceMotion,
+                          !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
+                    try? await Task.sleep(nanoseconds: 6_500_000_000)
+                    guard !Task.isCancelled,
+                          !isRevealed,
+                          phase == .recall || phase == .scratching else { return }
+                    recallCompanionHasTilted = true
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
+                        recallCompanionState = .turning
+                    }
+                    try? await Task.sleep(nanoseconds: 460_000_000)
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        recallCompanionState = .watching
+                    }
+                }
+
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     rarityBadge
@@ -548,6 +920,10 @@ struct V2ScreenshotAwakeningFlowView: View {
                                 )
                         )
                     sourceStatusLabel
+                }
+
+                if currentCard.groupCardCount > 1 || sourceContextSheetItem != nil {
+                    sourceContextHeaderEntry
                 }
 
                 Text("先别看答案")
@@ -610,6 +986,90 @@ struct V2ScreenshotAwakeningFlowView: View {
             perspective: 0.45
         )
         .padding(.bottom, 36)
+    }
+
+    private var sourceContextSheetItem: V2SourceContextSheetItem? {
+        guard let context = currentCard.card.sourceContext else { return nil }
+        let hasNearbyText = !context.nearbyText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+        let hasOverview = context.overview.map { overview in
+            !overview.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !overview.highlights.isEmpty
+        } ?? false
+        guard hasNearbyText || hasOverview || !context.blocks.isEmpty else {
+            return nil
+        }
+        return V2SourceContextSheetItem(
+            cardID: currentCard.id,
+            sourceTitle: currentCard.card.sourceTitle,
+            groupCardCount: currentCard.groupCardCount,
+            groupCardIndex: currentCard.groupCardIndex,
+            context: context
+        )
+    }
+
+    @ViewBuilder
+    private var sourceContextHeaderEntry: some View {
+        if sourceContextSheetItem != nil {
+            Button {
+                openSourceContext()
+            } label: {
+                sourceContextHeaderLabel(
+                    detail: isRevealed ? "查看内容脉络" : "查看脉络并揭晓"
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("v2.source-context.open")
+            .accessibilityLabel(isRevealed ? "查看内容脉络" : "查看脉络并揭晓")
+            .accessibilityHint(
+                isRevealed
+                    ? "打开原内容并定位到当前截图附近"
+                    : "先完整揭晓当前答案，再打开原内容并定位到当前截图附近"
+            )
+        } else {
+            sourceContextHeaderLabel(detail: "内容脉络仍在补全")
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "这份内容生成了 \(currentCard.groupCardCount) 张卡，当前 \(currentCard.groupCardIndex + 1) / \(currentCard.groupCardCount)，内容脉络仍在补全"
+                )
+        }
+    }
+
+    private func sourceContextHeaderLabel(detail: String) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(
+                    currentCard.groupCardCount > 1
+                        ? "这份内容生成了 \(currentCard.groupCardCount) 张卡 · 当前 \(currentCard.groupCardIndex + 1) / \(currentCard.groupCardCount)"
+                        : "查看这张卡的来源位置"
+                )
+                .font(V2Typography.bodySmallEmphasis)
+                .foregroundStyle(V2Color.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text(detail)
+                    .font(V2Typography.caption)
+                    .foregroundStyle(V2Color.textMuted)
+            }
+
+            Spacer(minLength: 8)
+
+            V2CardStackGlyph()
+                .accessibilityHidden(true)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 7)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(V2Color.pageGreenBackground.opacity(0.38))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .stroke(V2Color.primary.opacity(0.28), lineWidth: 1)
+                )
+        )
     }
 
     @ViewBuilder
@@ -882,19 +1342,14 @@ struct V2ScreenshotAwakeningFlowView: View {
 
                 V2RecallMascotView(state: mascotState, reduceMotion: reduceMotion)
                     .frame(width: 164, height: 164)
-                    .offset(y: feedbackMascotOffset)
-                    .offset(
-                        y: assessment == .forgot && phase == .assessing && !reduceMotion
-                            ? 4
-                            : 0
-                    )
+                    .offset(y: forgotReactionActive ? 6 : 0)
                     .animation(
                         reduceMotion ? nil : .spring(response: 0.36, dampingFraction: 0.68),
-                        value: phase
+                        value: forgotReactionActive
                     )
                     .changeEffect(
                         .jump(height: 18),
-                        value: phase == .assessing,
+                        value: assessmentReactionTick,
                         isEnabled: assessment == .remembered && !reduceMotion
                     )
                     .changeEffect(
@@ -905,7 +1360,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                                 .foregroundStyle(Color(hex: 0xE8B44C))
                                 .frame(width: 10, height: 10)
                         },
-                        value: phase == .assessing,
+                        value: assessmentReactionTick,
                         isEnabled: assessment == .remembered && !reduceMotion
                     )
             }
@@ -971,12 +1426,31 @@ struct V2ScreenshotAwakeningFlowView: View {
                     value: fuzzyBreathActive
                 )
         )
-        .onChange(of: phase) { _, newPhase in
-            if newPhase == .assessing && assessment == .fuzzy {
-                fuzzyBreathActive = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+        .task(id: assessmentReactionTick) {
+            guard assessmentReactionTick > 0,
+                  phase == .assessing,
+                  !reduceMotion else { return }
+            switch assessment {
+            case .fuzzy:
+                withAnimation(.easeInOut(duration: 0.26)) {
+                    fuzzyBreathActive = true
+                }
+                try? await Task.sleep(nanoseconds: 760_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.22)) {
                     fuzzyBreathActive = false
                 }
+            case .forgot:
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.68)) {
+                    forgotReactionActive = true
+                }
+                try? await Task.sleep(nanoseconds: 420_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    forgotReactionActive = false
+                }
+            default:
+                break
             }
         }
     }
@@ -1002,22 +1476,125 @@ struct V2ScreenshotAwakeningFlowView: View {
     private var stowingLanding: some View {
         VStack(spacing: 20) {
             Spacer()
-            V2RecallMascotView(state: .farewell, reduceMotion: reduceMotion)
-                .frame(width: 170, height: 170)
-            Text("记忆已经收好了")
+
+            ZStack {
+                Image("RecallFolder")
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .frame(width: 180, height: 180)
+                    .offset(y: 52)
+                    .accessibilityHidden(true)
+
+                Image("RecallCardSurface")
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFit()
+                    .frame(width: 164, height: 122)
+                    .scaleEffect(stowCardScale)
+                    .offset(y: stowCardOffset)
+                    .opacity(stowCardOpacity)
+                    .rotationEffect(.degrees(stowStage == .cardReady ? -3 : 0))
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.8),
+                        value: stowStage
+                    )
+                    .accessibilityHidden(true)
+
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .fill(V2Color.pageGreenBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .stroke(V2Color.primary.opacity(0.28), lineWidth: 1)
+                    )
+                    .frame(width: 172, height: 78)
+                    .rotation3DEffect(
+                        .degrees(stowStage == .cardReady || stowStage == .dropping ? -68 : 0),
+                        axis: (x: 1, y: 0, z: 0),
+                        anchor: .bottom,
+                        perspective: 0.55
+                    )
+                    .offset(y: 74)
+                    .animation(
+                        reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.82),
+                        value: stowStage
+                    )
+                    .accessibilityHidden(true)
+
+                V2RecallMascotView(
+                    state: stowStage == .farewell ? .farewell : .carrying,
+                    reduceMotion: reduceMotion
+                )
+                .frame(width: 104, height: 104)
+                .offset(x: 108, y: stowStage == .farewell ? -64 : 36)
+                .animation(
+                    reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.72),
+                    value: stowStage
+                )
+            }
+            .frame(height: 270)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(stowStage == .farewell ? "记忆伙伴把卡收好并挥手告别" : "正在把卡放回收藏夹")
+
+            Text(stowStage == .farewell ? "记忆已经收好了" : "正在把记忆放回收藏夹")
                 .font(.system(size: 25, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
-            Text("下次需要时，它会带着这张卡回来。")
+            Text(stowStage == .farewell ? "下次需要时，它会带着这张卡回来。" : "卡片和当前进度都会被保留。")
                 .font(V2Typography.bodySmall)
                 .foregroundStyle(V2Color.textSecondary)
+
+            Button("跳过动画") {
+                finishStow()
+            }
+            .font(V2Typography.bodySmallEmphasis)
+            .foregroundStyle(V2Color.textSecondary)
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityHint("立即完成收好并返回")
+
             Spacer()
         }
         .v2PageColumn()
-        .task {
-            try? await Task.sleep(nanoseconds: reduceMotion ? 180_000_000 : 700_000_000)
+        .task(id: "stow-\(currentCard.id)") {
+            stowStage = .cardReady
+            if reduceMotion {
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                guard !Task.isCancelled, phase == .stowing else { return }
+                stowStage = .farewell
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                guard !Task.isCancelled, phase == .stowing else { return }
+                finishStow()
+                return
+            }
+            guard await advanceStow(after: 160_000_000, to: .dropping) else { return }
+            guard await advanceStow(after: 460_000_000, to: .closing) else { return }
+            guard await advanceStow(after: 320_000_000, to: .farewell) else { return }
+            try? await Task.sleep(nanoseconds: 620_000_000)
             guard !Task.isCancelled, phase == .stowing else { return }
-            clearPersistedPresentation()
-            onClose()
+            finishStow()
+        }
+    }
+
+    private var stowCardScale: CGFloat {
+        switch stowStage {
+        case .cardReady: 0.78
+        case .dropping: 0.34
+        case .closing, .farewell: 0.24
+        }
+    }
+
+    private var stowCardOffset: CGFloat {
+        switch stowStage {
+        case .cardReady: -72
+        case .dropping: 46
+        case .closing, .farewell: 54
+        }
+    }
+
+    private var stowCardOpacity: Double {
+        switch stowStage {
+        case .cardReady: 1
+        case .dropping: 0.82
+        case .closing, .farewell: 0
         }
     }
 
@@ -1316,9 +1893,10 @@ struct V2ScreenshotAwakeningFlowView: View {
         case .home: return .idle
         case .summoning:
             switch summonStage {
-            case .compress: return .turning
-            case .rise, .orbit: return .rummaging
-            case .settle, .cue: return .carrying
+            case .turn, .approach: return .turning
+            case .rummage: return .rummaging
+            case .carrying, .orbit: return .carrying
+            case .settle, .cue: return .acknowledging
             }
         case .recall, .scratching: return .watching
         case .revealed: return .acknowledging
@@ -1334,11 +1912,6 @@ struct V2ScreenshotAwakeningFlowView: View {
         case .stowing: return .farewell
         case .paused: return .sleeping
         }
-    }
-
-    private var feedbackMascotOffset: CGFloat {
-        guard !reduceMotion, phase == .assessing, assessment == .remembered else { return 0 }
-        return -10
     }
 
     private var feedbackMascotAccessibilityLabel: String {
@@ -1386,6 +1959,14 @@ struct V2ScreenshotAwakeningFlowView: View {
         )
     }
 
+    private func openSourceContext() {
+        guard let sourceContextSheetItem else { return }
+        if !isRevealed {
+            reveal()
+        }
+        activeSourceContext = sourceContextSheetItem
+    }
+
     private func answerVariant(_ isCorrect: Bool) {
         variantFeedback = isCorrect
             ? "回答正确 · 现在检查证据"
@@ -1408,6 +1989,9 @@ struct V2ScreenshotAwakeningFlowView: View {
             attemptId: "ios-capture-assessment-\(currentReviewCycleKey)"
         )
         assessmentError = ""
+        assessmentReactionTick &+= 1
+        fuzzyBreathActive = false
+        forgotReactionActive = false
         withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.34, dampingFraction: 0.78)) {
             phase = .assessing
         }
@@ -1478,7 +2062,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         withAnimation(animation) {
             currentIndex += 1
             phase = .summoning
-            summonStage = .compress
+            summonStage = .turn
             isRevealed = false
             revealProgress = 0
             isRevealDragging = false
@@ -1489,7 +2073,10 @@ struct V2ScreenshotAwakeningFlowView: View {
             pendingAssessment = nil
             assessmentError = ""
             variantFeedback = ""
+            recallCompanionState = .watching
+            recallCompanionHasTilted = false
             fuzzyBreathActive = false
+            forgotReactionActive = false
             scratchPaths = []
             coveredScratchCells = []
         }
@@ -1514,6 +2101,8 @@ struct V2ScreenshotAwakeningFlowView: View {
 
     private func stowAndClose() {
         assessmentTask?.cancel()
+        stowStage = .cardReady
+        stowCompletionHandled = false
         withAnimation(reduceMotion ? .easeOut(duration: 0.18) : .spring(response: 0.4, dampingFraction: 0.82)) {
             phase = .stowing
         }
@@ -1630,7 +2219,8 @@ struct V2ScreenshotAwakeningFlowView: View {
         presentationReviewCycleKey = card.reviewCycleKey(scheduleOverride: card.schedule)
         phase = .summoning
         phaseBeforePause = .recall
-        summonStage = .compress
+        summonStage = .turn
+        stowStage = .cardReady
         isRevealed = false
         revealProgress = 0
         isRevealDragging = false
@@ -1640,7 +2230,11 @@ struct V2ScreenshotAwakeningFlowView: View {
         pendingAssessment = nil
         assessmentError = ""
         variantFeedback = ""
+        recallCompanionState = .watching
+        recallCompanionHasTilted = false
+        assessmentReactionTick = 0
         fuzzyBreathActive = false
+        forgotReactionActive = false
         scratchPaths = []
         coveredScratchCells = []
     }
@@ -1667,6 +2261,25 @@ struct V2ScreenshotAwakeningFlowView: View {
         withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.18)) {
             phase = .recall
         }
+    }
+
+    private func finishStow() {
+        guard phase == .stowing, !stowCompletionHandled else { return }
+        stowCompletionHandled = true
+        clearPersistedPresentation()
+        onClose()
+    }
+
+    private func advanceStow(
+        after nanoseconds: UInt64,
+        to nextStage: V2ScreenshotStowVisualStage
+    ) async -> Bool {
+        try? await Task.sleep(nanoseconds: nanoseconds)
+        guard !Task.isCancelled, phase == .stowing else { return false }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) {
+            stowStage = nextStage
+        }
+        return true
     }
 
     private func advanceSummon(

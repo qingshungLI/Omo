@@ -245,6 +245,12 @@ struct V2RootView: View {
                 screenshotCards: screenshotCards,
                 openGeneratingChapter: openGeneratingChapter(id:),
                 openChapter: openBackendChapter,
+                resolveMemoryCardConfirmation: { cardID, request in
+                    try await resolveScreenshotMemoryCardConfirmation(
+                        id: cardID,
+                        request: request
+                    )
+                },
                 deleteMemoryCard: { cardID in
                     try await deleteScreenshotMemoryCard(id: cardID)
                 }
@@ -1600,29 +1606,58 @@ struct V2RootView: View {
                 let response = try await apiClient.analyzeScreenshot(imageData: preparedData)
                 try Task.checkCancellation()
                 let captureAnalysis = response.captureAnalysis
+                let preferredMemoryCards = response.preferredMemoryCards
                 let disposition = captureAnalysis?.disposition
-                    ?? (response.memoryCard?.state == .formal ? .createCard : .archiveOnly)
-                guard var memoryCard = captureAnalysis?.memoryCard ?? response.memoryCard else {
+                    ?? (preferredMemoryCards.first?.state == .formal ? .createCard : .archiveOnly)
+                if disposition != .createCard {
+                    // Non-formal image-flow payloads are intentionally empty.
+                    // Refresh the durable list instead of rendering a transient
+                    // placeholder that can retain a stale confirmation state.
+                    await refreshCaptureMemoryCards()
+                    screenshotAnalysisState = .generated(
+                        disposition == .needsConfirmation
+                            ? "识别结果已保存，等待你确认要记住的内容。"
+                            : "这条内容已保存为碎片，不进入复习。"
+                    )
+                    selectedTab = .materials
+                    return
+                }
+                guard !preferredMemoryCards.isEmpty else {
                     throw V2ScreenshotAnalysisError.missingMemoryCard
                 }
-                if let captureAnalysis {
-                    memoryCard.sourceStatus = captureAnalysis.sourceStatus
+
+                let capturedGroup = preferredMemoryCards.enumerated().map { index, candidate in
+                    var memoryCard = candidate
+                    if let captureAnalysis {
+                        memoryCard.sourceStatus = captureAnalysis.sourceStatus
+                    }
+                    return V2CapturedMemoryCard(
+                        card: memoryCard,
+                        screenshotData: preparedData,
+                        schedule: disposition == .createCard
+                            ? response.reviewSchedule(for: memoryCard.id, at: index)
+                            : nil,
+                        disposition: disposition,
+                        groupCardCount: preferredMemoryCards.count,
+                        groupCardIndex: index
+                    )
                 }
-                let captured = V2CapturedMemoryCard(
-                    card: memoryCard,
-                    screenshotData: preparedData,
-                    schedule: disposition == .createCard
-                        ? (captureAnalysis?.schedule ?? response.schedule)
-                        : nil,
-                    disposition: disposition
-                )
-                if let index = screenshotCards.firstIndex(where: { $0.id == captured.id }) {
-                    screenshotCards[index] = captured
-                } else {
-                    screenshotCards.append(captured)
+                for capturedCard in capturedGroup {
+                    if let index = screenshotCards.firstIndex(where: { $0.id == capturedCard.id }) {
+                        // A duplicate screenshot returns the same canonical id: keep the
+                        // existing local progression and merge only canonical payload fields.
+                        screenshotCards[index] = capturedCard.mergedWithLocalProgression(
+                            of: screenshotCards[index]
+                        )
+                    } else {
+                        screenshotCards.append(capturedCard)
+                    }
                 }
-                guard captured.isReadyForReview else {
-                    if captured.isUngradedFormalCard {
+                guard let primaryCard = capturedGroup.first else {
+                    throw V2ScreenshotAnalysisError.missingMemoryCard
+                }
+                guard primaryCard.isReadyForReview else {
+                    if primaryCard.isUngradedFormalCard {
                         screenshotAnalysisState = .generated(
                             "记忆卡已保存，但知识等级待确认，暂不进入复习。"
                         )
@@ -1637,12 +1672,14 @@ struct V2RootView: View {
                     return
                 }
                 screenshotAnalysisState = .generated(
-                    "记忆卡已生成，正在打开。"
+                    capturedGroup.count == 1
+                        ? "记忆卡已生成，正在打开。"
+                        : "\(capturedGroup.count) 张记忆卡已生成，正在打开主卡。"
                 )
                 selectedTab = .learning
                 screenshotDrawSession = V2ScreenshotDrawSession.make(
                     mode: .single,
-                    from: [captured],
+                    from: [primaryCard],
                     pool: .due
                 )
             } catch is CancellationError {
@@ -1665,11 +1702,94 @@ struct V2RootView: View {
     }
 
     @MainActor
+    private func resolveScreenshotMemoryCardConfirmation(
+        id: String,
+        request: CaptureMemoryCardConfirmationRequest
+    ) async throws -> CaptureMemoryCardConfirmationResponse {
+        let response = try await apiClient.resolveCaptureMemoryCardConfirmation(
+            id: id,
+            request: request
+        )
+        if let record = response.card {
+            let canonicalCard = V2CapturedMemoryCard(record: record)
+            if let index = screenshotCards.firstIndex(where: { $0.id == canonicalCard.id }) {
+                screenshotCards[index] = canonicalCard.mergedWithLocalProgression(
+                    of: screenshotCards[index]
+                )
+            } else {
+                screenshotCards.append(canonicalCard)
+            }
+        }
+        // The list is authoritative for disposition and schedule. This request
+        // reuses persisted OCR evidence and never reruns screenshot recognition.
+        await refreshCaptureMemoryCards()
+        return response
+    }
+
+    @MainActor
     private func applyScreenshotAssessment(
         cardID: String,
         assessment: V2MemoryAssessment,
         attemptID: String
     ) async throws -> CaptureMemoryCardAssessmentResponse {
+        #if DEBUG
+        if usesFixtures {
+            guard let index = screenshotCards.firstIndex(where: { $0.id == cardID }) else {
+                throw APIClientError.invalidResponse
+            }
+            let now = Date()
+            let delay: TimeInterval = switch assessment {
+            case .remembered: 24 * 60 * 60
+            case .fuzzy: 3 * 60 * 60
+            case .forgot: 10 * 60
+            }
+            let intervalDays = assessment == .remembered ? 1 : 0
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let previous = screenshotCards[index]
+            let before = previous.masteryStage
+            let after = before.applying(assessment)
+            let beforeValue: String = switch before {
+            case .sealed: "sealed"
+            case .awakened: "awakened"
+            case .solidified: "solidified"
+            case .engraved: "engraved"
+            }
+            let afterValue: String = switch after {
+            case .sealed: "sealed"
+            case .awakened: "awakened"
+            case .solidified: "solidified"
+            case .engraved: "engraved"
+            }
+            let schedule = ImageFlowReviewSchedule(
+                cardId: cardID,
+                nextReviewAt: formatter.string(from: now.addingTimeInterval(delay)),
+                intervalDays: intervalDays,
+                state: "scheduled",
+                status: "scheduled",
+                stepIndex: min(5, previous.reviewCount + 1)
+            )
+            let response = CaptureMemoryCardAssessmentResponse(
+                schemaVersion: "capture_memory_assessment_fixture_1",
+                cardId: cardID,
+                assessment: .init(
+                    attemptId: attemptID,
+                    assessment: assessment.rawValue,
+                    assessedAt: formatter.string(from: now),
+                    repeated: false
+                ),
+                mastery: .init(
+                    before: beforeValue,
+                    after: afterValue,
+                    successfulRecallCount: previous.successfulRecallCount + (assessment == .remembered ? 1 : 0),
+                    reviewCount: previous.reviewCount + 1
+                ),
+                schedule: schedule
+            )
+            screenshotCards[index].apply(assessment, schedule: schedule)
+            return response
+        }
+        #endif
         let response = try await apiClient.assessCaptureMemoryCard(
             id: cardID,
             assessment: assessment.rawValue,
@@ -1693,8 +1813,19 @@ struct V2RootView: View {
             throw APIClientError.invalidResponse
         }
         screenshotCards.removeAll { $0.id == id }
-        if screenshotDrawSession?.cards.contains(where: { $0.id == id }) == true {
-            screenshotDrawSession = nil
+        screenshotCards = screenshotCards.map { $0.removingGroupMember(id) }
+        if let session = screenshotDrawSession {
+            if session.cards.contains(where: { $0.id == id }) {
+                screenshotDrawSession = nil
+            } else if session.cards.contains(where: { $0.groupCardCount > 1 || $0.card.captureGroup != nil }) {
+                // A live session keeps its own copies; rebuild it so a surviving
+                // group member can never show stale multi-card metadata.
+                screenshotDrawSession = V2ScreenshotDrawSession(
+                    mode: session.mode,
+                    pool: session.pool,
+                    cards: session.cards.map { $0.removingGroupMember(id) }
+                )
+            }
         }
     }
 
@@ -1879,7 +2010,14 @@ struct V2RootView: View {
 
     @MainActor
     private func refreshCaptureMemoryCards() async {
-        guard !usesFixtures else { return }
+        if usesFixtures {
+            #if DEBUG
+            screenshotCards = V2RealCaptureFixtureLoader.load().allCards
+            #else
+            screenshotCards = []
+            #endif
+            return
+        }
         do {
             let records = try await apiClient.fetchCaptureMemoryCards()
             screenshotCards = records.map(V2CapturedMemoryCard.init(record:))

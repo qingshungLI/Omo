@@ -212,6 +212,8 @@ export async function runImageFlow({
               sourceTitle: source.sourceTitle,
               sourceAccount: source.sourceAccount,
               sourceUrl: source.sourceUrl,
+              overviewBlocks: Array.isArray(source.overviewBlocks) ? source.overviewBlocks : [],
+              focus: source.focus || null,
               source: result.source,
               link: result.link
             }),
@@ -282,6 +284,8 @@ export async function runImageFlow({
                     sourceTitle: result.source.title,
                     sourceAccount: result.source.account,
                     sourceUrl: result.source.url,
+                    overviewBlocks: fallbackEvidence,
+                    focus: result.source.focus,
                     source: result.source,
                     link: result.link
                   }),
@@ -347,6 +351,8 @@ function attachFragmentContracts(result, {
     sourceStatus,
     decisionReason: result.message || result.error?.message
   });
+  response.memoryCards = [];
+  response.schedules = [];
   response.memoryCard = fragmentForResult(response);
   return response;
 }
@@ -369,6 +375,12 @@ function applyMemoryGenerationResult(result, generation) {
     decisionReason: "没有生成可用的记忆卡。"
   });
   result.captureAnalysis = captureAnalysis;
+  result.memoryCards = Array.isArray(captureAnalysis.memoryCards)
+    ? structuredClone(captureAnalysis.memoryCards)
+    : captureAnalysis.memoryCard ? [structuredClone(captureAnalysis.memoryCard)] : [];
+  result.schedules = Array.isArray(captureAnalysis.schedules)
+    ? structuredClone(captureAnalysis.schedules)
+    : captureAnalysis.schedule ? [structuredClone(captureAnalysis.schedule)] : [];
   result.schedule = captureAnalysis.schedule || null;
   const fallback = buildMemoryFragment({
     capture: result.capture,

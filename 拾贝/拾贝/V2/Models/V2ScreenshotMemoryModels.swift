@@ -11,6 +11,8 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
     var reviewCount: Int
     var lastAssessment: V2MemoryAssessment?
     let capturedAt: Date
+    let groupCardCount: Int
+    let groupCardIndex: Int
 
     var id: String { card.id }
 
@@ -35,7 +37,9 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         successfulRecallCount: Int = 0,
         reviewCount: Int = 0,
         lastAssessment: V2MemoryAssessment? = nil,
-        capturedAt: Date = Date()
+        capturedAt: Date = Date(),
+        groupCardCount: Int = 1,
+        groupCardIndex: Int = 0
     ) {
         let resolvedDisposition = disposition
             ?? (card.state == .formal ? .createCard : .archiveOnly)
@@ -50,11 +54,50 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         self.reviewCount = isReadyForReview ? reviewCount : 0
         self.lastAssessment = isReadyForReview ? lastAssessment : nil
         self.capturedAt = capturedAt
+        self.groupCardCount = max(1, groupCardCount)
+        self.groupCardIndex = min(
+            max(0, groupCardIndex),
+            max(0, groupCardCount - 1)
+        )
     }
 
     init(record: CaptureMemoryCardRecord) {
         let isFormalReviewCard = record.memoryCard.state == .formal && record.disposition == .createCard
         let isReadyForReview = isFormalReviewCard && record.memoryCard.rarity != nil
+        let groupedCards = (record.memoryCards ?? [])
+            .reduce(into: [ImageFlowMemoryCard]()) { result, candidate in
+                guard result.count < 3,
+                      !result.contains(where: { $0.id == candidate.id }) else {
+                    return
+                }
+                result.append(candidate)
+            }
+        let resolvedGroup: [ImageFlowMemoryCard]
+        if groupedCards.isEmpty {
+            resolvedGroup = [record.memoryCard]
+        } else if groupedCards.contains(where: { $0.id == record.memoryCard.id }) {
+            resolvedGroup = groupedCards
+        } else {
+            resolvedGroup = Array(([record.memoryCard] + groupedCards).prefix(3))
+        }
+        let persistedCaptureGroup = record.memoryCard.captureGroup ?? record.captureGroup
+        let persistedCardIDs = (persistedCaptureGroup?.cardIds ?? [])
+            .reduce(into: [String]()) { result, cardID in
+                guard result.count < 3, !result.contains(cardID) else { return }
+                result.append(cardID)
+            }
+        let persistedGroupCount = min(
+            3,
+            max(
+                1,
+                max(persistedCaptureGroup?.count ?? 0, persistedCardIDs.count)
+            )
+        )
+        let persistedGroupIndex = persistedCardIDs.firstIndex(of: record.memoryCard.id)
+            ?? min(
+                max(0, persistedCaptureGroup?.index ?? 0),
+                persistedGroupCount - 1
+            )
         card = record.memoryCard
         screenshotData = Data()
         schedule = isReadyForReview ? record.schedule : nil
@@ -66,6 +109,13 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         capturedAt = V2ScreenshotDateParser.date(from: record.capturedAt)
             ?? V2ScreenshotDateParser.date(from: record.memoryCard.createdAt)
             ?? Date()
+        if persistedCaptureGroup != nil {
+            groupCardCount = persistedGroupCount
+            groupCardIndex = persistedGroupIndex
+        } else {
+            groupCardCount = resolvedGroup.count
+            groupCardIndex = resolvedGroup.firstIndex(where: { $0.id == record.memoryCard.id }) ?? 0
+        }
     }
 
     mutating func apply(
@@ -90,6 +140,67 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
             reviewCount += 1
             masteryStage = masteryStage.applying(assessment)
         }
+    }
+
+    /// Returns a copy with a deleted group member removed. The surviving card
+    /// immediately re-normalizes its capture group (cardIds, count, index) so no
+    /// surface can show stale multi-card metadata after a successful delete.
+    func removingGroupMember(_ removedCardID: String) -> V2CapturedMemoryCard {
+        guard removedCardID != id,
+              groupCardCount > 1 || card.captureGroup != nil else {
+            return self
+        }
+        var updatedCard = card
+        var remainingCount = groupCardCount
+        var remainingIndex = groupCardIndex
+        if var group = updatedCard.captureGroup {
+            let remainingIDs = group.cardIds.filter { $0 != removedCardID }
+            group.cardIds = remainingIDs.isEmpty ? [updatedCard.id] : remainingIDs
+            group.count = max(1, group.cardIds.count)
+            group.index = max(0, group.cardIds.firstIndex(of: updatedCard.id) ?? 0)
+            updatedCard.captureGroup = group
+            remainingCount = group.count
+            remainingIndex = group.index
+        } else {
+            remainingCount = max(1, groupCardCount - 1)
+            remainingIndex = min(groupCardIndex, remainingCount - 1)
+        }
+        return V2CapturedMemoryCard(
+            card: updatedCard,
+            screenshotData: screenshotData,
+            schedule: schedule,
+            disposition: disposition,
+            masteryStage: masteryStage,
+            successfulRecallCount: successfulRecallCount,
+            reviewCount: reviewCount,
+            lastAssessment: lastAssessment,
+            capturedAt: capturedAt,
+            groupCardCount: remainingCount,
+            groupCardIndex: remainingIndex
+        )
+    }
+
+    /// Merges a freshly captured canonical payload with the progression held
+    /// locally for the same canonical card id. A duplicate screenshot must never
+    /// reset mastery, recall counts, capture time, or assessment; a schedule
+    /// returned by the server is canonical and wins, otherwise the local one stays.
+    func mergedWithLocalProgression(of existing: V2CapturedMemoryCard) -> V2CapturedMemoryCard {
+        guard existing.id == id else {
+            return self
+        }
+        return V2CapturedMemoryCard(
+            card: card,
+            screenshotData: screenshotData.isEmpty ? existing.screenshotData : screenshotData,
+            schedule: schedule ?? existing.schedule,
+            disposition: disposition,
+            masteryStage: existing.masteryStage,
+            successfulRecallCount: existing.successfulRecallCount,
+            reviewCount: existing.reviewCount,
+            lastAssessment: existing.lastAssessment,
+            capturedAt: existing.capturedAt,
+            groupCardCount: groupCardCount,
+            groupCardIndex: groupCardIndex
+        )
     }
 
     func reviewCycleKey(scheduleOverride: ImageFlowReviewSchedule? = nil) -> String {
@@ -117,6 +228,43 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
             capturedAt <= now.addingTimeInterval(-30 * 24 * 60 * 60)
         case .fading:
             lastAssessment == .fuzzy || lastAssessment == .forgot
+        }
+    }
+}
+
+enum V2CaptureConfirmationOutcome: Equatable {
+    case needsUserInput(
+        message: String,
+        requiredFields: [String],
+        evidence: [CaptureMemoryCardConfirmationResponse.Evidence]
+    )
+    case confirmed(V2CapturedMemoryCard)
+    case archived(V2CapturedMemoryCard?)
+    case invalid(String)
+}
+
+enum V2CaptureConfirmationReducer {
+    static func reduce(
+        _ response: CaptureMemoryCardConfirmationResponse
+    ) -> V2CaptureConfirmationOutcome {
+        switch response.status {
+        case .needsUserInput:
+            return .needsUserInput(
+                message: response.message ?? "请补充一条可从识别原文中核对的知识。",
+                requiredFields: response.requiredFields ?? [],
+                evidence: response.evidence ?? []
+            )
+        case .confirmed:
+            guard let record = response.card else {
+                return .invalid("服务端没有返回确认后的记忆卡。")
+            }
+            let captured = V2CapturedMemoryCard(record: record)
+            guard captured.isReadyForReview else {
+                return .invalid("确认结果尚未成为可复习的正式记忆卡。")
+            }
+            return .confirmed(captured)
+        case .archived:
+            return .archived(response.card.map(V2CapturedMemoryCard.init(record:)))
         }
     }
 }

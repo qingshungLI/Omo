@@ -7,6 +7,10 @@ import {
   incrementCapturePersistenceEpochsForAccount
 } from "../db.js";
 import {
+  CAPTURE_RARITY_RULE_VERSION,
+  validateCaptureMemoryOutput
+} from "./captureMemoryCard.js";
+import {
   advanceReviewSchedule,
   createInitialReviewSchedule,
   normalizeReviewSchedule,
@@ -16,6 +20,7 @@ import {
 export const CAPTURE_MEMORY_CARDS_SCHEMA_VERSION = "capture_memory_cards_1";
 export const CAPTURE_MEMORY_ASSESSMENT_SCHEMA_VERSION = "capture_memory_assessment_1";
 export const CAPTURE_MEMORY_DELETION_SCHEMA_VERSION = "capture_memory_card_deletion_1";
+export const CAPTURE_MEMORY_CONFIRMATION_SCHEMA_VERSION = "capture_memory_confirmation_1";
 export const CAPTURE_PERSISTENCE_EPOCH_SCHEMA_VERSION = "capture_persistence_epoch_1";
 export const CAPTURE_PERSISTENCE_STALE_SCHEMA_VERSION = "capture_persistence_stale_1";
 export const MASTERY_STAGES = Object.freeze(["sealed", "awakened", "solidified", "engraved"]);
@@ -47,55 +52,66 @@ export class MemoryCaptureRepository {
     const cards = this.#deviceCards(ownerId);
     const hashKey = `${ownerId}:${normalized.imageSha256}`;
     const previousCaptureId = this.#captureIdsByDeviceHash.get(hashKey);
-    const existing = previousCaptureId
-      ? [...cards.values()].find((entry) => entry.captureId === previousCaptureId)
-      : null;
-    if (existing?.state === "formal" && normalized.state !== "formal") {
-      return serializeEntry(existing, { durable: this.durable });
+    const existingEntries = previousCaptureId
+      ? [...cards.values()].filter((entry) => entry.captureId === previousCaptureId)
+      : [];
+    if (existingEntries.some((entry) => entry.state === "formal")) {
+      return serializeCaptureGroup(existingEntries, { durable: this.durable });
     }
 
-    const captureId = existing?.captureId || `capture-${randomUUID()}`;
-    const cardId = existing?.memoryCard?.id || (options.preserveCardId
-      ? normalized.memoryCard.id
-      : stableCardId(captureId, normalized.memoryCard.id));
+    const captureId = existingEntries[0]?.captureId || `capture-${randomUUID()}`;
     const date = normalized.now;
-    const memoryCard = {
-      ...structuredClone(normalized.memoryCard),
-      id: cardId,
-      captureId,
-      state: normalized.state === "formal" ? "formal" : "fragment",
-      sourceStatus: normalized.sourceStatus,
-      createdAt: existing?.createdAt || date.toISOString(),
-      updatedAt: date.toISOString()
-    };
-    const entry = {
-      captureId,
-      imageSha256: normalized.imageSha256,
-      disposition: normalized.disposition,
-      state: normalized.state,
-      sourceStatus: normalized.sourceStatus,
-      memoryCard,
-      evidence: structuredClone(normalized.evidence),
-      sourceBinding: structuredClone(normalized.sourceBinding),
-      schedule: normalized.state === "formal"
-        ? existing?.schedule || normalized.schedule
-        : null,
-      masteryStage: existing?.masteryStage || "sealed",
-      successfulRecallCount: existing?.successfulRecallCount || 0,
-      reviewCount: existing?.reviewCount || 0,
-      lastAssessment: existing?.lastAssessment || null,
-      attemptsById: existing?.attemptsById || new Map(),
-      createdAt: existing?.createdAt || date.toISOString(),
-      updatedAt: date.toISOString()
-    };
-    if (existing && existing.memoryCard.id !== cardId) cards.delete(existing.memoryCard.id);
-    cards.set(cardId, entry);
+    const nextEntries = normalized.memoryCards.map((candidate, index) => {
+      const cardId = options.preserveCardId
+        ? candidate.id
+        : stableCardId(captureId, candidate.id);
+      const existing = existingEntries.find((entry) => entry.memoryCard.id === cardId);
+      const createdAt = existing?.createdAt || date.toISOString();
+      const memoryCard = {
+        ...structuredClone(candidate),
+        id: cardId,
+        captureId,
+        captureGroupIndex: index,
+        state: normalized.state === "formal" ? "formal" : "fragment",
+        sourceStatus: normalized.sourceStatus,
+        createdAt,
+        updatedAt: date.toISOString()
+      };
+      return {
+        captureId,
+        imageSha256: normalized.imageSha256,
+        disposition: normalized.disposition,
+        state: normalized.state,
+        sourceStatus: normalized.sourceStatus,
+        memoryCard,
+        evidence: structuredClone(normalized.evidence),
+        sourceBinding: structuredClone(normalized.sourceBinding),
+        schedule: normalized.state === "formal"
+          ? existing?.schedule || normalized.schedules[index]
+          : null,
+        masteryStage: existing?.masteryStage || "sealed",
+        successfulRecallCount: existing?.successfulRecallCount || 0,
+        reviewCount: existing?.reviewCount || 0,
+        lastAssessment: existing?.lastAssessment || null,
+        attemptsById: existing?.attemptsById || new Map(),
+        createdAt,
+        updatedAt: date.toISOString()
+      };
+    });
+    const nextIds = new Set(nextEntries.map((entry) => entry.memoryCard.id));
+    for (const existing of existingEntries) {
+      if (!nextIds.has(existing.memoryCard.id)) cards.delete(existing.memoryCard.id);
+    }
+    for (const entry of nextEntries) cards.set(entry.memoryCard.id, entry);
     this.#captureIdsByDeviceHash.set(hashKey, captureId);
-    return serializeEntry(entry, { durable: this.durable });
+    return serializeCaptureGroup(nextEntries, { durable: this.durable });
   }
 
   upsertCaptureAnalysis(deviceId, captureAnalysis, { now = new Date() } = {}) {
-    const ids = captureAnalysis?.memoryCard?.sourceEvidenceIds || [];
+    const analysisCards = Array.isArray(captureAnalysis?.memoryCards)
+      ? captureAnalysis.memoryCards
+      : captureAnalysis?.memoryCard ? [captureAnalysis.memoryCard] : [];
+    const ids = uniqueStrings(analysisCards.flatMap((card) => card?.sourceEvidenceIds || []));
     return this.persistCaptureResult(deviceId, {
       captureAnalysis,
       memoryCard: captureAnalysis?.memoryCard
@@ -103,14 +119,15 @@ export class MemoryCaptureRepository {
       now,
       imageSha256: fallbackImageHash(
         deviceId,
-        captureAnalysis?.memoryCard?.id,
+        analysisCards[0]?.id,
         captureAnalysis?.disposition,
         captureAnalysis?.decisionReason
       ),
       evidence: ids.map((id) => ({
         id,
         type: "paragraph",
-        text: captureAnalysis?.memoryCard?.coreKnowledge || "兼容记忆卡证据"
+        text: analysisCards.find((card) => card?.sourceEvidenceIds?.includes(id))?.coreKnowledge
+          || "兼容记忆卡证据"
       })),
       preserveCardId: true
     });
@@ -119,13 +136,16 @@ export class MemoryCaptureRepository {
   list(deviceId, options = {}) {
     const ownerId = requiredText(deviceId, "deviceId");
     const date = normalizeDate(options.now || new Date());
-    const entries = [...(this.#cardsByDeviceId.get(ownerId)?.values() || [])]
-      .filter((entry) => matchesPool(entry, options.pool, date, options.timeCapsuleDays))
-      .sort(compareEntries);
+    const cards = attachCaptureGroupMetadata(
+      [...(this.#cardsByDeviceId.get(ownerId)?.values() || [])]
+        .map((entry) => serializeEntry(entry, { durable: this.durable }))
+    )
+      .filter((card) => matchesPool(entryForPool(card), options.pool, date, options.timeCapsuleDays))
+      .sort(compareSerializedEntries);
     return {
       schemaVersion: CAPTURE_MEMORY_CARDS_SCHEMA_VERSION,
       durable: this.durable,
-      cards: entries.map((entry) => serializeEntry(entry, { durable: this.durable }))
+      cards
     };
   }
 
@@ -134,6 +154,73 @@ export class MemoryCaptureRepository {
     const stableCardId = requiredText(cardId, "cardId");
     const entry = this.#cardsByDeviceId.get(ownerId)?.get(stableCardId);
     return entry ? serializeEntry(entry, { durable: this.durable }) : null;
+  }
+
+  resolveConfirmation(deviceId, cardId, input = {}, { now = new Date() } = {}) {
+    const ownerId = requiredText(deviceId, "deviceId");
+    const stableCardId = requiredText(cardId, "cardId");
+    const request = normalizeConfirmationRequest(input);
+    const entry = this.#cardsByDeviceId.get(ownerId)?.get(stableCardId);
+    if (!entry) return null;
+    const date = normalizeDate(now);
+
+    if (request.action === "archive") {
+      if (entry.disposition === "archive_only") {
+        return serializeConfirmation("archived", entry, {
+          durable: this.durable,
+          repeated: true
+        });
+      }
+      if (entry.state === "formal") {
+        throw confirmationConflict("正式记忆卡不能通过待确认接口归档。");
+      }
+      entry.disposition = "archive_only";
+      entry.state = "fragment";
+      entry.memoryCard = {
+        ...entry.memoryCard,
+        state: "fragment",
+        updatedAt: date.toISOString()
+      };
+      entry.schedule = null;
+      entry.updatedAt = date.toISOString();
+      return serializeConfirmation("archived", entry, { durable: this.durable });
+    }
+
+    if (entry.state === "formal") {
+      return serializeConfirmation("confirmed", entry, {
+        durable: this.durable,
+        repeated: true
+      });
+    }
+    if (entry.disposition !== "needs_confirmation") {
+      throw confirmationConflict("只有待确认的记忆片段可以确认。");
+    }
+    const outcome = buildConfirmedCard({
+      cardId: stableCardId,
+      existingCard: entry.memoryCard,
+      evidence: entry.evidence,
+      sourceStatus: entry.sourceStatus,
+      request,
+      now: date
+    });
+    if (outcome.status === "needs_user_input") {
+      return serializeNeedsUserInput(stableCardId, entry.evidence, outcome);
+    }
+    entry.disposition = "create_card";
+    entry.state = "formal";
+    entry.sourceStatus = outcome.sourceStatus;
+    entry.memoryCard = {
+      ...outcome.card,
+      captureId: entry.captureId,
+      captureGroupIndex: 0,
+      state: "formal",
+      sourceStatus: outcome.sourceStatus,
+      createdAt: entry.createdAt,
+      updatedAt: date.toISOString()
+    };
+    entry.schedule = outcome.schedule;
+    entry.updatedAt = date.toISOString();
+    return serializeConfirmation("confirmed", entry, { durable: this.durable });
   }
 
   recordAssessment(deviceId, cardId, input = {}, { now = new Date() } = {}) {
@@ -175,8 +262,11 @@ export class MemoryCaptureRepository {
     const cards = this.#cardsByDeviceId.get(ownerId);
     const entry = cards?.get(stableCardId);
     if (!entry) return null;
+    this.#incrementPersistenceEpoch(ownerId);
     cards.delete(stableCardId);
-    this.#captureIdsByDeviceHash.delete(`${ownerId}:${entry.imageSha256}`);
+    const hasSibling = [...(cards?.values() || [])]
+      .some((candidate) => candidate.captureId === entry.captureId);
+    if (!hasSibling) this.#captureIdsByDeviceHash.delete(`${ownerId}:${entry.imageSha256}`);
     return serializeDeletion(stableCardId, entry.captureId, normalizeDate(now));
   }
 
@@ -292,11 +382,12 @@ export class PostgresCaptureRepository {
       const existingResult = await client.query(
         `SELECT * FROM memory_cards
           WHERE capture_id = $1 AND deleted_at IS NULL
+          ORDER BY created_at ASC, id ASC
           FOR UPDATE`,
         [capture.id]
       );
-      const existing = existingResult.rows[0] || null;
-      if (existing?.state === "formal" && normalized.state !== "formal") {
+      const existingRows = existingResult.rows;
+      if (existingRows.some((row) => row.state === "formal")) {
         await client.query(
           `UPDATE captures
               SET disposition = 'create_card', status = 'ready', updated_at = $2
@@ -304,7 +395,7 @@ export class PostgresCaptureRepository {
           [capture.id, normalized.now.toISOString()]
         );
         await client.query("COMMIT");
-        return serializeDatabaseEntry(existing, { durable: this.durable });
+        return serializeDatabaseCaptureGroup(existingRows, { durable: this.durable });
       }
 
       await persistEvidence(client, capture.id, normalized.evidence);
@@ -339,62 +430,86 @@ export class PostgresCaptureRepository {
         ]
       );
 
-      const cardId = existing?.id || stableCardId(capture.id, normalized.memoryCard.id);
-      const createdAt = existing?.created_at || normalized.now.toISOString();
-      const cardJson = {
-        ...normalized.memoryCard,
-        id: cardId,
-        captureId: capture.id,
-        state: normalized.state === "formal" ? "formal" : "fragment",
-        sourceStatus: normalized.sourceStatus,
-        createdAt: toIsoString(createdAt),
-        updatedAt: normalized.now.toISOString()
-      };
-      const schedule = normalized.state === "formal"
-        ? parseJson(existing?.schedule_json) || normalized.schedule
-        : null;
+      const desiredCardIds = [];
+      for (const [index, candidate] of normalized.memoryCards.entries()) {
+        const cardId = options.preserveCardId
+          ? candidate.id
+          : stableCardId(capture.id, candidate.id);
+        desiredCardIds.push(cardId);
+        const existing = existingRows.find((row) => row.id === cardId) || null;
+        const createdAt = existing?.created_at || normalized.now.toISOString();
+        const cardJson = {
+          ...candidate,
+          id: cardId,
+          captureId: capture.id,
+          captureGroupIndex: index,
+          state: normalized.state === "formal" ? "formal" : "fragment",
+          sourceStatus: normalized.sourceStatus,
+          createdAt: toIsoString(createdAt),
+          updatedAt: normalized.now.toISOString()
+        };
+        const schedule = normalized.state === "formal"
+          ? parseJson(existing?.schedule_json) || normalized.schedules[index]
+          : null;
+        const sourceEvidenceIds = normalized.state === "formal"
+          ? uniqueStrings(candidate.sourceEvidenceIds)
+          : [];
+        await client.query(
+          `INSERT INTO memory_cards (
+             id, capture_id, source_binding_id, device_id, account_id, disposition,
+             state, card_json, source_evidence_ids_json, schedule_json,
+             mastery_stage, successful_recall_count, review_count, last_assessment,
+             created_at, updated_at
+           )
+           VALUES (
+             $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb,
+             'sealed', 0, 0, NULL, $11, $12
+           )
+           ON CONFLICT (id)
+           DO UPDATE SET
+             source_binding_id = EXCLUDED.source_binding_id,
+             account_id = COALESCE(memory_cards.account_id, EXCLUDED.account_id),
+             disposition = EXCLUDED.disposition,
+             state = EXCLUDED.state,
+             card_json = EXCLUDED.card_json,
+             source_evidence_ids_json = EXCLUDED.source_evidence_ids_json,
+             schedule_json = CASE
+               WHEN memory_cards.state = 'formal' THEN memory_cards.schedule_json
+               ELSE EXCLUDED.schedule_json
+             END,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            cardId,
+            capture.id,
+            bindingId,
+            ownerId,
+            accountId,
+            normalized.disposition,
+            normalized.state,
+            JSON.stringify(cardJson),
+            JSON.stringify(sourceEvidenceIds),
+            schedule ? JSON.stringify(schedule) : null,
+            toIsoString(createdAt),
+            normalized.now.toISOString()
+          ]
+        );
+      }
       await client.query(
-        `INSERT INTO memory_cards (
-           id, capture_id, source_binding_id, device_id, account_id, disposition,
-           state, card_json, source_evidence_ids_json, schedule_json,
-           mastery_stage, successful_recall_count, review_count, last_assessment,
-           created_at, updated_at
-         )
-         VALUES (
-           $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb,
-           'sealed', 0, 0, NULL, $11, $12
-         )
-         ON CONFLICT (capture_id)
-         DO UPDATE SET
-           source_binding_id = EXCLUDED.source_binding_id,
-           account_id = COALESCE(memory_cards.account_id, EXCLUDED.account_id),
-           disposition = EXCLUDED.disposition,
-           state = EXCLUDED.state,
-           card_json = EXCLUDED.card_json,
-           source_evidence_ids_json = EXCLUDED.source_evidence_ids_json,
-           schedule_json = CASE
-             WHEN memory_cards.state = 'formal' THEN memory_cards.schedule_json
-             ELSE EXCLUDED.schedule_json
-           END,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          cardId,
-          capture.id,
-          bindingId,
-          ownerId,
-          accountId,
-          normalized.disposition,
-          normalized.state,
-          JSON.stringify(cardJson),
-          JSON.stringify(normalized.sourceEvidenceIds),
-          schedule ? JSON.stringify(schedule) : null,
-          toIsoString(createdAt),
-          normalized.now.toISOString()
-        ]
+        `DELETE FROM memory_cards
+          WHERE capture_id = $1
+            AND deleted_at IS NULL
+            AND NOT (id = ANY($2::text[]))`,
+        [capture.id, desiredCardIds]
       );
-      const stored = await selectCard(client, ownerId, cardId);
+      const storedResult = await client.query(
+        `SELECT * FROM memory_cards
+          WHERE capture_id = $1 AND deleted_at IS NULL`,
+        [capture.id]
+      );
+      const storedById = new Map(storedResult.rows.map((row) => [row.id, row]));
+      const stored = desiredCardIds.map((id) => storedById.get(id)).filter(Boolean);
       await client.query("COMMIT");
-      return serializeDatabaseEntry(stored, { durable: this.durable });
+      return serializeDatabaseCaptureGroup(stored, { durable: this.durable });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -412,8 +527,9 @@ export class PostgresCaptureRepository {
         ORDER BY created_at DESC`,
       [ownerId]
     );
-    const entries = result.rows
-      .map((row) => serializeDatabaseEntry(row, { durable: this.durable }))
+    const entries = attachCaptureGroupMetadata(
+      result.rows.map((row) => serializeDatabaseEntry(row, { durable: this.durable }))
+    )
       .filter((entry) => matchesPool(entryForPool(entry), options.pool, now, options.timeCapsuleDays))
       .sort(compareSerializedEntries);
     return {
@@ -426,6 +542,164 @@ export class PostgresCaptureRepository {
   async get(deviceId, cardId) {
     const row = await selectCard(this.pool, requiredText(deviceId, "deviceId"), requiredText(cardId, "cardId"));
     return row ? serializeDatabaseEntry(row, { durable: this.durable }) : null;
+  }
+
+  async resolveConfirmation(deviceId, cardId, input = {}, { now = new Date() } = {}) {
+    const ownerId = requiredText(deviceId, "deviceId");
+    const stableCardId = requiredText(cardId, "cardId");
+    const request = normalizeConfirmationRequest(input);
+    const date = normalizeDate(now);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const cardResult = await client.query(
+        `SELECT * FROM memory_cards
+          WHERE device_id = $1 AND id = $2 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [ownerId, stableCardId]
+      );
+      const row = cardResult.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+
+      if (request.action === "archive") {
+        if (row.disposition === "archive_only") {
+          await client.query("COMMIT");
+          return serializeDatabaseConfirmation("archived", row, {
+            durable: this.durable,
+            repeated: true
+          });
+        }
+        if (row.state === "formal") {
+          throw confirmationConflict("正式记忆卡不能通过待确认接口归档。");
+        }
+        const cardJson = {
+          ...(parseJson(row.card_json) || {}),
+          state: "fragment",
+          updatedAt: date.toISOString()
+        };
+        await client.query(
+          `UPDATE memory_cards
+              SET disposition = 'archive_only',
+                  state = 'fragment',
+                  card_json = $3::jsonb,
+                  source_evidence_ids_json = '[]'::jsonb,
+                  schedule_json = NULL,
+                  updated_at = $4
+            WHERE device_id = $1 AND id = $2`,
+          [ownerId, stableCardId, JSON.stringify(cardJson), date.toISOString()]
+        );
+        await client.query(
+          `UPDATE captures
+              SET disposition = 'archive_only', status = 'fragment', updated_at = $2
+            WHERE id = $1`,
+          [row.capture_id, date.toISOString()]
+        );
+        const stored = {
+          ...row,
+          disposition: "archive_only",
+          state: "fragment",
+          card_json: cardJson,
+          source_evidence_ids_json: [],
+          schedule_json: null,
+          updated_at: date.toISOString()
+        };
+        await client.query("COMMIT");
+        return serializeDatabaseConfirmation("archived", stored, { durable: this.durable });
+      }
+
+      if (row.state === "formal") {
+        await client.query("COMMIT");
+        return serializeDatabaseConfirmation("confirmed", row, {
+          durable: this.durable,
+          repeated: true
+        });
+      }
+      if (row.disposition !== "needs_confirmation") {
+        throw confirmationConflict("只有待确认的记忆片段可以确认。");
+      }
+      const evidenceResult = await client.query(
+        `SELECT evidence_key, evidence_type, evidence_text
+           FROM evidence_regions
+          WHERE capture_id = $1
+          ORDER BY created_at ASC, evidence_key ASC`,
+        [row.capture_id]
+      );
+      const evidence = evidenceResult.rows.map((item) => ({
+        id: String(item.evidence_key),
+        type: String(item.evidence_type || "paragraph"),
+        text: String(item.evidence_text || "")
+      }));
+      const current = parseJson(row.card_json) || {};
+      const outcome = buildConfirmedCard({
+        cardId: stableCardId,
+        existingCard: current,
+        evidence,
+        sourceStatus: current.sourceStatus || "unconfirmed",
+        request,
+        now: date
+      });
+      if (outcome.status === "needs_user_input") {
+        await client.query("COMMIT");
+        return serializeNeedsUserInput(stableCardId, evidence, outcome);
+      }
+      const cardJson = {
+        ...current,
+        ...outcome.card,
+        id: stableCardId,
+        captureId: String(row.capture_id),
+        captureGroupIndex: 0,
+        state: "formal",
+        sourceStatus: outcome.sourceStatus,
+        createdAt: current.createdAt || toIsoString(row.created_at),
+        updatedAt: date.toISOString()
+      };
+      await client.query(
+        `UPDATE memory_cards
+            SET disposition = 'create_card',
+                state = 'formal',
+                card_json = $3::jsonb,
+                source_evidence_ids_json = $4::jsonb,
+                schedule_json = $5::jsonb,
+                updated_at = $6
+          WHERE device_id = $1 AND id = $2`,
+        [
+          ownerId,
+          stableCardId,
+          JSON.stringify(cardJson),
+          JSON.stringify(cardJson.sourceEvidenceIds),
+          JSON.stringify(outcome.schedule),
+          date.toISOString()
+        ]
+      );
+      await client.query(
+        `UPDATE captures
+            SET disposition = 'create_card',
+                source_status = $2,
+                status = 'ready',
+                updated_at = $3
+          WHERE id = $1`,
+        [row.capture_id, outcome.sourceStatus, date.toISOString()]
+      );
+      const stored = {
+        ...row,
+        disposition: "create_card",
+        state: "formal",
+        card_json: cardJson,
+        source_evidence_ids_json: cardJson.sourceEvidenceIds,
+        schedule_json: outcome.schedule,
+        updated_at: date.toISOString()
+      };
+      await client.query("COMMIT");
+      return serializeDatabaseConfirmation("confirmed", stored, { durable: this.durable });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async recordAssessment(deviceId, cardId, input = {}, { now = new Date() } = {}) {
@@ -525,19 +799,53 @@ export class PostgresCaptureRepository {
   async deleteCard(deviceId, cardId, { now = new Date() } = {}) {
     const ownerId = requiredText(deviceId, "deviceId");
     const stableCardId = requiredText(cardId, "cardId");
-    const result = await this.pool.query(
-      `DELETE FROM captures
-        WHERE id = (
-          SELECT capture_id FROM memory_cards
-           WHERE device_id = $1 AND id = $2 AND deleted_at IS NULL
-        )
-        RETURNING id`,
-      [ownerId, stableCardId]
-    );
-    const captureId = result.rows[0]?.id;
-    return captureId
-      ? serializeDeletion(stableCardId, captureId, normalizeDate(now))
-      : null;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existingResult = await client.query(
+        `SELECT capture_id FROM memory_cards
+          WHERE device_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        [ownerId, stableCardId]
+      );
+      if (!existingResult.rows[0]) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await ensureDevice(client, ownerId);
+      await incrementCapturePersistenceEpochForDevice(client, ownerId);
+      const targetResult = await client.query(
+        `SELECT capture_id FROM memory_cards
+          WHERE device_id = $1 AND id = $2 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [ownerId, stableCardId]
+      );
+      const captureId = targetResult.rows[0]?.capture_id;
+      if (!captureId) {
+        await client.query("ROLLBACK");
+        return null;
+      }
+      await client.query(
+        `DELETE FROM memory_cards
+          WHERE device_id = $1 AND id = $2 AND deleted_at IS NULL`,
+        [ownerId, stableCardId]
+      );
+      const siblings = await client.query(
+        `SELECT 1 FROM memory_cards
+          WHERE capture_id = $1 AND deleted_at IS NULL
+          LIMIT 1`,
+        [captureId]
+      );
+      if (!siblings.rows[0]) {
+        await client.query("DELETE FROM captures WHERE id = $1", [captureId]);
+      }
+      await client.query("COMMIT");
+      return serializeDeletion(stableCardId, captureId, normalizeDate(now));
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async clearDevice(deviceId) {
@@ -655,29 +963,53 @@ function normalizeCapturePersistence(result, options = {}) {
   const captureAnalysis = result?.captureAnalysis;
   if (!captureAnalysis || captureAnalysis.schemaVersion !== "capture_memory_card_2") return null;
   const now = normalizeDate(options.now || new Date());
+  const analysisCards = Array.isArray(captureAnalysis.memoryCards)
+    ? captureAnalysis.memoryCards
+    : captureAnalysis.memoryCard ? [captureAnalysis.memoryCard] : [];
   const imageSha256 = normalizeImageSha(options.imageSha256)
-    || fallbackImageHash(options.deviceId, captureAnalysis.memoryCard?.id || result?.memoryCard?.id);
+    || fallbackImageHash(options.deviceId, analysisCards[0]?.id || result?.memoryCard?.id);
   const evidence = normalizeEvidence(options.evidence);
   const disposition = normalizeDisposition(captureAnalysis.disposition);
   const sourceStatus = normalizeSourceStatus(captureAnalysis.sourceStatus);
-  const requestedCard = disposition === "create_card" ? captureAnalysis.memoryCard : null;
-  const referencedIds = uniqueStrings(requestedCard?.sourceEvidenceIds);
+  const requestedCards = disposition === "create_card" ? analysisCards.slice(0, 3) : [];
+  const referencedIdsByCard = requestedCards.map((card) => uniqueStrings(card?.sourceEvidenceIds));
+  const referencedIds = uniqueStrings(referencedIdsByCard.flat());
   const evidenceIds = new Set(evidence.map((item) => item.id));
-  const formalEvidenceValid = Boolean(requestedCard?.id)
-    && referencedIds.length > 0
-    && referencedIds.every((id) => evidenceIds.has(id));
+  const formalEvidenceValid = requestedCards.length > 0
+    && requestedCards.every((card, index) => (
+      Boolean(card?.id)
+      && referencedIdsByCard[index].length > 0
+      && referencedIdsByCard[index].every((id) => evidenceIds.has(id))
+    ));
   const effectiveDisposition = disposition === "create_card" && !formalEvidenceValid
     ? "needs_confirmation"
     : disposition;
   const state = effectiveDisposition === "create_card"
     ? "formal"
     : effectiveDisposition === "archive_only" ? "fragment" : "pending";
-  const memoryCard = state === "formal"
-    ? structuredClone(requestedCard)
-    : normalizeFragmentCard(result?.memoryCard, captureAnalysis, now);
-  const schedule = state === "formal"
-    ? normalizeReviewSchedule(captureAnalysis.schedule, { now })
-    : null;
+  const sourceContext = normalizeSourceContext(captureAnalysis.sourceContext);
+  const memoryCards = state === "formal"
+    ? requestedCards.map((card) => ({
+        ...structuredClone(card),
+        ...(normalizeSourceContext(card?.sourceContext) || sourceContext
+          ? { sourceContext: normalizeSourceContext(card?.sourceContext) || sourceContext }
+          : {})
+      }))
+    : [normalizeFragmentCard(result?.memoryCard, captureAnalysis, now)];
+  const requestedSchedules = Array.isArray(captureAnalysis.schedules)
+    ? captureAnalysis.schedules
+    : [];
+  const schedules = state === "formal"
+    ? memoryCards.map((card, index) => {
+        const requested = requestedSchedules.find((item) => item?.cardId === card.id)
+          || requestedSchedules[index]
+          || (index === 0 ? captureAnalysis.schedule : null);
+        return {
+          cardId: card.id,
+          ...normalizeReviewSchedule(requested, { now })
+        };
+      })
+    : [];
   const sourceEvidenceIds = state === "formal" ? referencedIds : [];
   const persistedEvidence = state === "formal"
     ? evidence.filter((item) => sourceEvidenceIds.includes(item.id))
@@ -694,8 +1026,11 @@ function normalizeCapturePersistence(result, options = {}) {
     disposition: effectiveDisposition,
     state,
     sourceStatus,
-    memoryCard,
-    schedule,
+    sourceContext,
+    memoryCards,
+    memoryCard: memoryCards[0],
+    schedules,
+    schedule: schedules[0] || null,
     evidence: persistedEvidence,
     sourceEvidenceIds,
     sourceBinding
@@ -734,6 +1069,57 @@ function normalizeSourceBinding(result, sourceStatus, evidence, sourceEvidenceId
     sourceAccount: cleanText(source.account || link.account).slice(0, 256),
     confidence: Number.isFinite(Number(link.confidence)) ? Number(link.confidence) : null,
     evidenceKeys: sourceEvidenceIds.length ? sourceEvidenceIds : evidence.map((item) => item.id)
+  };
+}
+
+function normalizeSourceContext(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const blocks = [];
+  const blockIds = new Set();
+  let characters = 0;
+  for (const [index, item] of (Array.isArray(value.blocks) ? value.blocks : []).entries()) {
+    if (blocks.length >= 64 || characters >= 40_000) break;
+    const id = cleanText(item?.id).slice(0, 160) || `context-${index + 1}`;
+    const originalText = cleanText(item?.text);
+    if (!originalText || blockIds.has(id)) continue;
+    const text = originalText.slice(0, 40_000 - characters);
+    blockIds.add(id);
+    characters += text.length;
+    blocks.push({
+      id,
+      ...(cleanText(item?.type) ? { type: cleanText(item.type).slice(0, 64) } : {}),
+      text,
+      ...(cleanText(item?.sourceRole)
+        ? { sourceRole: cleanText(item.sourceRole).slice(0, 64) }
+        : {}),
+      ...(Number.isFinite(Number(item?.startSeconds))
+        ? { startSeconds: Number(item.startSeconds) }
+        : {}),
+      ...(Number.isFinite(Number(item?.endSeconds))
+        ? { endSeconds: Number(item.endSeconds) }
+        : {})
+    });
+  }
+  const completeness = ["full", "partial", "screenshot_only"].includes(value.completeness)
+    ? value.completeness
+    : "partial";
+  const overview = value.overview && typeof value.overview === "object"
+    ? value.overview
+    : {};
+  return {
+    schemaVersion: "capture_source_context_1",
+    nearbyText: cleanText(value.nearbyText).slice(0, 8_000),
+    focusBlockIds: uniqueStrings(value.focusBlockIds)
+      .filter((id) => blockIds.has(id))
+      .slice(0, 64),
+    blocks,
+    overview: {
+      summary: cleanText(overview.summary).slice(0, 800),
+      highlights: uniqueStrings(overview.highlights)
+        .slice(0, 3)
+        .map((text) => text.slice(0, 320))
+    },
+    completeness
   };
 }
 
@@ -828,6 +1214,25 @@ function serializeDatabaseEntry(row, { durable }) {
   };
 }
 
+function serializeDatabaseCaptureGroup(rows, { durable }) {
+  const memoryCards = attachCaptureGroupMetadata(
+    rows
+      .map((row) => serializeDatabaseEntry(row, { durable }))
+      .sort(compareCaptureGroupCards)
+  );
+  const primary = memoryCards[0] || null;
+  if (!primary) return null;
+  return {
+    ...primary,
+    memoryCards,
+    memoryCard: primary,
+    schedules: memoryCards
+      .filter((card) => card.state === "formal" && card.schedule)
+      .map((card) => ({ cardId: card.id, ...structuredClone(card.schedule) })),
+    schedule: primary.schedule || null
+  };
+}
+
 function serializeEntry(entry, { durable }) {
   return {
     ...structuredClone(entry.memoryCard),
@@ -845,6 +1250,58 @@ function serializeEntry(entry, { durable }) {
     updatedAt: entry.updatedAt,
     durable
   };
+}
+
+function serializeCaptureGroup(entries, { durable }) {
+  const memoryCards = attachCaptureGroupMetadata(
+    entries
+      .map((entry) => serializeEntry(entry, { durable }))
+      .sort(compareCaptureGroupCards)
+  );
+  const primary = memoryCards[0] || null;
+  if (!primary) return null;
+  return {
+    ...primary,
+    memoryCards,
+    memoryCard: primary,
+    schedules: memoryCards
+      .filter((card) => card.state === "formal" && card.schedule)
+      .map((card) => ({ cardId: card.id, ...structuredClone(card.schedule) })),
+    schedule: primary.schedule || null
+  };
+}
+
+function attachCaptureGroupMetadata(cards) {
+  const groups = new Map();
+  for (const card of cards) {
+    const captureId = String(card.captureId || "");
+    if (!groups.has(captureId)) groups.set(captureId, []);
+    groups.get(captureId).push(card);
+  }
+  return cards.map((card) => {
+    const group = [...(groups.get(String(card.captureId || "")) || [card])]
+      .sort(compareCaptureGroupCards);
+    const cardIds = group.map((item) => item.id);
+    return {
+      ...card,
+      captureGroup: {
+        captureId: card.captureId,
+        cardIds,
+        count: cardIds.length,
+        index: Math.max(0, cardIds.indexOf(card.id))
+      }
+    };
+  });
+}
+
+function compareCaptureGroupCards(left, right) {
+  const leftIndex = Number(left?.captureGroupIndex);
+  const rightIndex = Number(right?.captureGroupIndex);
+  const leftHasIndex = Number.isInteger(leftIndex) && leftIndex >= 0;
+  const rightHasIndex = Number.isInteger(rightIndex) && rightIndex >= 0;
+  if (leftHasIndex && rightHasIndex && leftIndex !== rightIndex) return leftIndex - rightIndex;
+  if (leftHasIndex !== rightHasIndex) return leftHasIndex ? -1 : 1;
+  return String(left?.id || "").localeCompare(String(right?.id || ""));
 }
 
 function serializeDatabaseAttempt(cardId, row, repeated) {
@@ -888,6 +1345,214 @@ function serializeDeletion(cardId, captureId, now) {
     captureId,
     deletedAt: now.toISOString()
   };
+}
+
+function normalizeConfirmationRequest(input) {
+  const action = cleanText(input?.action).toLowerCase();
+  if (!["confirm", "archive"].includes(action)) {
+    throw repositoryError(
+      "capture_memory_confirmation_action_invalid",
+      "action 必须是 confirm 或 archive。"
+    );
+  }
+  return {
+    action,
+    coreKnowledge: cleanText(input?.coreKnowledge).slice(0, 2_000),
+    hiddenSemantic: cleanText(input?.hiddenSemantic).slice(0, 500),
+    recallCue: cleanText(input?.recallCue).slice(0, 500),
+    sourceEvidenceId: cleanText(input?.sourceEvidenceId).slice(0, 160)
+  };
+}
+
+function buildConfirmedCard({
+  cardId,
+  existingCard,
+  evidence,
+  sourceStatus,
+  request,
+  now
+}) {
+  const availableEvidence = (Array.isArray(evidence) ? evidence : [])
+    .map((item) => ({
+      id: cleanText(item?.id).slice(0, 160),
+      type: cleanText(item?.type).slice(0, 64) || "paragraph",
+      text: cleanText(item?.text).slice(0, 12_000)
+    }))
+    .filter((item) => item.id && item.text);
+  const requestedEvidence = request.sourceEvidenceId
+    ? availableEvidence.filter((item) => item.id === request.sourceEvidenceId)
+    : availableEvidence;
+  const coreKnowledge = request.coreKnowledge || cleanText(existingCard?.coreKnowledge);
+  const matchingEvidence = requestedEvidence.find((item) => (
+    coreKnowledge.length >= 4 && item.text.includes(coreKnowledge)
+  ));
+  if (!matchingEvidence) {
+    return {
+      status: "needs_user_input",
+      message: availableEvidence.length === 0
+        ? "这条待确认内容没有可复用的识别证据，不能直接生成正式卡。"
+        : "请从已识别文字中选择或输入一条连续、可核对的核心知识。",
+      requiredFields: ["coreKnowledge"]
+    };
+  }
+
+  const hiddenSemantic = request.hiddenSemantic || coreKnowledge;
+  if (occurrenceCount(coreKnowledge, hiddenSemantic) !== 1) {
+    return {
+      status: "needs_user_input",
+      message: "hiddenSemantic 必须在 coreKnowledge 中作为连续片段恰好出现一次。",
+      requiredFields: ["hiddenSemantic"]
+    };
+  }
+  const evidenceIds = [matchingEvidence.id];
+  const explanation = coreKnowledge;
+  const prompt = replaceOne(coreKnowledge, hiddenSemantic, "____");
+  const optionTexts = uniqueConfirmationOptions(hiddenSemantic);
+  const variantPrefix = stableDigest(cardId, matchingEvidence.id, coreKnowledge);
+  const card = {
+    id: cardId,
+    coreKnowledge,
+    recallCue: request.recallCue || "你能回忆出这条已确认的知识吗？",
+    hiddenSemantic,
+    explanation,
+    sourceEvidenceIds: evidenceIds,
+    rarity: "R",
+    rarityReason: "这是一条由用户确认、可在单条识别证据中核对的局部知识。",
+    rarityConfidence: 1,
+    rarityRuleVersion: CAPTURE_RARITY_RULE_VERSION,
+    recallVariants: [
+      {
+        id: `confirmation-cloze-${variantPrefix}`,
+        type: "semantic_cloze",
+        prompt,
+        answer: hiddenSemantic,
+        options: [],
+        correctOptionId: null,
+        correctBoolean: null,
+        explanation,
+        sourceEvidenceIds: evidenceIds
+      },
+      {
+        id: `confirmation-boolean-${variantPrefix}`,
+        type: "true_false",
+        prompt: coreKnowledge,
+        answer: "true",
+        options: [],
+        correctOptionId: null,
+        correctBoolean: true,
+        explanation,
+        sourceEvidenceIds: evidenceIds
+      },
+      {
+        id: `confirmation-choice-${variantPrefix}`,
+        type: "multiple_choice",
+        prompt: `以下哪一项准确补全这条已确认知识：${prompt}`,
+        answer: hiddenSemantic,
+        options: optionTexts.map((text, index) => ({
+          id: `option-${index + 1}`,
+          text
+        })),
+        correctOptionId: "option-1",
+        correctBoolean: null,
+        explanation,
+        sourceEvidenceIds: evidenceIds
+      }
+    ],
+    sourceStatus: sourceStatus === "verified" ? "verified" : "partial",
+    sourceTitle: cleanText(existingCard?.sourceTitle) || undefined,
+    sourceUrl: cleanText(existingCard?.sourceUrl) || undefined
+  };
+  const validated = validateCaptureMemoryOutput({
+    disposition: "create_card",
+    decisionReason: "用户确认了已持久化识别证据中的核心知识。",
+    memoryCards: [card]
+  }, {
+    evidence: availableEvidence,
+    sourceStatus: card.sourceStatus
+  });
+  if (!validated.ok) {
+    return {
+      status: "needs_user_input",
+      message: validated.errors[0] || "确认内容没有通过证据质量检查。",
+      requiredFields: ["coreKnowledge"]
+    };
+  }
+  return {
+    status: "confirmed",
+    card,
+    sourceStatus: card.sourceStatus,
+    schedule: createInitialReviewSchedule({ now })
+  };
+}
+
+function uniqueConfirmationOptions(correct) {
+  const candidates = [
+    correct,
+    "这条内容仍待确认",
+    "这条内容需要重新识别",
+    "这条内容已被删除"
+  ];
+  const result = [];
+  for (const candidate of candidates) {
+    let text = candidate;
+    while (result.includes(text)) text = `${text}（非答案）`;
+    result.push(text);
+  }
+  return result;
+}
+
+function serializeNeedsUserInput(cardId, evidence, outcome) {
+  return {
+    schemaVersion: CAPTURE_MEMORY_CONFIRMATION_SCHEMA_VERSION,
+    status: "needs_user_input",
+    action: "confirm",
+    cardId,
+    repeated: false,
+    message: outcome.message,
+    requiredFields: outcome.requiredFields,
+    evidence: (Array.isArray(evidence) ? evidence : []).slice(0, 8).map((item) => ({
+      id: cleanText(item?.id).slice(0, 160),
+      text: cleanText(item?.text).slice(0, 800)
+    })).filter((item) => item.id && item.text)
+  };
+}
+
+function serializeConfirmation(status, entry, { durable, repeated = false } = {}) {
+  return {
+    schemaVersion: CAPTURE_MEMORY_CONFIRMATION_SCHEMA_VERSION,
+    status,
+    action: status === "confirmed" ? "confirm" : "archive",
+    cardId: entry.memoryCard.id,
+    repeated,
+    card: serializeEntry(entry, { durable })
+  };
+}
+
+function serializeDatabaseConfirmation(status, row, { durable, repeated = false } = {}) {
+  return {
+    schemaVersion: CAPTURE_MEMORY_CONFIRMATION_SCHEMA_VERSION,
+    status,
+    action: status === "confirmed" ? "confirm" : "archive",
+    cardId: String(row.id),
+    repeated,
+    card: serializeDatabaseEntry(row, { durable })
+  };
+}
+
+function occurrenceCount(text, fragment) {
+  if (!fragment) return 0;
+  return String(text).split(String(fragment)).length - 1;
+}
+
+function replaceOne(text, fragment, replacement) {
+  const index = text.indexOf(fragment);
+  return `${text.slice(0, index)}${replacement}${text.slice(index + fragment.length)}`;
+}
+
+function confirmationConflict(message) {
+  const error = repositoryError("capture_memory_confirmation_conflict", message);
+  error.statusCode = 409;
+  return error;
 }
 
 function normalizeAssessmentRequest(input) {

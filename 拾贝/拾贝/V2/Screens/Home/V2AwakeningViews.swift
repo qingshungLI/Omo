@@ -604,13 +604,15 @@ private struct V2MemoryCardStack: View {
                 .offset(y: -31 + stackSettle * 2)
                 .opacity(isActive ? 1 : 0.72)
 
-            Image("RecallCardSurface")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(V2Color.surfaceCream)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(V2Color.primary.opacity(0.34), lineWidth: 1.2)
+                )
                 .frame(width: 224, height: 165)
                 .offset(y: -35 + stackSettle * 2)
-                .opacity(isActive ? 0.18 : 0.1)
+                .v2Shadow()
 
             VStack(spacing: 11) {
                 Image(systemName: "sparkles")

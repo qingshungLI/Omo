@@ -37,13 +37,16 @@ function poolFor(client) {
 
 test("loads ordered versioned migrations with a content checksum", async () => {
   const migrations = await loadMigrations(DEFAULT_MIGRATIONS_DIRECTORY);
-  assert.deepEqual(migrations.map((item) => item.version), ["001", "002"]);
+  assert.deepEqual(migrations.map((item) => item.version), ["001", "002", "003"]);
   assert.match(migrations[0].checksum, /^[a-f0-9]{64}$/);
   assert.match(migrations[1].checksum, /^[a-f0-9]{64}$/);
+  assert.match(migrations[2].checksum, /^[a-f0-9]{64}$/);
   assert.match(migrations[0].sql, /CREATE TABLE captures/);
   assert.match(migrations[0].sql, /sealed.*awakened.*solidified.*engraved/s);
   assert.doesNotMatch(migrations[0].sql, /original_image|image_base64|full_model_response|model_response/i);
   assert.match(migrations[1].sql, /capture_persistence_epoch BIGINT NOT NULL DEFAULT 0/);
+  assert.match(migrations[2].sql, /DROP CONSTRAINT IF EXISTS memory_cards_capture_id_key/);
+  assert.match(migrations[2].sql, /memory_cards_capture_active_idx/);
 });
 
 test("applies each migration once under a transaction and advisory lock", async () => {
@@ -52,9 +55,9 @@ test("applies each migration once under a transaction and advisory lock", async 
   const first = await runVersionedMigrations(pool);
   const second = await runVersionedMigrations(pool);
 
-  assert.deepEqual(first.applied, ["001", "002"]);
+  assert.deepEqual(first.applied, ["001", "002", "003"]);
   assert.deepEqual(second.applied, []);
-  assert.equal(client.applied.size, 2);
+  assert.equal(client.applied.size, 3);
   assert.equal(client.queries.filter((item) => item.text === "BEGIN").length, 2);
   assert.equal(client.queries.filter((item) => item.text === "COMMIT").length, 2);
   assert.equal(client.queries.filter((item) => item.text.includes("pg_advisory_xact_lock")).length, 2);

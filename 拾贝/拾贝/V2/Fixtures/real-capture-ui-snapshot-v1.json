@@ -1,0 +1,245 @@
+{
+  "schemaVersion": "real_capture_ui_snapshot_1",
+  "generatedAt": "2026-07-25T15:25:00.000Z",
+  "provenance": {
+    "backend": "bridge-amax:http://127.0.0.1:18770",
+    "endpoint": "GET /api/memory-cards",
+    "analysisProvider": "qwen_vision",
+    "note": "canonicalCaptures are unmodified final GET responses. uiPresentationFixtures are DEBUG-only deterministic view models and do not claim server disposition or rarity."
+  },
+  "canonicalCaptures": [
+    {
+      "sourceKey": "bilibili",
+      "sourceImage": "image_2.zip/image19.jpg",
+      "apiStatus": "completed",
+      "canonicalResponse": {
+        "schemaVersion": "capture_memory_cards_1",
+        "durable": false,
+        "cards": [
+          {
+            "id": "card-b0fbc77764eccd01fbdbd11e",
+            "state": "fragment",
+            "coreKnowledge": "【4K60帧/中字】BanG Dream! It&#x27;s MyGO!!!!!/ 迷途之子 LIVE NCOP/ED MV【演出合集】",
+            "recallCue": "你当时为什么想记住「【4K60帧/中字】BanG Dream! It&#x27;s MyGO!!!!!/ 迷途之子 LIVE NCOP/ED MV【演出合集】」？",
+            "explanation": "截图内容主要为视频播放界面、弹幕字幕及平台广告信息。字幕'你昨天送我的还没用完呢'为剧情对话片段，缺乏独立的学习价值或通用知识点；其余内容为B站会员促销广告及视频元数据，不具备记忆必要性。",
+            "sourceStatus": "partial",
+            "createdAt": "2026-07-25T15:25:13.228Z",
+            "updatedAt": "2026-07-25T15:25:13.228Z",
+            "captureId": "capture-622a31f7-c65c-40ea-91d8-a3d60e44c4ce",
+            "captureGroupIndex": 0,
+            "disposition": "archive_only",
+            "schedule": null,
+            "masteryStage": "sealed",
+            "successfulRecallCount": 0,
+            "reviewCount": 0,
+            "capturedAt": "2026-07-25T15:25:13.228Z",
+            "durable": false,
+            "captureGroup": {
+              "captureId": "capture-622a31f7-c65c-40ea-91d8-a3d60e44c4ce",
+              "cardIds": [
+                "card-b0fbc77764eccd01fbdbd11e"
+              ],
+              "count": 1,
+              "index": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "sourceKey": "douyin",
+      "sourceImage": "image_2.zip/image31.jpg",
+      "apiStatus": "completed",
+      "canonicalResponse": {
+        "schemaVersion": "capture_memory_cards_1",
+        "durable": false,
+        "cards": [
+          {
+            "id": "card-220fd112ea3dd4f42a473747",
+            "state": "fragment",
+            "coreKnowledge": "这个马怎么这么烫腿。#女骑 #s1000rr #宝雕",
+            "recallCue": "你当时为什么想记住「这个马怎么这么烫腿。#女骑 #s1000rr #宝雕」？",
+            "explanation": "截图内容为社交媒体短视频的界面展示，包含标签、点赞数及一句情绪化文案“这个马怎么这么烫腿”，缺乏可主动回忆的独立知识点或事实性信息。",
+            "sourceStatus": "partial",
+            "createdAt": "2026-07-25T15:25:15.183Z",
+            "updatedAt": "2026-07-25T15:25:15.183Z",
+            "captureId": "capture-b271e6de-428e-4d29-a32a-ab8827e34a5c",
+            "captureGroupIndex": 0,
+            "disposition": "archive_only",
+            "schedule": null,
+            "masteryStage": "sealed",
+            "successfulRecallCount": 0,
+            "reviewCount": 0,
+            "capturedAt": "2026-07-25T15:25:15.183Z",
+            "durable": false,
+            "captureGroup": {
+              "captureId": "capture-b271e6de-428e-4d29-a32a-ab8827e34a5c",
+              "cardIds": [
+                "card-220fd112ea3dd4f42a473747"
+              ],
+              "count": 1,
+              "index": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "sourceKey": "article",
+      "sourceImage": "image_2.zip/image7.jpg",
+      "apiStatus": "search_match_low_confidence",
+      "canonicalResponse": {
+        "schemaVersion": "capture_memory_cards_1",
+        "durable": false,
+        "cards": [
+          {
+            "id": "card-7ee9888eb04eb317093a2423",
+            "state": "fragment",
+            "coreKnowledge": "从「可学习的新奇」到「智能」！",
+            "recallCue": "你当时为什么想记住「从「可学习的新奇」到「智能」！」？",
+            "explanation": "没有找到标题和博主均可信的来源链接，已停止生成，避免保存错误内容。",
+            "sourceStatus": "unconfirmed",
+            "createdAt": "2026-07-25T15:25:10.316Z",
+            "updatedAt": "2026-07-25T15:25:10.316Z",
+            "captureId": "capture-829900b0-e117-472a-b85f-f8921826c57a",
+            "captureGroupIndex": 0,
+            "disposition": "needs_confirmation",
+            "schedule": null,
+            "masteryStage": "sealed",
+            "successfulRecallCount": 0,
+            "reviewCount": 0,
+            "capturedAt": "2026-07-25T15:25:10.316Z",
+            "durable": false,
+            "captureGroup": {
+              "captureId": "capture-829900b0-e117-472a-b85f-f8921826c57a",
+              "cardIds": [
+                "card-7ee9888eb04eb317093a2423"
+              ],
+              "count": 1,
+              "index": 0
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "uiPresentationFixtures": [
+    {
+      "id": "ui-real-bilibili-v1",
+      "state": "formal",
+      "coreKnowledge": "【4K60帧/中字】BanG Dream! It's MyGO!!!!!/ 迷途之子 LIVE NCOP/ED MV【演出合集】",
+      "recallCue": "你当时为什么想记住「【4K60帧/中字】BanG Dream! It&#x27;s MyGO!!!!!/ 迷途之子 LIVE NCOP/ED MV【演出合集】」？",
+      "explanation": "截图内容主要为视频播放界面、弹幕字幕及平台广告信息。字幕'你昨天送我的还没用完呢'为剧情对话片段，缺乏独立的学习价值或通用知识点；其余内容为B站会员促销广告及视频元数据，不具备记忆必要性。",
+      "sourceStatus": "partial",
+      "createdAt": "2026-01-15T08:00:00.000Z",
+      "updatedAt": "2026-01-15T08:00:00.000Z",
+      "captureId": "ui-real-capture-bilibili-v1",
+      "captureGroupIndex": 0,
+      "disposition": "create_card",
+      "schedule": {
+        "cardId": "ui-real-bilibili-v1",
+        "nextReviewAt": "2026-01-01T00:00:00.000Z",
+        "intervalDays": 0,
+        "state": "due",
+        "status": "due",
+        "stepIndex": 0
+      },
+      "masteryStage": "sealed",
+      "successfulRecallCount": 0,
+      "reviewCount": 0,
+      "capturedAt": "2026-01-15T08:00:00.000Z",
+      "durable": false,
+      "captureGroup": null,
+      "hiddenSemantic": " It's MyGO!!!!",
+      "sourceEvidenceIds": [
+        "ui-real-evidence-bilibili-v1"
+      ],
+      "rarity": "R",
+      "rarityReason": "DEBUG UI 展示映射；原始 canonical disposition 保留在 canonicalCaptures[0]。",
+      "rarityReasons": [
+        "仅用于覆盖 R/SR/SSR 的卡面与抽取动效。"
+      ],
+      "rarityConfidence": 1,
+      "rarityRuleVersion": "debug_ui_presentation_1",
+      "lastAssessment": null
+    },
+    {
+      "id": "ui-real-douyin-v1",
+      "state": "formal",
+      "coreKnowledge": "这个马怎么这么烫腿。#女骑 #s1000rr #宝雕",
+      "recallCue": "你当时为什么想记住「这个马怎么这么烫腿。#女骑 #s1000rr #宝雕」？",
+      "explanation": "截图内容为社交媒体短视频的界面展示，包含标签、点赞数及一句情绪化文案“这个马怎么这么烫腿”，缺乏可主动回忆的独立知识点或事实性信息。",
+      "sourceStatus": "partial",
+      "createdAt": "2026-02-15T08:00:00.000Z",
+      "updatedAt": "2026-02-15T08:00:00.000Z",
+      "captureId": "ui-real-capture-douyin-v1",
+      "captureGroupIndex": 0,
+      "disposition": "create_card",
+      "schedule": {
+        "cardId": "ui-real-douyin-v1",
+        "nextReviewAt": "2026-01-01T00:00:00.000Z",
+        "intervalDays": 0,
+        "state": "due",
+        "status": "due",
+        "stepIndex": 0
+      },
+      "masteryStage": "sealed",
+      "successfulRecallCount": 0,
+      "reviewCount": 0,
+      "capturedAt": "2026-02-15T08:00:00.000Z",
+      "durable": false,
+      "captureGroup": null,
+      "hiddenSemantic": "腿。#女骑 #s",
+      "sourceEvidenceIds": [
+        "ui-real-evidence-douyin-v1"
+      ],
+      "rarity": "SR",
+      "rarityReason": "DEBUG UI 展示映射；原始 canonical disposition 保留在 canonicalCaptures[1]。",
+      "rarityReasons": [
+        "仅用于覆盖 R/SR/SSR 的卡面与抽取动效。"
+      ],
+      "rarityConfidence": 1,
+      "rarityRuleVersion": "debug_ui_presentation_1",
+      "lastAssessment": null
+    },
+    {
+      "id": "ui-real-article-v1",
+      "state": "formal",
+      "coreKnowledge": "从「可学习的新奇」到「智能」！",
+      "recallCue": "你当时为什么想记住「从「可学习的新奇」到「智能」！」？",
+      "explanation": "没有找到标题和博主均可信的来源链接，已停止生成，避免保存错误内容。",
+      "sourceStatus": "unconfirmed",
+      "createdAt": "2026-03-15T08:00:00.000Z",
+      "updatedAt": "2026-03-15T08:00:00.000Z",
+      "captureId": "ui-real-capture-article-v1",
+      "captureGroupIndex": 0,
+      "disposition": "create_card",
+      "schedule": {
+        "cardId": "ui-real-article-v1",
+        "nextReviewAt": "2026-01-01T00:00:00.000Z",
+        "intervalDays": 0,
+        "state": "due",
+        "status": "due",
+        "stepIndex": 0
+      },
+      "masteryStage": "sealed",
+      "successfulRecallCount": 0,
+      "reviewCount": 0,
+      "capturedAt": "2026-03-15T08:00:00.000Z",
+      "durable": false,
+      "captureGroup": null,
+      "hiddenSemantic": "的新奇」到「智能",
+      "sourceEvidenceIds": [
+        "ui-real-evidence-article-v1"
+      ],
+      "rarity": "SSR",
+      "rarityReason": "DEBUG UI 展示映射；原始 canonical disposition 保留在 canonicalCaptures[2]。",
+      "rarityReasons": [
+        "仅用于覆盖 R/SR/SSR 的卡面与抽取动效。"
+      ],
+      "rarityConfidence": 1,
+      "rarityRuleVersion": "debug_ui_presentation_1",
+      "lastAssessment": null
+    }
+  ]
+}

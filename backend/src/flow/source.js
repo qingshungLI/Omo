@@ -30,10 +30,10 @@ export function focusSourceContent(source, timestampSeconds, { radiusSeconds = 4
     ? Number.NaN
     : Number(timestampSeconds);
   const timedBlocks = blocks.filter((block) => Number.isFinite(Number(block?.startSeconds)) && Number.isFinite(Number(block?.endSeconds)));
-  if (!Number.isFinite(timestamp) && timedBlocks.length > 0) {
-    const locatedTimestamp = locateByTerms(timedBlocks, locatorTerms);
-    if (locatedTimestamp !== null) {
-      return buildTimestampFocus(timedBlocks, locatedTimestamp, radiusSeconds, "transcript_match");
+  if (!Number.isFinite(timestamp)) {
+    const locatedIndex = locateByTerms(blocks, locatorTerms);
+    if (locatedIndex !== null) {
+      return buildLocatorFocus(blocks, locatedIndex);
     }
   }
   if (!Number.isFinite(timestamp) || timedBlocks.length === 0) {
@@ -46,6 +46,26 @@ export function focusSourceContent(source, timestampSeconds, { radiusSeconds = 4
   }
 
   return buildTimestampFocus(timedBlocks, timestamp, radiusSeconds, "timestamp_window");
+}
+
+function buildLocatorFocus(blocks, locatedIndex) {
+  const startIndex = Math.max(0, locatedIndex - 1);
+  const selected = blocks.slice(startIndex, Math.min(blocks.length, locatedIndex + 2));
+  const focusBlock = blocks[locatedIndex];
+  const timestamp = Number(focusBlock?.startSeconds);
+  const startSeconds = Number(selected[0]?.startSeconds);
+  const endSeconds = Number(selected.at(-1)?.endSeconds);
+  const timedWindow = Number.isFinite(timestamp)
+    && Number.isFinite(startSeconds)
+    && Number.isFinite(endSeconds);
+  return {
+    status: timedWindow ? "transcript_match" : "text_match_window",
+    timestampSeconds: Number.isFinite(timestamp) ? timestamp : null,
+    ...(Number.isFinite(startSeconds) ? { startSeconds } : {}),
+    ...(Number.isFinite(endSeconds) ? { endSeconds } : {}),
+    blocks: selected,
+    text: selected.map((block) => block.text).filter(Boolean).join("\n\n")
+  };
 }
 
 function buildTimestampFocus(timedBlocks, timestamp, radiusSeconds, status) {
@@ -71,12 +91,12 @@ function buildTimestampFocus(timedBlocks, timestamp, radiusSeconds, status) {
 function locateByTerms(blocks, terms) {
   const candidates = Array.isArray(terms) ? terms.map(normalize).filter((term) => term.length >= 2) : [];
   if (!candidates.length) return null;
-  const ranked = blocks.map((block) => {
+  const ranked = blocks.map((block, index) => {
     const text = normalize(block.text);
     const score = candidates.reduce((total, term) => total + (text.includes(term) ? Math.min(3, term.length) : 0), 0);
-    return { block, score };
-  }).sort((a, b) => b.score - a.score);
-  return ranked[0]?.score >= 2 ? Number(ranked[0].block.startSeconds) : null;
+    return { index, score };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+  return ranked[0]?.score >= 2 ? ranked[0].index : null;
 }
 
 function normalize(value) {

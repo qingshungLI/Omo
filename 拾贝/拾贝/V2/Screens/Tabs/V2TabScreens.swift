@@ -59,11 +59,13 @@ struct V2MaterialsView: View {
     let screenshotCards: [V2CapturedMemoryCard]
     let openGeneratingChapter: (String?) -> Void
     let openChapter: (String) -> Void
+    let resolveMemoryCardConfirmation: (String, CaptureMemoryCardConfirmationRequest) async throws -> CaptureMemoryCardConfirmationResponse
     let deleteMemoryCard: (String) async throws -> Void
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
 
+    @State private var selectedConfirmationCard: V2CapturedMemoryCard?
     @State private var pendingMemoryCardDeletion: V2CapturedMemoryCard?
     @State private var deletingMemoryCardID: String?
     @State private var memoryCardDeletionError = ""
@@ -89,6 +91,9 @@ struct V2MaterialsView: View {
                             V2MemoryLibraryCard(
                                 captured: captured,
                                 isDeleting: deletingMemoryCardID == captured.id,
+                                onOpenConfirmation: {
+                                    selectedConfirmationCard = captured
+                                },
                                 onDelete: { pendingMemoryCardDeletion = captured }
                             )
                         }
@@ -175,6 +180,15 @@ struct V2MaterialsView: View {
                 secondaryButton: .cancel(Text("取消"))
             )
         }
+        .sheet(item: $selectedConfirmationCard) { captured in
+            V2CaptureConfirmationSheet(
+                captured: captured,
+                resolveConfirmation: resolveMemoryCardConfirmation,
+                deleteMemoryCard: deleteMemoryCard
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private func listStatus(for chapter: V2BackendChapter) -> V2ChapterReviewStatus {
@@ -185,6 +199,7 @@ struct V2MaterialsView: View {
 private struct V2MemoryLibraryCard: View {
     let captured: V2CapturedMemoryCard
     let isDeleting: Bool
+    let onOpenConfirmation: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -232,6 +247,20 @@ private struct V2MemoryLibraryCard: View {
                 .v2Shadow()
         )
         .accessibilityElement(children: .contain)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard captured.disposition == .needsConfirmation else { return }
+            onOpenConfirmation()
+        }
+        .accessibilityAction(named: "确认这条记忆") {
+            guard captured.disposition == .needsConfirmation else { return }
+            onOpenConfirmation()
+        }
+        .accessibilityHint(
+            captured.disposition == .needsConfirmation
+                ? "打开待确认内容，可编辑后加入复习或仅存档"
+                : ""
+        )
         .accessibilityLabel(
             "\(captured.card.coreKnowledge)，\(libraryStatusAccessibilityTitle)，\(sourceTitle)"
         )
@@ -288,6 +317,283 @@ private struct V2MemoryLibraryCard: View {
         case .verified: "checkmark.seal.fill"
         case .partial: "checkmark.seal"
         case .unconfirmed: "questionmark.circle"
+        }
+    }
+}
+
+private struct V2CaptureConfirmationSheet: View {
+    @Environment(\.dismiss)
+    private var dismiss
+
+    let captured: V2CapturedMemoryCard
+    let resolveConfirmation: (String, CaptureMemoryCardConfirmationRequest) async throws -> CaptureMemoryCardConfirmationResponse
+    let deleteMemoryCard: (String) async throws -> Void
+
+    @State private var coreKnowledge: String
+    @State private var evidence: [CaptureMemoryCardConfirmationResponse.Evidence] = []
+    @State private var selectedEvidenceID: String?
+    @State private var message = ""
+    @State private var isSubmitting = false
+    @State private var showsDeleteAlert = false
+
+    init(
+        captured: V2CapturedMemoryCard,
+        resolveConfirmation: @escaping (String, CaptureMemoryCardConfirmationRequest) async throws -> CaptureMemoryCardConfirmationResponse,
+        deleteMemoryCard: @escaping (String) async throws -> Void
+    ) {
+        self.captured = captured
+        self.resolveConfirmation = resolveConfirmation
+        self.deleteMemoryCard = deleteMemoryCard
+        _coreKnowledge = State(initialValue: captured.card.coreKnowledge)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    sourceSummary
+                    retainedContentEditor
+
+                    if !evidence.isEmpty {
+                        evidencePicker
+                    }
+
+                    if !message.isEmpty {
+                        Label(message, systemImage: "info.circle")
+                            .font(V2Typography.caption)
+                            .foregroundStyle(V2Color.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("v2.confirmation.message")
+                    }
+
+                    VStack(spacing: 10) {
+                        V2PrimaryActionButton(
+                            title: isSubmitting ? "正在保存…" : "确认并加入复习",
+                            tone: canConfirm && !isSubmitting ? .normal : .disabled
+                        ) {
+                            submit(.confirm)
+                        }
+                        .accessibilityIdentifier("v2.confirmation.confirm")
+
+                        Button("仅存档，不进入复习") {
+                            submit(.archive)
+                        }
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(V2Color.textSecondary)
+                        .disabled(isSubmitting)
+                        .accessibilityIdentifier("v2.confirmation.archive")
+
+                        Button("删除这条内容", role: .destructive) {
+                            showsDeleteAlert = true
+                        }
+                        .font(V2Typography.captionEmphasis)
+                        .disabled(isSubmitting)
+                        .accessibilityIdentifier("v2.confirmation.delete")
+                    }
+                    .padding(.top, 4)
+                }
+                .frame(maxWidth: V2Layout.contentMaxWidth, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
+            }
+            .background(V2Color.pageGreenBackground.ignoresSafeArea())
+            .navigationTitle("确认要记住的内容")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                        .disabled(isSubmitting)
+                }
+            }
+            .alert("删除这条内容？", isPresented: $showsDeleteAlert) {
+                Button("删除", role: .destructive) {
+                    delete()
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("删除后无法恢复，也不会进入复习。")
+            }
+            .interactiveDismissDisabled(isSubmitting)
+        }
+    }
+
+    private var sourceSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label(sourceStatusTitle, systemImage: sourceStatusSymbol)
+                    .font(V2Typography.captionEmphasis)
+                    .foregroundStyle(V2Color.primary)
+                Spacer()
+                Text("待确认")
+                    .font(V2Typography.captionEmphasis)
+                    .foregroundStyle(V2Color.textSecondary)
+            }
+
+            Text(captured.card.sourceTitle ?? "来自这张截图")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(V2Color.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("为什么需要确认")
+                .font(V2Typography.captionEmphasis)
+                .foregroundStyle(V2Color.textMuted)
+            Text(confirmationReason)
+                .font(.system(size: 15))
+                .foregroundStyle(V2Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .fill(V2Color.surfaceCream)
+                .v2Shadow()
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private var retainedContentEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("你想保留的知识")
+                .font(V2Typography.sectionTitle)
+                .foregroundStyle(V2Color.textPrimary)
+            Text("编辑为一条能在识别原文中直接找到的完整句子。确认不会重新识别图片。")
+                .font(V2Typography.caption)
+                .foregroundStyle(V2Color.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextEditor(text: $coreKnowledge)
+                .font(.system(size: 16))
+                .foregroundStyle(V2Color.textPrimary)
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 112)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(V2Color.surfaceCream)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(V2Color.primary.opacity(0.22), lineWidth: 1)
+                )
+                .accessibilityLabel("要保留的核心知识")
+                .accessibilityIdentifier("v2.confirmation.core-knowledge")
+        }
+    }
+
+    private var evidencePicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("可核对的识别原文")
+                .font(V2Typography.sectionTitle)
+                .foregroundStyle(V2Color.textPrimary)
+            Text("点选一段即可作为知识内容，避免再次识别。")
+                .font(V2Typography.caption)
+                .foregroundStyle(V2Color.textMuted)
+
+            ForEach(evidence) { item in
+                Button {
+                    selectedEvidenceID = item.id
+                    coreKnowledge = item.text
+                    message = "已使用这段识别原文，你仍可以继续编辑。"
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: selectedEvidenceID == item.id ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(V2Color.primary)
+                        Text(item.text)
+                            .font(.system(size: 15))
+                            .foregroundStyle(V2Color.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .fill(V2Color.surfaceCream)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("使用识别原文：\(item.text)")
+            }
+        }
+    }
+
+    private var canConfirm: Bool {
+        coreKnowledge.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4
+    }
+
+    private var confirmationReason: String {
+        let explanation = captured.card.explanation.trimmingCharacters(in: .whitespacesAndNewlines)
+        return explanation.isEmpty ? "当前证据或上下文不足，需要你确认真正想记住的内容。" : explanation
+    }
+
+    private var sourceStatusTitle: String {
+        switch captured.card.sourceStatus {
+        case .verified: "来源已核对"
+        case .partial: "部分来源已核对"
+        case .unconfirmed: "来源尚未确认"
+        }
+    }
+
+    private var sourceStatusSymbol: String {
+        switch captured.card.sourceStatus {
+        case .verified: "checkmark.seal.fill"
+        case .partial: "checkmark.seal"
+        case .unconfirmed: "questionmark.circle"
+        }
+    }
+
+    private func submit(_ action: CaptureMemoryCardConfirmationRequest.Action) {
+        guard !isSubmitting else { return }
+        if action == .confirm, !canConfirm {
+            message = "请至少输入 4 个字符。"
+            return
+        }
+        isSubmitting = true
+        message = ""
+        let trimmedKnowledge = coreKnowledge.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task { @MainActor in
+            defer { isSubmitting = false }
+            do {
+                let response = try await resolveConfirmation(
+                    captured.id,
+                    CaptureMemoryCardConfirmationRequest(
+                        action: action,
+                        coreKnowledge: action == .confirm ? trimmedKnowledge : nil,
+                        hiddenSemantic: nil,
+                        recallCue: captured.card.recallCue,
+                        sourceEvidenceId: selectedEvidenceID
+                    )
+                )
+                switch V2CaptureConfirmationReducer.reduce(response) {
+                case .needsUserInput(let responseMessage, _, let responseEvidence):
+                    message = responseMessage
+                    evidence = responseEvidence
+                case .confirmed, .archived:
+                    dismiss()
+                case .invalid(let responseMessage):
+                    message = responseMessage
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                message = error.localizedDescription
+            }
+        }
+    }
+
+    private func delete() {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        message = ""
+        Task { @MainActor in
+            defer { isSubmitting = false }
+            do {
+                try await deleteMemoryCard(captured.id)
+                dismiss()
+            } catch is CancellationError {
+                return
+            } catch {
+                message = error.localizedDescription
+            }
         }
     }
 }
