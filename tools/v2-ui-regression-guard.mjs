@@ -23,6 +23,65 @@ const source = Object.fromEntries(
 );
 const matchingCardSource = extractMatchingCardSource(source.questionComponents);
 const matchingScreenSource = extractMatchingScreenSource(source.reviewFlowScreens);
+const awakeningHomeSource = extractBetween(
+  source.awakeningViews,
+  "struct V2AwakeningHomeView",
+  "private struct V2AwakeningFlowView"
+);
+const awakeningHomeDeclarationSource = extractBetween(
+  awakeningHomeSource,
+  "struct V2AwakeningHomeView",
+  "var body: some View"
+);
+const awakeningHomeContentSource = extractBetween(
+  awakeningHomeSource,
+  "private var homeContent",
+  "private var actionTitle"
+);
+const screenshotDrawSource = extractBetween(
+  awakeningHomeSource,
+  "private func drawScreenshotMemory()",
+  "private var homeSubtitle"
+);
+const awakeningHomeCallSource = extractBetween(
+  source.v2Root,
+  "V2AwakeningHomeView(",
+  "case .materials:"
+);
+const recallPhaseSource = extractBetween(
+  source.awakeningViews,
+  "enum V2RecallPresentationPhase",
+  "enum V2RecallMascotState"
+);
+const repairingLandingSource = extractBetween(
+  source.screenshotAwakeningViews,
+  "private var repairingLanding",
+  "private var archiveLanding"
+);
+const summonTaskSource = extractBetween(
+  source.screenshotAwakeningViews,
+  ".task(id: summonTaskID)",
+  ".onAppear"
+);
+const summonTransitionSource = extractBetween(
+  source.screenshotAwakeningViews,
+  "private var summonTransition",
+  "private var summonCardScale"
+);
+const scratchCanvasSource = extractBetween(
+  source.screenshotAwakeningViews,
+  "private struct V2ScratchRevealCanvas",
+  "struct V2ScreenshotAwakeningFlowView"
+);
+const drawSessionSource = extractBetween(
+  source.screenshotMemoryModels,
+  "struct V2ScreenshotDrawSession",
+  "private enum V2ScreenshotDateParser"
+);
+const captureApplySource = extractBetween(source.screenshotMemoryModels, "mutating func apply(", "func reviewCycleKey(");
+const rootAssessmentSource = extractBetween(source.v2Root, "private func applyScreenshotAssessment(", "private func deleteScreenshotMemoryCard(");
+const submitAssessmentSource = extractBetween(source.screenshotAwakeningViews, "private func submitPendingAssessment(", "private func advanceToNextCard(");
+const summonTimingTotals = extractSummonTimingTotals(summonTaskSource);
 
 const checks = [
   check(
@@ -72,18 +131,51 @@ const checks = [
     "Matching screen must keep all option cards in one question at the same height."
   ),
   check(
-    "awakening_home_is_single_card_and_low_pressure",
-    source.awakeningViews.includes("今天，唤醒一点记忆")
-      && source.awakeningViews.includes('return response?.hasActiveCard == true ? "继续这张" : "召回一张"')
-      && source.awakeningViews.includes("一次只看一张")
-      && !source.awakeningViews.includes("V2MemoryPoolSelector")
-      && !source.awakeningViews.includes("连续召回"),
-    "Awakening home must expose one low-pressure recall entry without pool or mode selectors."
+    "awakening_home_has_one_screenshot_recall_action",
+    countOccurrences(awakeningHomeContentSource, "drawScreenshotMemory()") === 2
+      && /onContinuousScreenshotDraw\(preferredPool\)/.test(screenshotDrawSource)
+      && !/\blet onDrawScreenshot\b/.test(awakeningHomeDeclarationSource)
+      && !/\blet onDraw:\s*\(\)/.test(awakeningHomeDeclarationSource)
+      && !/\blet (?:response|hasReviewableContent)\b/.test(awakeningHomeDeclarationSource)
+      && !/\bonDrawScreenshot:/.test(awakeningHomeCallSource)
+      && !/\bonDraw:/.test(awakeningHomeCallSource)
+      && !/\bresponse:/.test(awakeningHomeCallSource)
+      && !/\bhasReviewableContent:/.test(awakeningHomeCallSource)
+      && !awakeningHomeSource.includes("V2MemoryPoolSelector")
+      && !awakeningHomeSource.includes("连续召回"),
+    "The stack and button must call one screenshot action; release home must not receive legacy session state, callbacks, or mode selectors."
+  ),
+  check(
+    "awakening_home_zero_cards_is_real_empty_state",
+    /if\s+screenshotCardCount\s*==\s*0\s*\{/.test(awakeningHomeContentSource)
+      && /Text\("还没有可以唤醒的记忆"\)/.test(awakeningHomeContentSource)
+      && /V2PrimaryActionButton\(title:\s*"添加内容",\s*action:\s*onAddContent\)/.test(awakeningHomeContentSource)
+      && !awakeningHomeContentSource.includes("hasReviewableContent")
+      && !awakeningHomeContentSource.includes("response?.hasActiveCard")
+      && /isActive:\s*!isLoading\s*&&\s*screenshotCardCount\s*>\s*0/.test(awakeningHomeContentSource)
+      && /screenshotCardCount\s*==\s*0\s*\?\s*\.disabled/.test(awakeningHomeContentSource)
+      && /guard\s+screenshotCardCount\s*>\s*0\s+else\s*\{\s*return\s*\}/.test(screenshotDrawSource),
+    "Zero screenshot cards must render the add-content empty state; fixture, chapter, and legacy flags must not expose a disabled recall shell."
   ),
   check(
     "recall_ritual_uses_frozen_phase_contract",
-    /enum V2RecallPresentationPhase[\s\S]*case home[\s\S]*case summoning[\s\S]*case recall[\s\S]*case scratching[\s\S]*case revealed[\s\S]*case assessing[\s\S]*case checkpoint[\s\S]*case stowing[\s\S]*case paused/.test(source.awakeningViews),
-    "The recall ritual must keep the frozen nine-phase presentation contract."
+    /case home[\s\S]*case summoning[\s\S]*case recall[\s\S]*case scratching[\s\S]*case revealed[\s\S]*case assessing[\s\S]*case repairing[\s\S]*case checkpoint[\s\S]*case stowing[\s\S]*case paused/.test(recallPhaseSource),
+    "The recall ritual must keep the frozen ten-phase contract, including an explicit repairing phase."
+  ),
+  check(
+    "assessment_repair_and_checkpoint_are_sequential",
+    /phase\s*==\s*\.repairing\s*\{[\s\S]{0,180}\brepairingLanding\b/.test(source.screenshotAwakeningViews)
+      && repairingLandingSource.length > 0
+      && !/currentIndex\s*\+\s*1|"继续下一张"|Button\("先收好"/.test(repairingLandingSource)
+      && /phase\s*=\s*\.repairing/.test(submitAssessmentSource)
+      && !/phase\s*=\s*\.checkpoint/.test(submitAssessmentSource)
+      && /(?:guard|if)\s+phase\s*==\s*\.repairing[\s\S]{0,700}phase\s*=\s*\.checkpoint/.test(source.screenshotAwakeningViews),
+    "Assessment must render repair separately, hide next/stow actions there, and only then advance to checkpoint."
+  ),
+  check(
+    "summon_hides_internal_pool_title",
+    summonTransitionSource.length > 0 && !/\bsession\.pool\.title\b/.test(summonTransitionSource),
+    "Summoning must use neutral recall copy and must not expose the internal memory-pool title."
   ),
   check(
     "recall_mascot_has_ten_states",
@@ -97,6 +189,19 @@ const checks = [
       && source.screenshotAwakeningViews.includes("brushDiameter: CGFloat = 26")
       && source.screenshotAwakeningViews.includes("coverage >= 0.45"),
     "Scratch reveal must use a 26pt destination-out Canvas and a 45 percent grid threshold."
+  ),
+  check(
+    "scratch_paths_are_normalized_for_resize_and_restore",
+    /normalizedPoint\(value\.location,\s*in:\s*geometry\.size\)/.test(scratchCanvasSource)
+      && /renderedPoint\([^,]+,\s*in:\s*size\)/.test(scratchCanvasSource)
+      && /point\.x\s*\/\s*size\.width/.test(scratchCanvasSource)
+      && /point\.y\s*\/\s*size\.height/.test(scratchCanvasSource)
+      && /point\.x\s*\*\s*size\.width/.test(scratchCanvasSource)
+      && /point\.y\s*\*\s*size\.height/.test(scratchCanvasSource)
+      && /\(0\.\.\.1\)\.contains\([^\n]*\.x\)/.test(source.screenshotAwakeningViews)
+      && /\(0\.\.\.1\)\.contains\([^\n]*\.y\)/.test(source.screenshotAwakeningViews)
+      && !/paths\[paths\.count\s*-\s*1\]\.append\(value\.location\)/.test(scratchCanvasSource),
+    "Scratch strokes must be stored as 0...1 coordinates, rendered against the current Canvas size, and reject legacy absolute paths on restore."
   ),
   check(
     "checkpoint_and_persistence_are_explicit",
@@ -211,10 +316,23 @@ const checks = [
   ),
   check(
     "summon_timings_cover_first_next_and_reduced_motion",
-    source.screenshotAwakeningViews.includes("[150_000_000, 450_000_000, 580_000_000, 370_000_000, 250_000_000]")
-      && source.screenshotAwakeningViews.includes("[100_000_000, 230_000_000, 230_000_000, 180_000_000, 160_000_000]")
-      && source.screenshotAwakeningViews.includes("180_000_000"),
-    "Summoning must total 1800ms for the first card, 900ms later, and 180ms with Reduce Motion."
+    summonTimingTotals?.first === 1_250_000_000
+      && summonTimingTotals?.next === 700_000_000
+      && /if\s+reduceMotion[\s\S]{0,240}Task\.sleep\(nanoseconds:\s*180_000_000\)[\s\S]{0,260}phase\s*=\s*\.recall/.test(summonTaskSource)
+      && /Task\.sleep\(nanoseconds:\s*timings\[4\]\)[\s\S]{0,220}phase\s*=\s*\.recall/.test(summonTaskSource),
+    "Summoning must enter recall after exactly 1250ms for the first card, 700ms later, and 180ms with Reduce Motion."
+  ),
+  check(
+    "rarity_does_not_affect_selection_or_feedback",
+    drawSessionSource.length > 0
+      && captureApplySource.length > 0
+      && rootAssessmentSource.length > 0
+      && submitAssessmentSource.length > 0
+      && !/\brarity\b/i.test(drawSessionSource)
+      && !/\brarity\b/i.test(captureApplySource)
+      && !/\brarity\b/i.test(rootAssessmentSource)
+      && !/\brarity\b/i.test(submitAssessmentSource),
+    "Rarity may style the reveal, but must not participate in draw ordering, assessment feedback, mastery, or schedule updates."
   ),
   check(
     "awakening_source_is_feedback_only",
@@ -255,6 +373,41 @@ if (failed.length > 0) {
 
 function check(name, ok, detail) {
   return { name, ok: Boolean(ok), detail };
+}
+
+function extractBetween(fileSource, startMarker, endMarker) {
+  const start = fileSource.indexOf(startMarker);
+  const end = fileSource.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end < 0 || end <= start) return "";
+  return fileSource.slice(start, end);
+}
+
+function countOccurrences(fileSource, needle) {
+  if (!needle) return 0;
+  return fileSource.split(needle).length - 1;
+}
+
+function extractSummonTimingTotals(fileSource) {
+  const match = /let timings:\s*\[UInt64\]\s*=\s*currentIndex\s*==\s*0\s*\?\s*\[([^\]]+)\]\s*:\s*\[([^\]]+)\]/m.exec(fileSource);
+  if (!match) return null;
+  const first = sumNanoseconds(match[1]);
+  const next = sumNanoseconds(match[2]);
+  if (first == null || next == null) return null;
+  return { first, next };
+}
+
+function sumNanoseconds(rawValues) {
+  const values = rawValues
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (values.length === 0 || !values.every((value) => /^\d[\d_]*$/.test(value))) {
+    return null;
+  }
+  return values.reduce(
+    (total, value) => total + Number(value.replaceAll("_", "")),
+    0
+  );
 }
 
 function extractMatchingCardSource(fileSource) {
