@@ -110,7 +110,7 @@ struct V2CapturedMemoryCard: Identifiable, Equatable {
         guard isReadyForReview else {
             return false
         }
-        switch pool {
+        return switch pool {
         case .due:
             schedule?.isDue(at: now) ?? (lastAssessment == nil)
         case .timeCapsule:
