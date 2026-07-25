@@ -1364,7 +1364,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         if !assessmentError.isEmpty {
             return "保留当前选择并重试，不会重复记录。"
         }
-        switch assessment {
+        return switch assessment {
         case .remembered: "这次主动重建已经记录好了。"
         case .fuzzy: "系统会把它安排在更合适的时间再次出现。"
         case .forgot: "记忆不会被惩罚，只会更早回来。"
@@ -1587,8 +1587,8 @@ struct V2ScreenshotAwakeningFlowView: View {
         let restoredCoveredScratchCells = Set(
             persistedCoveredCells.split(separator: ",").map(String.init)
         )
-        let restoredScratchPaths = persistedScratchPaths.split(separator: "|").map { rawPath in
-            rawPath.split(separator: ";").compactMap { rawPoint in
+        let restoredScratchPaths: [[CGPoint]] = persistedScratchPaths.split(separator: "|").map { rawPath in
+            rawPath.split(separator: ";").compactMap { rawPoint -> CGPoint? in
                 let values = rawPoint.split(separator: ":")
                 guard values.count == 2,
                       let x = Double(values[0]),
