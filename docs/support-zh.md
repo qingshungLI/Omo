@@ -46,4 +46,4 @@
 
 ## 隐私政策
 
-关于 Omo 收集哪些信息、如何使用 AI 模型处理内容、如何保存和删除数据，请查看 https://shibei-production.up.railway.app/privacy。
+关于 Omo 收集哪些信息、如何使用 AI 模型处理内容、如何保存和删除数据，请查看 [隐私政策](privacy-policy-zh.md)。
