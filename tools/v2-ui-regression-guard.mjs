@@ -26,7 +26,7 @@ const matchingScreenSource = extractMatchingScreenSource(source.reviewFlowScreen
 const awakeningHomeSource = extractBetween(
   source.awakeningViews,
   "struct V2AwakeningHomeView",
-  "private struct V2AwakeningFlowView"
+  "struct V2AwakeningFlowView"
 );
 const awakeningHomeDeclarationSource = extractBetween(
   awakeningHomeSource,
