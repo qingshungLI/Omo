@@ -1,4 +1,4 @@
-# 拾贝 iOS API / 数据结构契约
+# 哦莫 iOS API / 数据结构契约
 
 > 这份文档用于 MacBook / Xcode 迁移阶段。它定义 iOS 端应使用的 Swift `Codable` 模型、Service 方法和状态处理口径。PRD 仍是产品需求源头；当前截图唤醒主链以 `CaptureMemoryCardV2` 为准，后半部分的 Chapter API 仅用于旧内容兼容。
 

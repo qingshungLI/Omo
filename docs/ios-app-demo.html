@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Recallo · 记忆召回</title>
+  <title>Omo · 记忆召回</title>
   <style>
     :root{color-scheme:light;--cream:#fff6e8;--paper:#fffaf0;--ink:#243f43;--muted:#657477;--coral:#e98d6b;--sage:#dbe8d4;--mist:#e7eef1;--lavender:#e9e0f1;--night:#25384d;--gold:#d9a94d;--danger:#9c554c}
     *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;background:#eef1ea;color:var(--ink)}button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,canvas:focus-visible{outline:3px solid rgba(233,141,107,.5);outline-offset:3px}
@@ -28,18 +28,18 @@
 <body>
   <main class="preview-shell">
     <section class="preview-copy" aria-labelledby="preview-title">
-      <div class="brand">RECALLO · iOS MVP</div>
+      <div class="brand">OMO · iOS MVP</div>
       <h1 id="preview-title">让记忆伙伴从旧截图里，取回今天值得想起的一张。</h1>
       <p>这里使用与正式产品相同的截图异步接口和记忆卡合同。卡片必须来自服务端证据；失败会停在失败状态，不会换成演示答案。</p>
       <div class="preview-note">路径：添加截图 → 等待分析 → 召回 → 刮开语义 → 自评 → 查看真实下次复习时间。图片会发送给已配置的视觉模型。</div>
       <button class="reset-button" id="desktop-reset" type="button">只重置本页交互</button>
     </section>
-    <section class="device" aria-label="Recallo iPhone 交互预览"><div class="app" id="app"></div></section>
+    <section class="device" aria-label="Omo iPhone 交互预览"><div class="app" id="app"></div></section>
   </main>
-  <script id="recallo-v06-runtime">
+  <script id="omo-v06-runtime">
     (() => {
       "use strict";
-      const STORAGE_KEY = "recallo-v06-web-state-v2";
+      const STORAGE_KEY = "omo-v06-web-state-v2";
       const API = {
         capture: "/api/sources/image-flow",
         cards: "/api/memory-cards"
@@ -264,7 +264,7 @@
         const dueCount = dueCards().length;
         const canRecall = dueCount > 0;
         const title = !hasCards ? "先留下一张值得再想起的截图" : canRecall ? "找回一段自己的过去" : "今天已经完成";
-        return `<section class="screen" data-testid="v06-home">${top("Recallo · 今日",'<button class="icon" aria-label="添加截图" data-action="open-upload" type="button">＋</button>')}${syncNotice()}<div class="scene home-scene">${mascot(ui.mascot,true)}<h2>${title}</h2><p>${!hasCards ? "先保存一张；以后再回来想起它。" : canRecall ? "每次只取回一张。想起多少，都算数。" : "今天的记忆已经收好，随时可以再留下一张。"}</p><button class="stack" data-action="summon" data-testid="recall-stack" type="button" ${canRecall ? "" : "disabled"} aria-label="点按、长按或向上拖动，召回一张到期旧内容"><span class="card-layer"></span><span class="card-layer"></span><span class="card-layer card-front"><span><strong>${canRecall ? "今天的一张" : hasCards ? "今天已完成" : "等待第一张"}</strong><span>${canRecall ? "来自你保存过的内容" : hasCards ? "下一次见" : "去添加一张截图"}</span></span></span></button>${hasCards && !canRecall ? "" : `<button class="primary home-primary" data-action="${canRecall ? "summon" : "open-upload"}" type="button">${canRecall ? "请它取回一张" : "添加第一张截图"}</button>`}</div>${nav()}</section>`;
+        return `<section class="screen" data-testid="v06-home">${top("Omo · 今日",'<button class="icon" aria-label="添加截图" data-action="open-upload" type="button">＋</button>')}${syncNotice()}<div class="scene home-scene">${mascot(ui.mascot,true)}<h2>${title}</h2><p>${!hasCards ? "先保存一张；以后再回来想起它。" : canRecall ? "每次只取回一张。想起多少，都算数。" : "今天的记忆已经收好，随时可以再留下一张。"}</p><button class="stack" data-action="summon" data-testid="recall-stack" type="button" ${canRecall ? "" : "disabled"} aria-label="点按、长按或向上拖动，召回一张到期旧内容"><span class="card-layer"></span><span class="card-layer"></span><span class="card-layer card-front"><span><strong>${canRecall ? "今天的一张" : hasCards ? "今天已完成" : "等待第一张"}</strong><span>${canRecall ? "来自你保存过的内容" : hasCards ? "下一次见" : "去添加一张截图"}</span></span></span></button>${hasCards && !canRecall ? "" : `<button class="primary home-primary" data-action="${canRecall ? "summon" : "open-upload"}" type="button">${canRecall ? "请它取回一张" : "添加第一张截图"}</button>`}</div>${nav()}</section>`;
       }
       function uploadView(){
         const busy = transient.uploadStatus === "submitting" || transient.uploadStatus === "polling";
@@ -273,7 +273,7 @@
       function uploadCompleteView(){
         const card = ui.cards.find(item => item.id === transient.generatedCardId) || currentCard();
         if (!card) { ui.phase = "home"; return homeView(); }
-        return `<section class="screen" data-testid="v06-upload-complete">${top("Recallo · 今日",'<button class="subtle" data-action="stow" type="button">先收好</button>')}<div class="scene home-scene">${mascot("carrying")}<h2>找回一段自己的过去</h2><p>这张新记忆已经收好。想起多少，都算数。</p><button class="stack" data-action="summon-generated" type="button" aria-label="请记忆伙伴取回这张新记忆"><span class="card-layer"></span><span class="card-layer"></span><span class="card-layer card-front"><span><strong>新的一张</strong><span>来自你刚刚保存的截图</span></span></span></button><button class="primary home-primary" data-action="summon-generated" type="button">请它取回这张</button></div></section>`;
+        return `<section class="screen" data-testid="v06-upload-complete">${top("Omo · 今日",'<button class="subtle" data-action="stow" type="button">先收好</button>')}<div class="scene home-scene">${mascot("carrying")}<h2>找回一段自己的过去</h2><p>这张新记忆已经收好。想起多少，都算数。</p><button class="stack" data-action="summon-generated" type="button" aria-label="请记忆伙伴取回这张新记忆"><span class="card-layer"></span><span class="card-layer"></span><span class="card-layer card-front"><span><strong>新的一张</strong><span>来自你刚刚保存的截图</span></span></span></button><button class="primary home-primary" data-action="summon-generated" type="button">请它取回这张</button></div></section>`;
       }
       function libraryView(){
         return `<section class="screen" data-testid="v06-library">${top("知识库",'<button class="icon" aria-label="添加截图" data-action="open-upload" type="button">＋</button>')}${syncNotice()}<div class="library"><h2>被你留下的记忆</h2><p>这里只展示服务端返回的真实卡片。</p><div class="list">${ui.cards.length ? ui.cards.map(libraryCard).join("") : '<div class="library-empty" data-testid="library-empty">知识库还是空的<br><button class="subtle" data-action="open-upload" type="button">添加第一张截图</button></div>'}</div>${transient.deleteError ? `<p class="notice error" role="alert" data-testid="delete-error">${escapeHtml(transient.deleteError)}</p>` : ""}</div>${nav()}</section>`;
@@ -599,7 +599,7 @@
       reduced.addEventListener?.("change",()=>{if(ui.phase==="summoning")finishSummon();render();scheduleIdle();});
       navigator.getBattery?.().then(battery=>{const sync=()=>{lowPower=!battery.charging&&battery.level<=.2;scheduleIdle();};battery.addEventListener("levelchange",sync);battery.addEventListener("chargingchange",sync);sync();}).catch(()=>{});
       document.getElementById("desktop-reset").addEventListener("click",reset);
-      window.__recalloV06={getState:()=>JSON.parse(JSON.stringify(ui)),render,startSummon,finishSummon,reveal,assess,refreshCards,reset};
+      window.__omoV06={getState:()=>JSON.parse(JSON.stringify(ui)),render,startSummon,finishSummon,reveal,assess,refreshCards,reset};
       render();refreshCards();scheduleIdle();
     })();
   </script>

@@ -327,7 +327,7 @@ function buildScreenshotEvidence(captureAnalysis, identity) {
   const visibleText = lines.map((line) => String(line || "").trim()).filter(Boolean).join("\n");
   if (!visibleText) return "";
   return [
-    "以下文字只来自用户截图，用于记忆截图中看过的内容，不代表 Recallo 已完成外部事实核验。",
+    "以下文字只来自用户截图，用于记忆截图中看过的内容，不代表 Omo 已完成外部事实核验。",
     visibleText
   ].join("\n");
 }

@@ -2378,7 +2378,7 @@ const server = createServer(async (req, res) => {
     const version = await buildVersionInfo({ startedAt });
     sendJson(res, 200, {
       ok: true,
-      service: "recallo-api",
+      service: "omo-api",
       startedAt,
       version,
       storage: hasDatabase ? "postgres" : "memory",
@@ -3115,7 +3115,7 @@ function startServer() {
   return initialization
     .then((result) => {
       server.listen(port, host, () => {
-        console.log(`Recallo Demo 已启动：http://${host}:${port} (${result.storage})`);
+        console.log(`Omo Demo 已启动：http://${host}:${port} (${result.storage})`);
       });
     })
     .catch((error) => {

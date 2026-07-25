@@ -55,7 +55,7 @@ try {
 
   const manifest = {
     schemaVersion: "capture_fixture_gallery_1",
-    purpose: "Deterministic screenshot inputs for Recallo platform-flow tests.",
+    purpose: "Deterministic screenshot inputs for Omo platform-flow tests.",
     generation: {
       command: "npm --prefix backend run fixtures:capture-gallery",
       script: "generate.mjs",

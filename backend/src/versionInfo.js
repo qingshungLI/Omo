@@ -19,7 +19,7 @@ export async function buildVersionInfo({
   const recommendedCatalog = await buildRecommendedCatalogVersion({ catalogPath });
 
   return {
-    service: "recallo-api",
+    service: "omo-api",
     startedAt,
     nodeEnv: env.NODE_ENV || "",
     git: {

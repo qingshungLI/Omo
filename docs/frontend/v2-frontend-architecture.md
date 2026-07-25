@@ -10,7 +10,7 @@ Demo content must not be embedded directly inside production screen views.
 
 Preferred flow:
 
-1. Demo fixtures live in `拾贝/拾贝/V2/Fixtures`.
+1. Demo fixtures live in `Omo/Omo/V2/Fixtures`.
 2. `V2RootView` or a future app composition layer injects demo data into screens.
 3. Screens render injected display data and do not decide whether content is mock or real.
 

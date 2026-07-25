@@ -130,7 +130,7 @@ const checks = requiredRoutes.map((route) => ({
   ok: route.pattern.test(serverSource)
 }));
 
-console.log("# Shibei Backend Route Contract Gate");
+console.log("# Omo Backend Route Contract Gate");
 console.log("");
 for (const item of checks) {
   console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name} - ${item.detail}`);

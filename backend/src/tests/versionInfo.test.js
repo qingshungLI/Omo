@@ -7,7 +7,7 @@ import test from "node:test";
 import { buildVersionInfo } from "../versionInfo.js";
 
 test("builds deploy version info with git and recommended catalog fingerprint", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "recallo-version-info-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "omo-version-info-"));
   const preparedChapterPath = join(tempDir, "prepared.json");
   const coverPath = join(tempDir, "cover.png");
   const catalogPath = join(tempDir, "recommended-articles.json");
@@ -47,7 +47,7 @@ test("builds deploy version info with git and recommended catalog fingerprint", 
     }
   });
 
-  assert.equal(version.service, "recallo-api");
+  assert.equal(version.service, "omo-api");
   assert.equal(version.nodeEnv, "production");
   assert.equal(version.git.commit, "abc123");
   assert.equal(version.git.branch, "master");

@@ -8,7 +8,7 @@ import { selectTextWindow } from "./quickReviewGenerator.js";
 const ARTICLE = {
   id: "chapter-fast-001",
   title: "检索练习",
-  author: "拾贝",
+  author: "哦莫",
   rawText: "反复阅读会制造熟悉感。主动回想与间隔复习更有助于长期保持。"
 };
 

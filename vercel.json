@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm --prefix backend install",
-  "buildCommand": "echo 'Recallo serverless build ready'",
+  "buildCommand": "echo 'Omo serverless build ready'",
   "outputDirectory": "docs",
   "rewrites": [
     {

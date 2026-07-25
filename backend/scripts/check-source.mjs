@@ -60,7 +60,7 @@ export async function runSourceChecks({
   const relativeJsFiles = plan.jsFiles.map((filePath) => relative(plan.root, filePath));
   const relativeTestFiles = plan.testFiles.map((filePath) => relative(plan.root, filePath));
   console.log(
-    `# Recallo backend source check scope=${plan.scope}`
+    `# Omo backend source check scope=${plan.scope}`
     + ` syntax=${plan.syntaxScopes.join(",")} js=${plan.jsFiles.length}`
     + ` tests=${plan.testFiles.length}`
   );

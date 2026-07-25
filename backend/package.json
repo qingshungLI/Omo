@@ -1,5 +1,5 @@
 {
-  "name": "recallo-generation-demo",
+  "name": "omo-generation-demo",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -12,17 +12,10 @@
     "check:v2": "node scripts/check-source.mjs --scope=src/v2",
     "check:video-source": "node --test src/media/extractVideoLearningSource.test.js src/media/platformSubtitles.test.js src/media/learningSource.test.js src/media/videoExtractionCache.test.js",
     "smoke:v2:queue": "node scripts/smoke-v2-queue.mjs",
-    "benchmark:video-source": "node scripts/benchmark-video-learning-source.mjs",
-    "benchmark:capture-memory-fixtures": "node scripts/benchmark-capture-memory-fixtures.mjs",
     "image-flow": "node src/flow/cli.mjs",
     "test:all": "node scripts/check-source.mjs --tests-only",
     "fixtures:capture-gallery": "node test-fixtures/capture-gallery/generate.mjs"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "pg": "^8.20.0",
-    "playwright": "^1.60.0"
-  }
+  "engines": {"node": ">=20"},
+  "dependencies": {"pg": "^8.20.0", "playwright": "^1.60.0"}
 }

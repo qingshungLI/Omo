@@ -457,7 +457,7 @@ test("uses verified screenshot text when video extraction is unavailable", async
       throw extractionError;
     },
     generate: async (input) => {
-      assert.match(input.rawText, /不代表 Recallo 已完成外部事实核验/);
+      assert.match(input.rawText, /不代表 Omo 已完成外部事实核验/);
       return {
         title: "截图记忆",
         units: [{

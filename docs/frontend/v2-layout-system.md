@@ -6,7 +6,7 @@ V2 page layout should be driven by design-system tokens and shared scaffolds, no
 
 ## Core Tokens
 
-Source: `拾贝/拾贝/V2/DesignSystem/V2DesignSystem.swift`
+Source: `Omo/Omo/V2/DesignSystem/V2DesignSystem.swift`
 
 - `V2Layout.pageHorizontalInset`
   - Page-level horizontal inset from the physical screen edge.

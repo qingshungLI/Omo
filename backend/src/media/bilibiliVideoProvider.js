@@ -4,7 +4,7 @@ import { normalizeVideoSourceUrl } from "./videoPlatforms.js";
 
 const DEFAULT_TIMEOUT_MS = readPositiveInt(process.env.BILIBILI_API_TIMEOUT_MS, 20_000);
 const BILIBILI_API_ROOT = "https://api.bilibili.com";
-const DEFAULT_USER_AGENT = "Mozilla/5.0 Recallo/0.1";
+const DEFAULT_USER_AGENT = "Mozilla/5.0 Omo/0.1";
 
 export async function fetchBilibiliVideoSource({
   sourceUrl,
