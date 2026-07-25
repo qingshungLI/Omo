@@ -114,16 +114,11 @@ struct V2AwakeningHomeView: View {
 
                     V2MemoryCardStack(
                         pool: preferredPool,
-                        count: screenshotCardCount > 0 ? screenshotCardCount : (canDraw ? 1 : 0),
-                        isActive: !isLoading && (screenshotCardCount > 0 || canDraw),
+                        isActive: !isLoading && screenshotCardCount > 0,
                         reduceMotion: reduceMotion,
                         onDraw: {
                             V2AwakeningHaptics.selection()
-                            if screenshotCardCount > 0 {
-                                drawScreenshotMemory()
-                            } else {
-                                onDraw()
-                            }
+                            drawScreenshotMemory()
                         }
                     )
                     .frame(width: 280, height: 344)
@@ -131,20 +126,16 @@ struct V2AwakeningHomeView: View {
 
                     V2PrimaryActionButton(
                         title: actionTitle,
-                        tone: isLoading || (screenshotCardCount == 0 && !canDraw) ? .disabled : .normal
+                        tone: isLoading || screenshotCardCount == 0 ? .disabled : .normal
                     ) {
                         V2AwakeningHaptics.selection()
-                        if screenshotCardCount > 0 {
-                            drawScreenshotMemory()
-                        } else {
-                            onDraw()
-                        }
+                        drawScreenshotMemory()
                     }
                     .v2PageColumn()
                     .accessibilityHint("每次只呈现一张，完成后由你决定是否继续")
 
                     Text(screenshotCardCount > 0
-                         ? "\(screenshotCardCount) 张旧内容在等你，一次只看一张"
+                         ? "旧内容在等你，一次只看一张"
                          : "一张就好，随时可以停下")
                         .font(V2Typography.caption)
                         .foregroundStyle(V2Color.textMuted)
@@ -160,13 +151,8 @@ struct V2AwakeningHomeView: View {
         }
     }
 
-    private var canDraw: Bool {
-        response?.hasActiveCard == true || (response?.availableCount ?? 0) > 0
-    }
-
     private var actionTitle: String {
-        if isLoading { return "正在准备" }
-        return response?.hasActiveCard == true ? "继续这张" : "召回一张"
+        isLoading ? "正在准备" : "召回一张"
     }
 
     private var preferredPool: V2MemoryPool {
@@ -177,23 +163,14 @@ struct V2AwakeningHomeView: View {
 
     private func drawScreenshotMemory() {
         guard screenshotCardCount > 0 else { return }
-        // 预取多张只为让检查点能显示下一张；界面始终一次呈现一张。
-        if screenshotCardCount > 1 {
-            onContinuousScreenshotDraw(preferredPool)
-        } else {
-            onDrawScreenshot(preferredPool)
-        }
+        // 唯一入口：候选由现有排序在后台预取，界面始终一次只呈现一张。
+        onContinuousScreenshotDraw(preferredPool)
     }
 
     private var homeSubtitle: String {
-        if screenshotCardCount > 0 {
-            return "从自己的过去，召回一段正在消失的记忆"
-        }
-        if response?.hasActiveCard == true {
-            return "这张记忆还在等你"
-        }
-        let count = response?.availableCount ?? 0
-        return count > 0 ? "有 \(count) 张记忆等待唤醒" : "暂时没有需要唤醒的记忆"
+        screenshotCardCount > 0
+            ? "从自己的过去，召回一段正在消失的记忆"
+            : "暂时没有需要召回的记忆"
     }
 
     private func reactMascot() {
@@ -429,7 +406,7 @@ struct V2AwakeningCompletionView: View {
 
                 VStack(spacing: 12) {
                     V2PrimaryActionButton(
-                        title: isLoading ? "正在准备" : "再抽一张",
+                        title: isLoading ? "正在准备" : "再召回一张",
                         tone: isLoading ? .disabled : .normal
                     ) {
                         V2AwakeningHaptics.selection()
@@ -627,7 +604,6 @@ struct V2RecallMascotView: View {
 
 private struct V2MemoryCardStack: View {
     let pool: V2MemoryPool
-    let count: Int
     let isActive: Bool
     let reduceMotion: Bool
     let onDraw: () -> Void
@@ -697,7 +673,7 @@ private struct V2MemoryCardStack: View {
                 }
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(count) 张待召回记忆卡")
+        .accessibilityLabel("待召回记忆卡叠")
         .accessibilityHint(isActive ? "向上拖动二十八点、长按，或使用召回操作" : "当前没有可召回卡片")
         .accessibilityAction(named: "召回一张") {
             guard isActive else { return }

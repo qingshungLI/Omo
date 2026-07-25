@@ -263,9 +263,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                 return
             }
 
+            // 首次过场：稀有度在 1250ms 才显示，1450ms 进入主动回忆；
+            // 继续下一张为约 700ms 短过场，且不重复扫光。
             let timings: [UInt64] = currentIndex == 0
-                ? [150_000_000, 450_000_000, 580_000_000, 370_000_000, 250_000_000]
-                : [100_000_000, 230_000_000, 230_000_000, 180_000_000, 160_000_000]
+                ? [250_000_000, 300_000_000, 400_000_000, 300_000_000, 200_000_000]
+                : [120_000_000, 180_000_000, 180_000_000, 120_000_000, 100_000_000]
             guard await advanceSummon(after: timings[0], to: .rise) else { return }
             guard await advanceSummon(after: timings[1], to: .orbit) else { return }
             guard await advanceSummon(after: timings[2], to: .settle) else { return }
@@ -398,6 +400,8 @@ struct V2ScreenshotAwakeningFlowView: View {
 
                 VStack(spacing: 18) {
                     rarityBadge
+                        .opacity(summonStage == .cue ? 1 : 0)
+                        .accessibilityHidden(summonStage != .cue)
                     Image(systemName: "sparkles")
                         .font(.system(size: 42, weight: .light))
                         .foregroundStyle(V2Color.primary)
@@ -434,8 +438,8 @@ struct V2ScreenshotAwakeningFlowView: View {
                     value: summonStage
                 )
                 .changeEffect(
-                    .shine(duration: 0.35),
-                    value: summonStage == .cue,
+                    .shine(duration: 0.5),
+                    value: summonStage == .cue && currentIndex == 0,
                     isEnabled: !reduceMotion
                 )
 
@@ -688,9 +692,10 @@ struct V2ScreenshotAwakeningFlowView: View {
         let core = currentCard.card.coreKnowledge
         let hidden = hiddenSemanticText
         guard core.contains(hidden) else { return core }
+        // 固定长度遮挡块，不泄露答案长度。
         return core.replacingOccurrences(
             of: hidden,
-            with: String(repeating: "▰", count: min(max(hidden.count, 4), 12))
+            with: String(repeating: "▰", count: 8)
         )
     }
 
@@ -966,7 +971,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                                 .stroke(V2Color.primary.opacity(0.22), lineWidth: 1)
                         )
                         .frame(height: 92)
-                        .offset(x: 12, y: 12)
+                        .offset(x: 24, y: 26)
                         .rotationEffect(.degrees(reduceMotion ? 0 : 3))
                         .accessibilityLabel("下一张记忆卡已准备好")
                 }
@@ -1246,6 +1251,10 @@ struct V2ScreenshotAwakeningFlowView: View {
             phase = .revealed
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: "已完整揭晓，答案与解析已展开"
+        )
     }
 
     private func answerVariant(_ isCorrect: Bool) {
