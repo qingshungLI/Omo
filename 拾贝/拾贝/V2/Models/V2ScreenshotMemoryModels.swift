@@ -345,7 +345,11 @@ enum V2ScreenshotImageProcessor {
         guard longestEdge > maximumEdge, longestEdge > 0 else { return image }
         let scale = maximumEdge / longestEdge
         let targetSize = CGSize(width: size.width * scale, height: size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
+        let format = UIGraphicsImageRendererFormat()
+        // JPEG drops UIImage's point scale metadata. Render at 1x so the encoded
+        // pixel edge, not only the point-space edge, stays within the upload cap.
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: targetSize))
         }

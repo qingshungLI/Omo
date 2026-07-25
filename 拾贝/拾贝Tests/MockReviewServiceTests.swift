@@ -35,9 +35,15 @@ final class MockReviewServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(result.attempt.masteryScoreAfter, 30)
-        XCTAssertEqual(result.session.reinforcementQueue, ["point-1"])
-        XCTAssertTrue(result.session.queue[4].isReinforcement)
-        XCTAssertEqual(result.session.queue[4].pointId, "point-1")
+        XCTAssertEqual(result.session.reinforcementQueue, ["question-1-1"])
+        let reinforcementIndex = result.session.queue.firstIndex {
+            $0.isReinforcement && $0.questionId == "question-1-1"
+        }
+        XCTAssertNotNil(reinforcementIndex)
+        XCTAssertEqual(result.session.queue[reinforcementIndex!].pointId, "point-1")
+        let interveningOtherPointCount = result.session.queue[1..<reinforcementIndex!]
+            .filter { $0.pointId != "point-1" }.count
+        XCTAssertEqual(interveningOtherPointCount, 3)
     }
 
     func testUnknownAnswerUsesSameReinforcementPathAsIncorrect() {
@@ -54,7 +60,7 @@ final class MockReviewServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(result.attempt.masteryScoreAfter, 30)
-        XCTAssertEqual(result.session.reinforcementQueue, ["point-1"])
+        XCTAssertEqual(result.session.reinforcementQueue, ["question-1-1"])
         XCTAssertTrue(result.session.queue.contains { $0.isReinforcement && $0.pointId == "point-1" })
     }
 
@@ -66,20 +72,26 @@ final class MockReviewServiceTests: XCTestCase {
 
         var first = service.submitAttempt(chapter: chapter, session: session, answer: "A", result: .incorrect).chapter
         session = first.reviewSession!
-
-        first.reviewSession!.currentQueueIndex = 1
-        let second = service.submitAttempt(chapter: first, session: first.reviewSession!, answer: "B", result: .correct).chapter
-
-        var beforeReinforcement = second
-        beforeReinforcement.reviewSession!.currentQueueIndex = 2
+        for _ in 0..<3 {
+            let result = service.submitAttempt(
+                chapter: first,
+                session: session,
+                answer: "B",
+                result: .correct
+            )
+            first = result.chapter
+            session = result.session
+        }
+        XCTAssertTrue(session.queue[session.currentQueueIndex].isReinforcement)
         let reinforced = service.submitAttempt(
-            chapter: beforeReinforcement,
-            session: beforeReinforcement.reviewSession!,
+            chapter: first,
+            session: session,
             answer: "B",
             result: .correct
         )
 
-        XCTAssertEqual(reinforced.attempt.masteryScoreAfter, 40)
+        XCTAssertEqual(reinforced.attempt.masteryScoreBefore, 45)
+        XCTAssertEqual(reinforced.attempt.masteryScoreAfter, 55)
         XCTAssertTrue(reinforced.attempt.isReinforcement)
         XCTAssertTrue(reinforced.session.reinforcementQueue.isEmpty)
         XCTAssertEqual(reinforced.session.status, .completed)
