@@ -211,10 +211,10 @@ const checks = [
   ),
   check(
     "summon_timings_cover_first_next_and_reduced_motion",
-    source.screenshotAwakeningViews.includes("[120_000_000, 360_000_000, 470_000_000, 300_000_000, 200_000_000]")
-      && source.screenshotAwakeningViews.includes("[80_000_000, 180_000_000, 180_000_000, 140_000_000, 120_000_000]")
+    source.screenshotAwakeningViews.includes("[150_000_000, 450_000_000, 580_000_000, 370_000_000, 250_000_000]")
+      && source.screenshotAwakeningViews.includes("[100_000_000, 230_000_000, 230_000_000, 180_000_000, 160_000_000]")
       && source.screenshotAwakeningViews.includes("180_000_000"),
-    "Summoning must total 1450ms for the first card, 700ms later, and 180ms with Reduce Motion."
+    "Summoning must total 1800ms for the first card, 900ms later, and 180ms with Reduce Motion."
   ),
   check(
     "awakening_source_is_feedback_only",

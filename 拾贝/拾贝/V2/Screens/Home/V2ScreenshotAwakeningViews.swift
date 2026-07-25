@@ -264,8 +264,8 @@ struct V2ScreenshotAwakeningFlowView: View {
             }
 
             let timings: [UInt64] = currentIndex == 0
-                ? [120_000_000, 360_000_000, 470_000_000, 300_000_000, 200_000_000]
-                : [80_000_000, 180_000_000, 180_000_000, 140_000_000, 120_000_000]
+                ? [150_000_000, 450_000_000, 580_000_000, 370_000_000, 250_000_000]
+                : [100_000_000, 230_000_000, 230_000_000, 180_000_000, 160_000_000]
             guard await advanceSummon(after: timings[0], to: .rise) else { return }
             guard await advanceSummon(after: timings[1], to: .orbit) else { return }
             guard await advanceSummon(after: timings[2], to: .settle) else { return }

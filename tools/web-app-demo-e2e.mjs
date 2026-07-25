@@ -120,7 +120,7 @@ async function main() {
     assert.match(api.lastCaptureBody.imageBase64, /^data:image\/png;base64,/, "the selected user file must be sent as image data");
     assert.equal(api.lastCaptureBody.mimeType, "image/png");
 
-    await page.getByRole("button", { name: "立即召回这张" }).click();
+    await page.getByRole("button", { name: "让毛球取回这张", exact: true }).click();
     await page.locator('[data-testid="v06-summoning"]').waitFor();
     await page.getByRole("button", { name: "跳过" }).click();
     await page.locator('[data-testid="v06-recall"]').waitFor();
