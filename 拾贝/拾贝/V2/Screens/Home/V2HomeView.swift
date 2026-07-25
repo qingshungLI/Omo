@@ -9,6 +9,9 @@ struct V2HomeView: View {
     let onOpenChapterDetail: () -> Void
     let onOpenNode: (V2LearningPathNodeData) -> Void
 
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     @State private var selectedNodeID: V2LearningPathNodeData.ID?
     @State private var pendingNodeSelectionID: V2LearningPathNodeData.ID?
     @State private var nodeViewportFrames: [V2LearningPathNodeData.ID: CGRect] = [:]
@@ -343,11 +346,14 @@ struct V2HomeView: View {
     private func emptyState(in size: CGSize) -> some View {
         let scale = min(1, size.width / 402)
 
-        return Image("V2HomeEmptyStateIllustration")
-            .resizable()
-            .renderingMode(.original)
-            .scaledToFit()
-            .frame(width: 253 * scale, height: 387 * scale)
+        return VStack(spacing: V2Spacing.lg) {
+            V2RecallMascotView(state: .thinking, reduceMotion: reduceMotion)
+                .frame(width: 190 * scale, height: 190 * scale)
+
+            Text("还没有生成章节")
+                .font(V2Typography.sectionTitle)
+                .foregroundStyle(V2Color.textPrimary)
+        }
             .position(
                 x: size.width / 2,
                 y: V2HomeEmptyStateMetrics.centerY(in: size.height, scale: scale)
@@ -366,11 +372,8 @@ struct V2HomeView: View {
     private func mascot(in pathArea: V2HomePathArea) -> some View {
         let anchor = pathArea.mascotAnchor(for: data.currentNodeID)
 
-        return Image("V2MascotStatic")
-            .resizable()
-            .renderingMode(.original)
-            .scaledToFit()
-            .frame(width: 118, height: 172)
+        return V2RecallMascotView(state: .watching, reduceMotion: reduceMotion)
+            .frame(width: 104, height: 172)
             .position(anchor)
             .opacity(0.98)
             .allowsHitTesting(false)

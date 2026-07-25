@@ -1,17 +1,17 @@
 import SwiftUI
 
 struct V2SplashView: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     var body: some View {
         GeometryReader { geometry in
             V2Color.pageGreenBackground
                 .ignoresSafeArea()
 
             VStack(spacing: Metrics.messageTopSpacing) {
-                Image(Metrics.mascotAssetName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: Metrics.mascotWidth)
-                    .accessibilityHidden(true)
+                V2RecallMascotView(state: .idle, reduceMotion: reduceMotion)
+                    .frame(width: Metrics.mascotWidth, height: Metrics.mascotHeight)
 
                 Text(Metrics.messageText)
                     .font(Metrics.messageFont)
@@ -31,9 +31,9 @@ struct V2SplashView: View {
 }
 
 private enum Metrics {
-    static let mascotAssetName = "V2SplashMascot"
     static let messageText = "让知识不只被收藏。"
-    static let mascotWidth: CGFloat = 295
+    static let mascotWidth: CGFloat = 220
+    static let mascotHeight: CGFloat = 220
     static let contentCenterYRatio: CGFloat = 0.50
     static let messageTopSpacing: CGFloat = V2Spacing.lg
     static let messageFont = Font.system(size: 24, weight: .bold, design: .default)

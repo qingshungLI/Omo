@@ -209,6 +209,9 @@ private enum V2ProfileNameEditMetrics {
 }
 
 private struct V2ProfileAvatarPicker: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     @Binding var avatarImageData: Data
     @Binding var selectedPresetAvatarName: String
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -264,17 +267,14 @@ private struct V2ProfileAvatarPicker: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            Image(effectivePresetAvatarName)
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2RecallMascotView(state: effectivePreset.mascotState, reduceMotion: reduceMotion)
                 .frame(width: V2ProfileAvatarMetrics.defaultMascotSize, height: V2ProfileAvatarMetrics.defaultMascotSize)
                 .padding(V2ProfileAvatarMetrics.avatarPadding)
         }
     }
 
-    private var effectivePresetAvatarName: String {
-        V2ProfilePresetAvatar.validAssetName(for: selectedPresetAvatarName)
+    private var effectivePreset: V2ProfilePresetAvatar {
+        V2ProfilePresetAvatar.preset(for: selectedPresetAvatarName)
     }
 
     private var selectedAvatarImage: UIImage? {
@@ -380,6 +380,9 @@ private struct V2ProfileAvatarSelectionSheet: View {
 }
 
 private struct V2ProfilePresetAvatarCell: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     let avatar: V2ProfilePresetAvatar
     let isSelected: Bool
 
@@ -396,10 +399,7 @@ private struct V2ProfilePresetAvatarCell: View {
                 }
                 .v2Shadow(V2Shadow.subtleGreen)
 
-            Image(avatar.assetName)
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
+            V2RecallMascotView(state: avatar.mascotState, reduceMotion: reduceMotion)
                 .padding(V2ProfileAvatarMetrics.presetAvatarPadding)
         }
         .frame(width: V2ProfileAvatarMetrics.presetCellSize, height: V2ProfileAvatarMetrics.presetCellSize)
@@ -410,18 +410,23 @@ private struct V2ProfilePresetAvatar: Identifiable, CaseIterable {
     let id: String
     let title: String
     let assetName: String
+    let mascotState: V2RecallMascotState
 
     static let defaultAssetName = "V2ProfileAvatarPreset01"
 
     static let allCases: [V2ProfilePresetAvatar] = [
-        .init(id: "calm", title: "默认", assetName: "V2ProfileAvatarPreset01"),
-        .init(id: "working", title: "生成", assetName: "V2ProfileAvatarPreset02"),
-        .init(id: "reading", title: "阅读", assetName: "V2ProfileAvatarPreset03"),
-        .init(id: "failed", title: "提醒", assetName: "V2ProfileAvatarPreset04"),
-        .init(id: "article", title: "文章", assetName: "V2ProfileAvatarPreset05"),
-        .init(id: "notes", title: "笔记", assetName: "V2ProfileAvatarPreset06"),
-        .init(id: "book", title: "学习", assetName: "V2ProfileAvatarPreset07")
+        .init(id: "calm", title: "默认", assetName: "V2ProfileAvatarPreset01", mascotState: .idle),
+        .init(id: "working", title: "生成", assetName: "V2ProfileAvatarPreset02", mascotState: .rummaging),
+        .init(id: "reading", title: "阅读", assetName: "V2ProfileAvatarPreset03", mascotState: .watching),
+        .init(id: "failed", title: "提醒", assetName: "V2ProfileAvatarPreset04", mascotState: .reacting),
+        .init(id: "article", title: "文章", assetName: "V2ProfileAvatarPreset05", mascotState: .carrying),
+        .init(id: "notes", title: "笔记", assetName: "V2ProfileAvatarPreset06", mascotState: .thinking),
+        .init(id: "book", title: "学习", assetName: "V2ProfileAvatarPreset07", mascotState: .acknowledging)
     ]
+
+    static func preset(for storedAssetName: String) -> V2ProfilePresetAvatar {
+        allCases.first { $0.assetName == storedAssetName } ?? allCases[0]
+    }
 
     static func validAssetName(for storedAssetName: String) -> String {
         guard allCases.contains(where: { $0.assetName == storedAssetName }) else {

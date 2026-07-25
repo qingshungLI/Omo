@@ -65,12 +65,8 @@ struct V2AwakeningHomeView: View {
         if !hasReviewableContent && response?.hasActiveCard != true {
             VStack(spacing: 18) {
                 Spacer()
-                Image("V2HomeEmptyStateIllustration")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(width: 210, height: 320)
-                    .accessibilityHidden(true)
+                V2RecallMascotView(state: .thinking, reduceMotion: reduceMotion)
+                    .frame(width: 210, height: 210)
                 Text("还没有可以唤醒的记忆")
                     .font(V2Typography.sectionTitle)
                     .foregroundStyle(V2Color.textPrimary)

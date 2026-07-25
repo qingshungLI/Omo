@@ -61,6 +61,9 @@ struct V2MaterialsView: View {
     let openChapter: (String) -> Void
     let deleteMemoryCard: (String) async throws -> Void
 
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     @State private var pendingMemoryCardDeletion: V2CapturedMemoryCard?
     @State private var deletingMemoryCardID: String?
     @State private var memoryCardDeletionError = ""
@@ -98,10 +101,7 @@ struct V2MaterialsView: View {
                     V2GeneratedChaptersSummaryCard(count: generatedChapterCount)
                         .padding(.top, 54)
 
-                    Image("V2MaterialsMascot")
-                        .resizable()
-                        .renderingMode(.original)
-                        .scaledToFit()
+                    V2RecallMascotView(state: .carrying, reduceMotion: reduceMotion)
                         .frame(
                             width: V2MaterialsMascotMetrics.width,
                             height: V2MaterialsMascotMetrics.height
@@ -307,6 +307,9 @@ private extension V2BackendChapter {
 }
 
 struct V2GeneratingChapterDetailView: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     let progress: Double
     let statusText: String
     let isCompleted: Bool
@@ -324,10 +327,7 @@ struct V2GeneratingChapterDetailView: View {
                 ZStack(alignment: .topLeading) {
                     generatingDetailDecorations(in: geometry.size)
 
-                    Image("V2GeneratingChapterMascot")
-                        .resizable()
-                        .renderingMode(.original)
-                        .scaledToFit()
+                    V2RecallMascotView(state: .thinking, reduceMotion: reduceMotion)
                         .frame(width: 275, height: 255)
                         .position(x: geometry.size.width / 2 - 3, y: 146.5)
                         .allowsHitTesting(false)
@@ -772,6 +772,9 @@ private struct V2UploadPreflightStatusRow: View {
 }
 
 private struct V2UploadMascotInputGroup: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     @Binding var urlText: String
     let preflightState: V2UploadPreflightState
     let input: String
@@ -793,11 +796,11 @@ private struct V2UploadMascotInputGroup: View {
             let width = min(proxy.size.width, V2UploadMascotInputMetrics.maxWidth)
 
             ZStack(alignment: .top) {
-                Image("V2UploadMascotBack")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(width: V2UploadMascotInputMetrics.backWidth)
+                V2RecallMascotView(state: .rummaging, reduceMotion: reduceMotion)
+                    .frame(
+                        width: V2UploadMascotInputMetrics.backWidth,
+                        height: V2UploadMascotInputMetrics.backWidth
+                    )
                     .position(
                         x: width * V2UploadMascotInputMetrics.backCenterXRatio,
                         y: V2UploadMascotInputMetrics.backCenterY
@@ -812,16 +815,6 @@ private struct V2UploadMascotInputGroup: View {
                     )
                     .zIndex(1)
 
-                Image("V2UploadMascotFront")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(width: V2UploadMascotInputMetrics.frontWidth)
-                    .position(
-                        x: width * V2UploadMascotInputMetrics.frontCenterXRatio,
-                        y: V2UploadMascotInputMetrics.frontCenterY
-                    )
-                    .zIndex(2)
             }
             .frame(width: width, height: groupHeight)
             .frame(maxWidth: .infinity)
@@ -943,12 +936,9 @@ private enum V2Keyboard {
 private enum V2UploadMascotInputMetrics {
     static let maxWidth: CGFloat = 321
     static let backWidth: CGFloat = 94
-    static let frontWidth: CGFloat = 69
     static let cardTop: CGFloat = 82
     static let backCenterXRatio: CGFloat = 0.808
     static let backCenterY: CGFloat = 84
-    static let frontCenterXRatio: CGFloat = 0.796
-    static let frontCenterY: CGFloat = 85
 
     static func groupHeight(cardHeight: CGFloat) -> CGFloat {
         cardTop + cardHeight
@@ -1027,6 +1017,9 @@ struct V2DiscoverView: View {
 }
 
 struct V2NotesView: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     @Binding var selectedTab: V2HomeTab
     let usesMockData: Bool
     let savedQuestions: [V2SavedQuestionDisplayItem]
@@ -1044,10 +1037,7 @@ struct V2NotesView: View {
                     .offset(y: V2NotesPageMetrics.summaryY)
                     .zIndex(2)
 
-                Image("V2NotesMascot")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
+                V2RecallMascotView(state: .watching, reduceMotion: reduceMotion)
                     .frame(width: V2NotesPageMetrics.mascotWidth, height: V2NotesPageMetrics.mascotHeight)
                     .offset(x: V2NotesPageMetrics.mascotX, y: V2NotesPageMetrics.mascotY)
                     .allowsHitTesting(false)
@@ -1343,6 +1333,9 @@ private struct V2NotificationDecorations: View {
 }
 
 struct V2GenerationFailureDetailView: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     var title = "章节详情"
     var failureReason = "当前链接正文提取失败，可能是网页暂时无法访问，或正文格式还不支持。"
     let onBack: () -> Void
@@ -1358,10 +1351,7 @@ struct V2GenerationFailureDetailView: View {
                 ZStack(alignment: .topLeading) {
                     failureDetailDecorations(in: geometry.size)
 
-                    Image("V2NotificationFailureDetailMascot")
-                        .resizable()
-                        .renderingMode(.original)
-                        .scaledToFit()
+                    V2RecallMascotView(state: .reacting, reduceMotion: reduceMotion)
                         .frame(
                             width: V2GenerationFailureDetailMetrics.mascotWidth,
                             height: V2GenerationFailureDetailMetrics.mascotHeight
