@@ -136,6 +136,60 @@ export async function runImageFlow({
     };
   }
   if (!candidate) {
+    const screenshotEvidenceText = buildScreenshotEvidence(captureAnalysis, identity);
+    if (!identity.title && screenshotEvidenceText.length >= 24) {
+      try {
+        reportProgress(onProgress, {
+          stage: "generate",
+          message: "未找到可信来源，正在依据截图可见内容判断是否生成记忆卡",
+          percent: 72
+        });
+        const evidence = [{
+          id: "screenshot-visible",
+          type: "screenshot",
+          text: screenshotEvidenceText
+        }];
+        setImageFlowInternalEvidence(result, evidence);
+        result.source = {
+          sourceType: "screenshot",
+          title: identity.title || "截图记忆",
+          url: "",
+          account: identity.account || "",
+          textLength: screenshotEvidenceText.length,
+          platform: identity.platform,
+          focus: { status: "screenshot_only" }
+        };
+        result.sourceFallback = true;
+        result.sourceWarning = {
+          code: search.errorCode || "search_match_low_confidence",
+          message: search.errorCode
+            ? "来源搜索暂不可用。"
+            : "没有找到标题和博主均可信的来源链接。"
+        };
+        const memoryGeneration = {
+          captureAnalysis: await measureAsync(timings, "reviewGenerationMs", () => generateMemory({
+            evidence,
+            sourceStatus: "partial",
+            sourceTitle: result.source.title,
+            sourceAccount: result.source.account,
+            sourceUrl: "",
+            overviewBlocks: evidence,
+            focus: result.source.focus,
+            source: result.source,
+            link: null
+          })),
+          evidence
+        };
+        result.status = "completed";
+        applyMemoryGenerationResult(result, memoryGeneration);
+        reportProgress(onProgress, { stage: "completed", message: "截图记忆处理完成", percent: 100 });
+        timings.totalMs = Date.now() - flowStartedAt;
+        return result;
+      } catch {
+        // Preserve the existing confirmation fragment when screenshot-only
+        // generation cannot produce a contract-valid result.
+      }
+    }
     timings.totalMs = Date.now() - flowStartedAt;
     const response = {
       ...result,

@@ -143,6 +143,48 @@ test("returns visual/search result without a search provider", async () => {
   assert.match(result.query, /巫师财经/);
 });
 
+test("generates at most one evidence-bound card from visible screenshot text when source lookup misses", async () => {
+  const analysis = captureAnalysisFixture({
+    sourceStatus: "partial",
+    evidenceId: "screenshot-visible"
+  });
+  analysis.memoryCard.sourceUrl = "";
+  const result = await runImageFlow({
+    imagePath: "/tmp/douyin-map.jpg",
+    analyzeImage: async () => ({
+      provider: "test-vision",
+      model: "test-model",
+      text: "杭州地铁运营线路图\n1号线\n5号线",
+      lines: ["杭州地铁运营线路图", "1号线", "5号线"],
+      identity: {
+        platform: "douyin",
+        contentKind: "video",
+        title: "",
+        account: "",
+        timestampSeconds: null,
+        locatorTerms: ["杭州地铁"],
+        visibleTextLines: ["杭州地铁运营线路图", "1号线", "5号线"],
+        confidence: 0.88
+      }
+    }),
+    searcher: async (query) => ({ provider: "tikhub", query, results: [] }),
+    generateMemory: async (input) => {
+      assert.equal(input.sourceStatus, "partial");
+      assert.equal(input.sourceUrl, "");
+      assert.equal(input.evidence.length, 1);
+      assert.equal(input.evidence[0].id, "screenshot-visible");
+      return analysis;
+    }
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.sourceFallback, true);
+  assert.equal(result.captureAnalysis.disposition, "create_card");
+  assert.equal(result.memoryCards.length, 1);
+  assert.deepEqual(result.memoryCards[0].sourceEvidenceIds, ["screenshot-visible"]);
+  assert.equal(result.source.url, "");
+});
+
 test("keeps only title, account, and explicit player timestamp from screenshot OCR", () => {
   const identity = extractScreenshotIdentity([
     "18:35",

@@ -129,8 +129,8 @@ function normalizeIdentity(output) {
   if (!identity.visibleTextLines.includes(identity.title) && identity.title) {
     identity.visibleTextLines.push(identity.title);
   }
-  if (identity.platform !== "unknown" && !identity.title) {
-    throw visionError("screenshot_title_missing", "没有从截图中识别到可信的内容标题。");
+  if (identity.platform !== "unknown" && !identity.title && identity.visibleTextLines.length === 0) {
+    throw visionError("screenshot_content_missing", "没有从截图中识别到可信的可见内容。");
   }
   return identity;
 }

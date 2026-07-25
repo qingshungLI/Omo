@@ -55,6 +55,23 @@ test("normalizes Douyin screenshots without inventing source details", () => {
   assert.equal(identity.confidence, 1);
 });
 
+test("allows a platform screenshot with visible knowledge text but no explicit title", () => {
+  const identity = normalizeScreenshotIdentity({
+    platform: "douyin",
+    contentKind: "video",
+    title: "",
+    account: "",
+    timestampSeconds: null,
+    locatorTerms: ["杭州地铁"],
+    visibleTextLines: ["杭州地铁运营线路图", "1号线", "5号线"],
+    confidence: 0.88
+  });
+
+  assert.equal(identity.platform, "douyin");
+  assert.equal(identity.title, "");
+  assert.deepEqual(identity.visibleTextLines, ["杭州地铁运营线路图", "1号线", "5号线"]);
+});
+
 test("does not treat a publication date as a player timestamp", () => {
   const identity = normalizeScreenshotIdentity({
     platform: "bilibili",

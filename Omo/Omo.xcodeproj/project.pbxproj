@@ -10,6 +10,7 @@
 		FA70C00C2FC000000000000C /* MockReviewServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA70C00D2FC000000000000D /* MockReviewServiceTests.swift */; };
 		FA70C00E2FC000000000000E /* APIClientDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA70C00F2FC000000000000F /* APIClientDecodingTests.swift */; };
 		FA70C0102FC0000000000010 /* DeviceIdentityStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA70C0112FC0000000000011 /* DeviceIdentityStoreTests.swift */; };
+		FA70C0162FC0000000000016 /* V2RealCaptureFixtureLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA70C0172FC0000000000017 /* V2RealCaptureFixtureLoaderTests.swift */; };
 		FA70C0122FC0000000000012 /* Pow in Frameworks */ = {isa = PBXBuildFile; productRef = FA70C0142FC0000000000014 /* Pow */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +30,7 @@
 		FA70C00D2FC000000000000D /* MockReviewServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockReviewServiceTests.swift; sourceTree = "<group>"; };
 		FA70C00F2FC000000000000F /* APIClientDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientDecodingTests.swift; sourceTree = "<group>"; };
 		FA70C0112FC0000000000011 /* DeviceIdentityStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentityStoreTests.swift; sourceTree = "<group>"; };
+		FA70C0172FC0000000000017 /* V2RealCaptureFixtureLoaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = V2RealCaptureFixtureLoaderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -82,6 +84,7 @@
 				FA70C00D2FC000000000000D /* MockReviewServiceTests.swift */,
 				FA70C00F2FC000000000000F /* APIClientDecodingTests.swift */,
 				FA70C0112FC0000000000011 /* DeviceIdentityStoreTests.swift */,
+				FA70C0172FC0000000000017 /* V2RealCaptureFixtureLoaderTests.swift */,
 			);
 			path = "OmoTests";
 			sourceTree = "<group>";
@@ -207,6 +210,7 @@
 				FA70C00C2FC000000000000C /* MockReviewServiceTests.swift in Sources */,
 				FA70C00E2FC000000000000E /* APIClientDecodingTests.swift in Sources */,
 				FA70C0102FC0000000000010 /* DeviceIdentityStoreTests.swift in Sources */,
+				FA70C0162FC0000000000016 /* V2RealCaptureFixtureLoaderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

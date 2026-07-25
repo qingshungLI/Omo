@@ -1043,7 +1043,7 @@ SwiftUI 第一版建议拆出：
   - `createFavoriteQuestion(chapterId:questionId:)`
   - `deleteFavoriteQuestion(id:)`
 
-`CaptureMemoryService` 是当前截图主链；Chapter、Review、Notification 和 Favorite service 只服务旧章节兼容。Xcode 可用 Fixture 验证 Codable 和状态恢复，但最终截图闭环必须切换到真实 HTTP 实现。前端集中迭代允许录制少量真实图片的 canonical `GET /api/memory-cards` 结果作为版本化 DEBUG Fixture；缓存不得包含图片字节、base64、密钥或完整模型响应。R / SR / SSR 视觉覆盖卡必须与 canonical disposition 分开标记，不得冒充模型正式判级。Schema、Prompt、模型或 Adapter 未变化时，普通 UI 改动默认复用该缓存，不重复调用真实 API。
+`CaptureMemoryService` 是当前截图主链；Chapter、Review、Notification 和 Favorite service 只服务旧章节兼容。Xcode 可用 Fixture 验证 Codable 和状态恢复，但最终截图闭环必须切换到真实 HTTP 实现。公开仓库中的 `cached-ui-memory-cards-v2.json` 只包含明确标记的合成 UI 演示内容，用于覆盖 R / SR / SSR 和三种 disposition；真实图片结果与评测报告仅保留在私有测试环境。任何缓存都不得包含图片字节、base64、密钥或完整模型响应。Schema、Prompt、模型或 Adapter 未变化时，普通 UI 改动默认复用合成缓存，不重复调用真实 API。
 
 ## 6. 当前限制
 
