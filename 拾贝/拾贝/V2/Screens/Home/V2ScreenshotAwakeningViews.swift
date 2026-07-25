@@ -1004,7 +1004,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             Spacer()
             V2RecallMascotView(state: .farewell, reduceMotion: reduceMotion)
                 .frame(width: 170, height: 170)
-            Text("毛球把记忆收好了")
+            Text("记忆已经收好了")
                 .font(.system(size: 25, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
             Text("下次需要时，它会带着这张卡回来。")
@@ -1113,7 +1113,7 @@ struct V2ScreenshotAwakeningFlowView: View {
 
             V2RecallMascotView(state: .turning, reduceMotion: reduceMotion)
                 .frame(width: 92, height: 92)
-                .accessibilityLabel("毛球正在等待你的选择")
+                .accessibilityLabel("记忆伙伴正在等待你的选择")
 
             Text("记忆已修复并入册")
                 .font(.system(size: 25, weight: .bold))
@@ -1161,7 +1161,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             .accessibilityHint(
                 currentIndex + 1 < session.cards.count
                     ? "只取回下一张，完成后仍可停止"
-                    : "让毛球把这张卡收好"
+                    : "把这张卡先收好"
             )
 
             Button("先收好", action: stowAndClose)
@@ -1365,7 +1365,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             return "保留当前选择并重试，不会重复记录。"
         }
         switch assessment {
-        case .remembered: "毛球记下了这次主动重建。"
+        case .remembered: "这次主动重建已经记录好了。"
         case .fuzzy: "系统会把它安排在更合适的时间再次出现。"
         case .forgot: "记忆不会被惩罚，只会更早回来。"
         case nil: "正在处理这次复习。"

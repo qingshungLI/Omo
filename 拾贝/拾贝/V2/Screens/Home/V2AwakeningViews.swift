@@ -96,8 +96,8 @@ struct V2AwakeningHomeView: View {
                         .frame(width: 102, height: 102)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Recallo 毛球")
-                    .accessibilityHint("轻点查看毛球回应")
+                    .accessibilityLabel("Recallo 记忆伙伴")
+                    .accessibilityHint("轻点查看它的回应")
                     .animation(
                         reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.7),
                         value: isMascotReacting
