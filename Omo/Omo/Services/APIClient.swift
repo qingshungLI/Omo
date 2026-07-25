@@ -4,12 +4,18 @@ struct APIClient {
     #if DEBUG
     static let localBaseURL = URL(string: "http://127.0.0.1:5173")!
     static var defaultBaseURL: URL {
-        launchArgumentBaseURL ?? productionBaseURL
+        launchArgumentBaseURL ?? localBaseURL
     }
     #else
     static let defaultBaseURL = APIClient.productionBaseURL
     #endif
-    static let productionBaseURL = URL(string: "https://shibei-production.up.railway.app")!
+    static let productionBaseURL: URL = {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "OmoAPIBaseURL") as? String,
+              let url = URL(string: value) else {
+            return URL(string: "https://api.example.com")!
+        }
+        return url
+    }()
 
     #if DEBUG
     private static var launchArgumentBaseURL: URL? {
