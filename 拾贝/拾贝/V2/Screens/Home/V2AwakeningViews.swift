@@ -503,22 +503,14 @@ struct V2RecallMascotView: View {
                     .offset(x: state == .carrying ? -1 : 34, y: state == .carrying ? 30 : 32)
             }
 
-            Image(assetName)
+            Image("RecallMascotShell")
                 .resizable()
                 .renderingMode(.original)
                 .scaledToFit()
-                .scaleEffect(x: mirrored ? -1 : 1, y: 1)
                 .scaleEffect(scale)
                 .rotationEffect(.degrees(rotation))
                 .offset(offset)
                 .opacity(state == .sleeping ? 0.82 : 1)
-
-            if state == .farewell {
-                Image(systemName: "hand.wave.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(V2Color.primary)
-                    .offset(x: 36, y: -2)
-            }
         }
         .scaleEffect(reduceMotion ? 1 : idlePulse ? 1.025 : 1)
         .animation(
@@ -543,23 +535,6 @@ struct V2RecallMascotView: View {
             }
         }
         .accessibilityHidden(true)
-    }
-
-    private var assetName: String {
-        switch state {
-        case .idle, .reacting, .watching:
-            return "RecallMascotShell"
-        case .sleeping:
-            return "RecalloMascotIdle"
-        case .turning, .rummaging, .farewell:
-            return "RecalloMascotTilt"
-        case .carrying:
-            return "RecalloMascotHop"
-        case .acknowledging:
-            return "RecalloMascotSuccess"
-        case .thinking:
-            return "RecalloMascotThinking"
-        }
     }
 
     private var scale: CGFloat {
@@ -590,10 +565,6 @@ struct V2RecallMascotView: View {
         case .sleeping: return CGSize(width: 0, height: 11)
         default: return .zero
         }
-    }
-
-    private var mirrored: Bool {
-        state == .turning || state == .farewell
     }
 }
 

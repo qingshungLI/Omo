@@ -15,7 +15,8 @@ const files = {
   tabScreens: resolve(repoRoot, "拾贝/拾贝/V2/Screens/Tabs/V2TabScreens.swift"),
   v2Root: resolve(repoRoot, "拾贝/拾贝/V2/V2RootView.swift"),
   apiClient: resolve(repoRoot, "拾贝/拾贝/Services/APIClient.swift"),
-  apiClientTests: resolve(repoRoot, "拾贝/拾贝Tests/APIClientDecodingTests.swift")
+  apiClientTests: resolve(repoRoot, "拾贝/拾贝Tests/APIClientDecodingTests.swift"),
+  webDemo: resolve(repoRoot, "docs/ios-app-demo.html")
 };
 
 const source = Object.fromEntries(
@@ -59,6 +60,19 @@ const recallPhaseSource = extractBetween(
   source.awakeningViews,
   "enum V2RecallPresentationPhase",
   "enum V2RecallMascotState"
+);
+const mascotViewSource = extractBetween(
+  source.awakeningViews,
+  "struct V2RecallMascotView",
+  "struct V2AdaptiveRecallMascotView"
+);
+const iosMascotAssetPath = resolve(
+  repoRoot,
+  "拾贝/拾贝/Assets.xcassets/RecallMascotShell.imageset/IP1-1.svg"
+);
+const webMascotAssetPath = resolve(
+  repoRoot,
+  "docs/app-demo-assets/mascot-v06/IP1-1.svg"
 );
 const repairingLandingSource = extractBetween(
   source.screenshotAwakeningViews,
@@ -237,7 +251,20 @@ const checks = [
   check(
     "recall_mascot_has_ten_states",
     /enum V2RecallMascotState[\s\S]*case idle[\s\S]*case reacting[\s\S]*case turning[\s\S]*case rummaging[\s\S]*case carrying[\s\S]*case watching[\s\S]*case acknowledging[\s\S]*case thinking[\s\S]*case sleeping[\s\S]*case farewell/.test(source.awakeningViews),
-    "Five bundled poses must be composed into ten semantic mascot states."
+    "The single official IP1 mascot must be composed into ten semantic states."
+  ),
+  check(
+    "recall_mascot_uses_ip1_without_mirroring",
+    existsSync(iosMascotAssetPath)
+      && existsSync(webMascotAssetPath)
+      && readFileSync(iosMascotAssetPath).equals(readFileSync(webMascotAssetPath))
+      && mascotViewSource.includes('Image("RecallMascotShell")')
+      && !/RecalloMascot(?:Idle|Tilt|Thinking|Hop|Success)/.test(mascotViewSource)
+      && !/\bmirrored\b|scaleEffect\(x:\s*-1/.test(mascotViewSource)
+      && source.webDemo.includes('app-demo-assets/mascot-v06/IP1-1.svg')
+      && !source.webDemo.includes('recallo-mascot-${asset}.png')
+      && !/scaleX\(\s*-1|rotateY\(\s*180|matrix\(\s*-1/.test(source.webDemo),
+    "iOS and Web must render byte-identical IP1-1.svg for every mascot state and must never mirror or switch to legacy pose PNGs."
   ),
   check(
     "scratch_reveal_uses_canvas_grid_threshold",
