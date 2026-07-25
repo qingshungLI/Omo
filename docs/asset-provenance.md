@@ -2,7 +2,7 @@
 
 > 版本：v0.6
 >
-> 日期：2026-07-24
+> 日期：2026-07-25
 >
 > 对应规格：[`recallo-v06-motion-and-assets.md`](./recallo-v06-motion-and-assets.md) §7
 >
@@ -22,7 +22,7 @@
 | --- | --- |
 | `reuse_as_is` | 尺寸、背景、状态表达和许可证均满足组件需要 |
 | `reuse_with_crop_or_recolor` | 只需裁切、去背景、调色或压缩即可投入使用 |
-| `rebuild_in_code` | 复用已有姿态，以 SwiftUI / CSS 的位移、旋转、缩放、镜像、代码卡片或粒子组合出新情境 |
+| `rebuild_in_code` | 复用同一官方角色，以 SwiftUI / CSS 的位移、等比缩放、轻旋转、节奏、代码卡片或粒子组合出新情境；不得镜像 |
 | `generate_only_if_missing` | 关键状态没有可用素材，且代码重组仍无法清楚表达时才生成 |
 
 处理顺序固定为：仓库已有素材 → 用户提供并授权素材 → 已登记开源素材 → 关键缺口生成。禁止因为“看起来更统一”而重复生成已具备的动作。
@@ -36,11 +36,11 @@
 | `拾贝/拾贝/Assets.xcassets/` | iOS 全部图标、吉祥物、装饰图、头像预设（V2*、Tab*、AppIcon 等） | iOS App 界面 | 项目原创，仓库自有 |
 | `docs/app-demo-assets/*.svg`（16 个文件） | v0.5 Web 演示的导航图标、吉祥物、背景装饰 | v0.5 `ios-app-demo.html` 历史资产；v0.6 导航改用已登记的 Phosphor 文件 | 项目原创，仓库自有 |
 | `docs/product-exploration/assets/*.png`（5 个文件） | v0.5 概念图，以及 v0.6 今日、召回、知识库三张验收截图 | PRD 历史视觉参考与 v0.6 验收记录 | 项目原创，仓库自有 |
-| `docs/app-demo-assets/mascot-v06/*.png` | v0.6 毛球角色透明姿态表及站立、思考、侧头、起跳、成功 5 个切片 | Web 预览、设计核对 | 依据用户提供的情绪与比例参考重新生成的项目原创资产 |
-| `拾贝/拾贝/Assets.xcassets/RecalloMascot*.imageset/` | 与 Web 同源的 5 个毛球姿态 | iOS App | 项目原创，仓库自有 |
+| `docs/app-demo-assets/mascot-v06/*.png` | v0.6 早期角色姿态表及 5 个切片 | 历史设计核对与验证证据；当前 Web 运行时不引用 | 依据用户提供的情绪与比例参考生成的项目历史资产 |
+| `拾贝/拾贝/Assets.xcassets/RecalloMascot*.imageset/` | 与早期 Web 同源的 5 个角色姿态 | 历史兼容资源；当前 iOS 宠物位不引用 | 项目原创，仓库自有 |
 | `docs/ios-app-demo.html` 内联 CSS | 卡面、铅笔涂鸦遮盖层、触控与 Reduce Motion 降级 | v0.6 Web 交互预览 | 项目原创，仓库自有 |
 
-本轮十个情境状态默认采用 `rebuild_in_code`：复用上述 5 个透明姿态，通过位移、旋转、镜像、缩放、代码原生文件夹 / 卡片和已登记粒子组合为 `idle`、`reacting`、`turning`、`rummaging`、`carrying`、`watching`、`acknowledging`、`thinking`、`sleeping`、`farewell`。没有新增角色位图时，不重复登记同一素材。
+当前十个情境状态统一以用户授权的 `Pick The Shell/IP1-1.svg` 为唯一角色画面，通过位移、等比缩放、轻旋转、节奏、代码原生文件夹 / 卡片和已登记粒子组合为 `idle`、`reacting`、`turning`、`rummaging`、`carrying`、`watching`、`acknowledging`、`thinking`、`sleeping`、`farewell`。禁止镜像、切换旧姿态 PNG、重绘或重新生成角色；旧 PNG 保留只是为了兼容和历史验证。
 
 ### 2.2 第三方素材
 
@@ -57,7 +57,7 @@
 
 | 原文件 → Asset 名 | 处理方式 | 实际用途 / 技术说明 |
 | --- | --- | --- |
-| `IP1-1.svg` → `RecallMascotShell` | `reuse_as_is` | 首页/召回伙伴形象；原 SVG 为 raster-in-SVG，未声明矢量保留 |
+| `IP1-1.svg` → `RecallMascotShell`；Web 同字节副本 `docs/app-demo-assets/mascot-v06/IP1-1.svg` | `reuse_as_is` | iOS 开屏、全部宠物位与 Web 演示的唯一角色画面；原 SVG 为 raster-in-SVG，未声明矢量保留 |
 | `收藏夹-1.svg` → `RecallFolder` | `reuse_with_crop_or_recolor` | 首页记忆卡文件夹；原 SVG 为 raster-in-SVG，未声明矢量保留 |
 | `题卡组.svg` → `RecallCardStack` | `reuse_as_is` | 首页可拖动的召回卡叠；保留矢量表示 |
 | `题卡-1.svg` → `RecallCardSurface` | `reuse_as_is` | 卡叠前景纸面；保留矢量表示 |
@@ -71,7 +71,7 @@
 
 | 素材 | 状态与授权 | 当前决策 |
 | --- | --- | --- |
-| 用户在 2026-07-24 对话中提供的毛球动作表、三视图、六场景配色图和刮卡示意图 | 用户明确授权本项目直接裁切、去背景、调色、组合和复用 | `considered`；本轮先用仓库透明姿态做 `rebuild_in_code`，只有关键状态表达不足时才导入派生文件 |
+| 用户在 2026-07-24 对话中提供的毛球动作表、三视图、六场景配色图和刮卡示意图 | 用户明确授权本项目直接裁切、去背景、调色、组合和复用 | `considered`；仅作为历史视觉参考。当前官方角色已冻结为 `IP1-1.svg`，不再从这些图生成或裁切新的宠物姿态 |
 | [Agent UI Atlas](https://github.com/starvingarc/agent-ui-atlas) | Atlas 汇编内容为 CC BY 4.0；其中链接项目、截图、品牌与素材仍按各自许可证 | 仅作设计检索索引，提炼留白、材质、线条与可打断动效原则；不导入 Atlas 或其链接项目素材 |
 
 当前没有处于 `considered` 状态的第三方运行时素材；新增候选必须先登记后导入。
@@ -95,13 +95,15 @@
 
 ## 6. 当前核对基线（v0.6）
 
-- Web 端：只引用仓库内的原创毛球 PNG 与 5 个 Phosphor 原始 SVG，无外链字体、图片或脚本；
-- iOS 端：Pow 精确锁定 `1.0.6`；只使用已登记的原创毛球与 3 个 Kenney 粒子；
-- 十个毛球情境状态通过 5 个现有透明姿态与代码原生组件组合，不新增重复角色位图；
+- Web 端：所有宠物状态只引用 `docs/app-demo-assets/mascot-v06/IP1-1.svg` 与 5 个 Phosphor 原始 SVG，无外链字体、图片或脚本；
+- iOS 端：开屏及全部宠物位只通过 `RecallMascotShell` 引用 `IP1-1.svg`；Pow 精确锁定 `1.0.6`，粒子只使用 3 个已登记 Kenney 文件；
+- 十个毛球情境状态通过同一 `IP1-1.svg` 和代码原生位移、等比缩放、轻旋转及节奏组合；禁止镜像，不新增或切换角色位图；
 - 用户参考图与 Agent UI Atlas 均未被整包导入；如后续产生实际派生文件，必须在本表补原文件、处理方式与校验值；
 - 全仓库无 Lottie（`.json` 动效）、无 Rive（`.riv`）文件。
 
 ## 7. 文件校验值（SHA-256）
+
+下列旧姿态 PNG 校验值保留为历史验证证据；当前 Web 与 iOS 运行时均不把它们作为宠物状态来源。
 
 | 文件 | SHA-256 |
 | --- | --- |
@@ -126,6 +128,7 @@
 | 文件 | SHA-256 |
 | --- | --- |
 | `RecallMascotShell.imageset/IP1-1.svg` | `94c141133f0ad3e548a5d674eddb50ab294a256533ca92fd1fee0fda9f50b6a8` |
+| `docs/app-demo-assets/mascot-v06/IP1-1.svg` | `94c141133f0ad3e548a5d674eddb50ab294a256533ca92fd1fee0fda9f50b6a8` |
 | `RecallFolder.imageset/收藏夹-1.svg` | `f3fbcbc4210aee8da0a03bf02252bdb09f54f794f450ebf0c8aefb1be09dd73b` |
 | `RecallCardStack.imageset/题卡组.svg` | `ffe512a2d7324ce85e36ee581a399823e005601d16d2b655cbe063d5d5ff8a75` |
 | `RecallCardSurface.imageset/题卡-1.svg` | `aab7aff8bae3a21d7b7c0df96442fa633f42deaa047a1d07840b45e92c03a831` |
