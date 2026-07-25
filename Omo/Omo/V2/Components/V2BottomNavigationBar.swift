@@ -5,10 +5,9 @@ struct V2BottomNavigationBar: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: V2BottomNavMetrics.capsuleRadius, style: .continuous)
-                .fill(V2Color.surfaceNav)
+            Color.clear
                 .frame(width: V2BottomNavMetrics.capsuleSize.width, height: V2BottomNavMetrics.capsuleSize.height)
-                .v2Shadow()
+                .omoPaperSurface(.floating, cornerRadius: V2BottomNavMetrics.capsuleRadius)
 
             HStack(spacing: 0) {
                 ForEach(V2HomeTab.visibleTabs) { tab in
@@ -16,7 +15,7 @@ struct V2BottomNavigationBar: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            .frame(width: V2BottomNavMetrics.capsuleSize.width - 22)
+            .frame(width: V2BottomNavMetrics.capsuleSize.width - 18)
         }
         .frame(width: V2BottomNavMetrics.designSize.width, height: V2BottomNavMetrics.designSize.height)
     }
@@ -32,19 +31,21 @@ struct V2BottomNavigationBar: View {
 }
 
 enum V2BottomNavPlacement {
-    static let bottomPadding: CGFloat = 12
+    static let bottomPadding: CGFloat = 9
 }
 
 private enum V2BottomNavMetrics {
-    static let designSize = CGSize(width: 357, height: 94)
-    static let capsuleSize = CGSize(width: 349, height: 86)
-    static let capsuleRadius: CGFloat = 29
+    static let designSize = CGSize(width: 357, height: 84)
+    static let capsuleSize = CGSize(width: 339, height: 72)
+    static let capsuleRadius: CGFloat = 25
 }
 
 struct V2BottomNavItem: View {
     let tab: V2HomeTab
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -53,18 +54,37 @@ struct V2BottomNavItem: View {
                     Image(assetName)
                         .resizable()
                         .renderingMode(.original)
-                        .frame(width: 32, height: 32)
+                        .scaledToFit()
+                        .frame(width: 27, height: 27)
                 }
 
                 Text(tab.title)
                     .font(V2Typography.navLabel)
                     .foregroundStyle(isSelected ? V2Color.primary : V2Color.textPrimary)
-                    .frame(height: 16)
+                    .frame(height: 15)
             }
-            .frame(width: 56, height: 58)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(V2Color.pageGreenBackground.opacity(0.72))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(V2Color.primary.opacity(0.22), lineWidth: 0.8)
+                        }
+                        .padding(.horizontal, 4)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(OmoPressableButtonStyle())
+        .animation(
+            reduceMotion
+                ? .linear(duration: 0.10)
+                : .spring(response: 0.28, dampingFraction: 0.82),
+            value: isSelected
+        )
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier("v2.tab.\(tab.id)")

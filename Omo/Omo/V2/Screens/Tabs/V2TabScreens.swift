@@ -25,7 +25,7 @@ struct V2TabScaffold<Content: View>: View {
                     ScrollView(showsIndicators: false) {
                         content()
                             .v2PageColumn()
-                            .padding(.top, 28)
+                            .padding(.top, 20)
                             .padding(.bottom, 128)
                     }
                 }
@@ -62,13 +62,11 @@ struct V2MaterialsView: View {
     let resolveMemoryCardConfirmation: (String, CaptureMemoryCardConfirmationRequest) async throws -> CaptureMemoryCardConfirmationResponse
     let deleteMemoryCard: (String) async throws -> Void
 
-    @Environment(\.accessibilityReduceMotion)
-    private var reduceMotion
-
     @State private var selectedConfirmationCard: V2CapturedMemoryCard?
     @State private var pendingMemoryCardDeletion: V2CapturedMemoryCard?
     @State private var deletingMemoryCardID: String?
     @State private var memoryCardDeletionError = ""
+    @State private var isLegacySectionExpanded = false
 
     var body: some View {
         V2TabScaffold(selectedTab: $selectedTab, title: "知识库") {
@@ -100,63 +98,33 @@ struct V2MaterialsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 12)
-                }
-
-                ZStack(alignment: .topTrailing) {
-                    V2GeneratedChaptersSummaryCard(count: generatedChapterCount)
-                        .padding(.top, 54)
-
-                    V2RecallMascotView(state: .carrying, reduceMotion: reduceMotion)
-                        .frame(
-                            width: V2MaterialsMascotMetrics.width,
-                            height: V2MaterialsMascotMetrics.height
-                        )
-                        .offset(
-                            x: V2MaterialsMascotMetrics.offsetX,
-                            y: V2MaterialsMascotMetrics.offsetY
-                        )
-                        .opacity(0.98)
-                        .allowsHitTesting(false)
-                }
-                .padding(.bottom, 16)
-
-                if showsGeneratingChapterCard {
-                    Button {
-                        openGeneratingChapter(backendChapters.first?.id)
-                    } label: {
-                        V2ChapterCard(
-                            title: generatingChapterTitle,
-                            status: generatingChapterStatus,
-                            source: "网页文章",
-                            knowledgeCount: 0,
-                            questionCount: 0,
-                            generationProgressText: generatingProgressText
-                        )
+                } else {
+                    V2MemoryLibraryEmptyState {
+                        selectedTab = .upload
                     }
-                    .buttonStyle(.plain)
-                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                ForEach(backendChapters.filter { !showsGeneratingChapterCard || $0.id != backendChapters.first?.id }) { chapter in
-                    Button {
-                        if chapter.isV2GenerationPending || chapter.isV2GenerationFailed {
-                            openGeneratingChapter(chapter.id)
-                        } else {
-                            openChapter(chapter.id)
+                if hasLegacyChapterContent {
+                    DisclosureGroup(isExpanded: $isLegacySectionExpanded) {
+                        VStack(spacing: 12) {
+                            legacyChapterCards
                         }
+                        .padding(.top, 14)
                     } label: {
-                        V2ChapterCard(
-                            title: chapter.title,
-                            status: listStatus(for: chapter),
-                            source: chapter.sourceLabel,
-                            knowledgeCount: chapter.units?.count ?? 0,
-                            questionCount: chapter.questionCount,
-                            generationProgressText: chapter.progress?.displayTextOrFallback ?? chapter.displayStatusText
-                        )
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("旧版章节")
+                                .font(.headline)
+                                .foregroundStyle(V2Color.textPrimary)
+                            Text(legacyChapterSummary)
+                                .font(.caption)
+                                .foregroundStyle(V2Color.textMuted)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    .tint(V2Color.primary)
+                    .padding(16)
+                    .omoPaperSurface(.flat, cornerRadius: 17)
+                    .accessibilityHint("默认收起，不影响记忆卡浏览")
                 }
-
             }
         }
         .alert(item: $pendingMemoryCardDeletion) { captured in
@@ -194,6 +162,88 @@ struct V2MaterialsView: View {
     private func listStatus(for chapter: V2BackendChapter) -> V2ChapterReviewStatus {
         chapter.v2ListStatus(hasCompletedReviewOnce: completedChapterIDs.contains(chapter.id) || chapter.hasCompletedV2ReviewOnce)
     }
+
+    private var hasLegacyChapterContent: Bool {
+        showsGeneratingChapterCard || !backendChapters.isEmpty
+    }
+
+    private var legacyChapterSummary: String {
+        if showsGeneratingChapterCard {
+            return backendChapters.isEmpty ? "1 个章节正在生成" : "\(backendChapters.count) 个章节，其中有内容正在生成"
+        }
+        return "\(backendChapters.count) 个历史章节"
+    }
+
+    @ViewBuilder
+    private var legacyChapterCards: some View {
+        if showsGeneratingChapterCard {
+            Button {
+                openGeneratingChapter(backendChapters.first?.id)
+            } label: {
+                V2ChapterCard(
+                    title: generatingChapterTitle,
+                    status: generatingChapterStatus,
+                    source: "网页文章",
+                    knowledgeCount: 0,
+                    questionCount: 0,
+                    generationProgressText: generatingProgressText
+                )
+            }
+            .buttonStyle(.plain)
+        }
+
+        ForEach(backendChapters.filter { !showsGeneratingChapterCard || $0.id != backendChapters.first?.id }) { chapter in
+            Button {
+                if chapter.isV2GenerationPending || chapter.isV2GenerationFailed {
+                    openGeneratingChapter(chapter.id)
+                } else {
+                    openChapter(chapter.id)
+                }
+            } label: {
+                V2ChapterCard(
+                    title: chapter.title,
+                    status: listStatus(for: chapter),
+                    source: chapter.sourceLabel,
+                    knowledgeCount: chapter.units?.count ?? 0,
+                    questionCount: chapter.questionCount,
+                    generationProgressText: chapter.progress?.displayTextOrFallback ?? chapter.displayStatusText
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct V2MemoryLibraryEmptyState: View {
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
+    let onAddContent: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            OmoMascotPoseView(pose: .dazed, reduceMotion: reduceMotion)
+                .frame(width: 92, height: 92)
+                .accessibilityHidden(true)
+
+            Text("还没有记忆卡")
+                .font(.headline)
+                .foregroundStyle(V2Color.textPrimary)
+
+            Text("添加一张截图，哦莫会把值得记住的内容带回来。")
+                .font(.subheadline)
+                .foregroundStyle(V2Color.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            V2PrimaryActionButton(title: "添加一张截图", action: onAddContent)
+                .padding(.top, 4)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .omoPaperSurface(.flat, cornerRadius: 20)
+        .accessibilityElement(children: .contain)
+    }
 }
 
 private struct V2MemoryLibraryCard: View {
@@ -204,48 +254,46 @@ private struct V2MemoryLibraryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                libraryStatusBadge
-                Spacer()
-                if captured.isReadyForReview {
-                    Text("掌握 · \(captured.masteryStage.title)")
-                        .font(V2Typography.caption)
-                        .foregroundStyle(V2Color.textMuted)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    libraryStatusBadge
+                    Spacer(minLength: 8)
+                    masteryLabel
+                    cardMenu
                 }
-                Button(action: onDelete) {
-                    Image(systemName: isDeleting ? "hourglass" : "trash")
-                        .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        libraryStatusBadge
+                        Spacer(minLength: 8)
+                        cardMenu
+                    }
+                    masteryLabel
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(V2Color.textMuted)
-                .disabled(isDeleting)
-                .accessibilityLabel("删除这条记忆")
             }
 
             Text(captured.card.coreKnowledge)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(V2Color.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 5) {
-                Image(systemName: sourceSymbol)
-                Text(sourceTitle)
-                    .lineLimit(1)
-                Spacer()
-                if captured.isReadyForReview, let schedule = captured.schedule {
-                    Text(schedule.displayText)
-                        .lineLimit(1)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 5) {
+                    sourceLabel
+                    Spacer(minLength: 8)
+                    scheduleLabel
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    sourceLabel
+                    scheduleLabel
                 }
             }
-            .font(V2Typography.caption)
+            .font(.caption)
             .foregroundStyle(V2Color.textMuted)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .fill(V2Color.surfaceCream)
-                .v2Shadow()
-        )
+        .omoPaperSurface(.raised, cornerRadius: 17)
         .accessibilityElement(children: .contain)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -256,6 +304,10 @@ private struct V2MemoryLibraryCard: View {
             guard captured.disposition == .needsConfirmation else { return }
             onOpenConfirmation()
         }
+        .accessibilityAction(named: "删除这条记忆") {
+            guard !isDeleting else { return }
+            onDelete()
+        }
         .accessibilityHint(
             captured.disposition == .needsConfirmation
                 ? "打开待确认内容，可编辑后加入复习或仅存档"
@@ -265,6 +317,46 @@ private struct V2MemoryLibraryCard: View {
             "\(captured.card.coreKnowledge)，\(libraryStatusAccessibilityTitle)，\(sourceTitle)"
         )
         .accessibilityIdentifier("v2.library.card.\(captured.id)")
+    }
+
+    @ViewBuilder
+    private var masteryLabel: some View {
+        if captured.isReadyForReview {
+            Text("掌握 · \(captured.masteryStage.title)")
+                .font(.caption)
+                .foregroundStyle(V2Color.textMuted)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    private var cardMenu: some View {
+        Menu {
+            Button(role: .destructive, action: onDelete) {
+                Label("删除这条记忆", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: isDeleting ? "hourglass" : "ellipsis")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(V2Color.textMuted)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .disabled(isDeleting)
+        .accessibilityLabel("更多操作")
+        .accessibilityHint("包含删除这条记忆")
+    }
+
+    private var sourceLabel: some View {
+        Label(sourceTitle, systemImage: sourceSymbol)
+            .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private var scheduleLabel: some View {
+        if captured.isReadyForReview, let schedule = captured.schedule {
+            Text(schedule.displayText)
+                .lineLimit(1)
+        }
     }
 
     @ViewBuilder
@@ -368,22 +460,22 @@ private struct V2CaptureConfirmationSheet: View {
 
                     VStack(spacing: 10) {
                         V2PrimaryActionButton(
-                            title: isSubmitting ? "正在保存…" : "确认并加入复习",
+                            title: isSubmitting ? "正在保存…" : "编辑后确认",
                             tone: canConfirm && !isSubmitting ? .normal : .disabled
                         ) {
                             submit(.confirm)
                         }
                         .accessibilityIdentifier("v2.confirmation.confirm")
 
-                        Button("仅存档，不进入复习") {
+                        Button("仅存档") {
                             submit(.archive)
                         }
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.body.weight(.semibold))
                         .foregroundStyle(V2Color.textSecondary)
                         .disabled(isSubmitting)
                         .accessibilityIdentifier("v2.confirmation.archive")
 
-                        Button("删除这条内容", role: .destructive) {
+                        Button("删除", role: .destructive) {
                             showsDeleteAlert = true
                         }
                         .font(V2Typography.captionEmphasis)
@@ -395,6 +487,7 @@ private struct V2CaptureConfirmationSheet: View {
                 .frame(maxWidth: V2Layout.contentMaxWidth, alignment: .leading)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 18)
+                .safeAreaPadding(.bottom, 16)
             }
             .background(V2Color.pageGreenBackground.ignoresSafeArea())
             .navigationTitle("确认要记住的内容")
@@ -419,18 +512,21 @@ private struct V2CaptureConfirmationSheet: View {
 
     private var sourceSummary: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Label(sourceStatusTitle, systemImage: sourceStatusSymbol)
-                    .font(V2Typography.captionEmphasis)
-                    .foregroundStyle(V2Color.primary)
-                Spacer()
-                Text("待确认")
-                    .font(V2Typography.captionEmphasis)
-                    .foregroundStyle(V2Color.textSecondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    sourceStatusLabel
+                    Spacer(minLength: 8)
+                    confirmationStatusLabel
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    sourceStatusLabel
+                    confirmationStatusLabel
+                }
             }
 
             Text(captured.card.sourceTitle ?? "来自这张截图")
-                .font(.system(size: 17, weight: .semibold))
+                .font(.headline)
                 .foregroundStyle(V2Color.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -438,7 +534,7 @@ private struct V2CaptureConfirmationSheet: View {
                 .font(V2Typography.captionEmphasis)
                 .foregroundStyle(V2Color.textMuted)
             Text(confirmationReason)
-                .font(.system(size: 15))
+                .font(.body)
                 .foregroundStyle(V2Color.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -449,6 +545,18 @@ private struct V2CaptureConfirmationSheet: View {
                 .v2Shadow()
         )
         .accessibilityElement(children: .combine)
+    }
+
+    private var sourceStatusLabel: some View {
+        Label(sourceStatusTitle, systemImage: sourceStatusSymbol)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(V2Color.primary)
+    }
+
+    private var confirmationStatusLabel: some View {
+        Text("待确认")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(V2Color.textSecondary)
     }
 
     private var retainedContentEditor: some View {
@@ -462,7 +570,7 @@ private struct V2CaptureConfirmationSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             TextEditor(text: $coreKnowledge)
-                .font(.system(size: 16))
+                .font(.body)
                 .foregroundStyle(V2Color.textPrimary)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 112)
@@ -499,7 +607,7 @@ private struct V2CaptureConfirmationSheet: View {
                         Image(systemName: selectedEvidenceID == item.id ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(V2Color.primary)
                         Text(item.text)
-                            .font(.system(size: 15))
+                            .font(.body)
                             .foregroundStyle(V2Color.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
@@ -598,13 +706,6 @@ private struct V2CaptureConfirmationSheet: View {
     }
 }
 
-private enum V2MaterialsMascotMetrics {
-    static let width: CGFloat = 166
-    static let height: CGFloat = 138
-    static let offsetX: CGFloat = 10
-    static let offsetY: CGFloat = -6
-}
-
 private extension V2BackendChapter {
     var isV2GenerationPending: Bool {
         status != "completed" && !isV2GenerationFailed
@@ -671,7 +772,6 @@ struct V2GeneratingChapterDetailView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(height: 760)
         }
     }
 
@@ -1702,7 +1802,6 @@ struct V2GenerationFailureDetailView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(height: 760)
         }
     }
 
@@ -1956,7 +2055,7 @@ struct V2ProfileView: View {
     @AppStorage("v2.profilePresetAvatarName")
     private var profilePresetAvatarName = ""
     @AppStorage("v2.profileDisplayName")
-    private var profileDisplayName = "Cappy"
+    private var profileDisplayName = "哦莫用户"
 
     @Binding var usesMockData: Bool
     let allowsMockDataToggle: Bool
@@ -2030,7 +2129,7 @@ struct V2ProfileTabView: View {
     @AppStorage("v2.profilePresetAvatarName")
     private var profilePresetAvatarName = ""
     @AppStorage("v2.profileDisplayName")
-    private var profileDisplayName = "Cappy"
+    private var profileDisplayName = "哦莫用户"
 
     @Binding var selectedTab: V2HomeTab
     @Binding var usesMockData: Bool

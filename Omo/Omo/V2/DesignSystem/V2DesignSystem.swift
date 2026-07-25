@@ -13,6 +13,8 @@ enum V2Color {
     static let surfaceNav = Color(hex: 0xFCF8ED)
     static let surfaceCircleButton = Color(hex: 0xFDF9EE)
     static let uploadButtonFill = Color(hex: 0xE8E9C2)
+    /// Opaque sage paper for labels and evidence blocks over busy scenes.
+    static let surfaceSageTint = Color(hex: 0xF3F3D9)
     static let uploadButtonStroke = Color(hex: 0xFEFDFD)
     static let borderSoftGreen = Color(hex: 0xE0E5BA)
     static let decorativeLeaf = Color(hex: 0xDDE1AC)

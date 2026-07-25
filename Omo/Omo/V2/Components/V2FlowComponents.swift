@@ -26,7 +26,7 @@ struct V2PrimaryActionButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.headline.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .frame(height: height)
@@ -37,7 +37,7 @@ struct V2PrimaryActionButton: View {
                 )
         }
         .frame(maxWidth: V2Layout.contentMaxWidth)
-        .buttonStyle(.plain)
+        .buttonStyle(OmoPressableButtonStyle())
         .disabled(tone == .disabled)
     }
 }

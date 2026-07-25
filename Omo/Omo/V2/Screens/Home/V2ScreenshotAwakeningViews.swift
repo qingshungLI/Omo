@@ -97,7 +97,7 @@ private struct V2SourceContextSheetView: View {
                             .padding(16)
                             .background(
                                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(V2Color.pageGreenBackground.opacity(0.48))
+                                    .fill(V2Color.surfaceSageTint)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                                             .stroke(V2Color.primary.opacity(0.34), lineWidth: 1)
@@ -241,7 +241,7 @@ private struct V2SourceContextSheetView: View {
         .padding(15)
         .background(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(isFocus ? V2Color.pageGreenBackground.opacity(0.52) : V2Color.surfaceCream)
+                .fill(isFocus ? V2Color.surfaceSageTint : V2Color.surfaceCream)
                 .overlay(
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .stroke(
@@ -495,8 +495,11 @@ struct V2ScreenshotAwakeningFlowView: View {
     @State private var variantFeedback = ""
     @State private var assessmentError = ""
     @State private var assessmentTask: Task<Void, Never>?
-    @State private var recallCompanionState = V2RecallMascotState.watching
-    @State private var recallCompanionHasTilted = false
+    @State private var recallCompanionPose: OmoMascotPose = .dazed
+    @State private var recallCompanionHasConfused = false
+    @State private var feedbackPose: OmoMascotPose = .dazed
+    @State private var revealDebrisVisible = false
+    @State private var revealDebrisTicket = 0
     @State private var assessmentReactionTick = 0
     @State private var fuzzyBreathActive = false
     @State private var forgotReactionActive = false
@@ -681,7 +684,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         VStack(spacing: 28) {
             VStack(spacing: 8) {
                 Text("正在从你的过去召回")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(.title2, design: .rounded, weight: .bold))
                     .foregroundStyle(V2Color.textPrimary)
                 Text("一张旧内容正在回来")
                     .font(V2Typography.captionEmphasis)
@@ -776,10 +779,14 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .scaleEffect(summonCardScale)
                 .offset(summonCardOffset)
                 .rotationEffect(.degrees(summonCardRotation))
-                .opacity(summonCardOpacity)
                 .animation(
                     reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.8),
                     value: summonStage
+                )
+                .opacity(summonCardIsVisible ? 1 : 0)
+                .animation(
+                    reduceMotion ? nil : .easeOut(duration: 0.16),
+                    value: summonCardIsVisible
                 )
                 .changeEffect(
                     .shine(duration: 0.5),
@@ -799,7 +806,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                     }
                 }
 
-                V2RecallMascotView(state: mascotState, reduceMotion: reduceMotion)
+                summonMascotView
                     .frame(width: 98, height: 98)
                     .scaleEffect(summonMascotScale)
                     .offset(summonMascotOffset)
@@ -851,11 +858,10 @@ struct V2ScreenshotAwakeningFlowView: View {
         }
     }
 
-    private var summonCardOpacity: Double {
+    private var summonCardIsVisible: Bool {
         switch summonStage {
-        case .turn, .approach: 0
-        case .rummage: 0.48
-        default: 1
+        case .turn, .approach, .rummage, .carrying, .orbit: false
+        case .settle, .cue: true
         }
     }
 
@@ -873,33 +879,59 @@ struct V2ScreenshotAwakeningFlowView: View {
         summonStage == .rummage ? 0.94 : 1
     }
 
+    /// 召回序列：run→rummage→carry-return→卡片升起→approve。
+    /// 三段动作使用透明 PNG 图集（OmoFrameAtlasPlayer，阶段切换即中断）；
+    /// settle/cue 用姿态表派生 approve。carry-return 图集帧内自带空白卡，
+    /// 完整文字卡只在 settle/cue 以 100% 不透明出现，避免与图集空白卡重复。
+    @ViewBuilder
+    private var summonMascotView: some View {
+        switch summonStage {
+        case .turn, .approach:
+            OmoFrameAtlasPlayer(
+                assetName: "OmoMotionRunAtlas",
+                posterAssetName: "OmoMotionRunPoster",
+                columns: 6, rows: 6, frameCount: 32, fps: 24, loop: true
+            )
+        case .rummage:
+            OmoFrameAtlasPlayer(
+                assetName: "OmoMotionRummageAtlas",
+                posterAssetName: "OmoMotionRummagePoster",
+                columns: 6, rows: 6, frameCount: 32, fps: 24, loop: true
+            )
+        case .carrying, .orbit:
+            OmoFrameAtlasPlayer(
+                assetName: "OmoMotionCarryReturnAtlas",
+                posterAssetName: "OmoMotionCarryReturnPoster",
+                columns: 6, rows: 2, frameCount: 10, fps: 24, loop: false
+            )
+        case .settle, .cue:
+            OmoMascotPoseView(pose: .approve, reduceMotion: reduceMotion)
+        }
+    }
+
     private var rarityIsRevealed: Bool {
         summonStage == .settle || summonStage == .cue
     }
 
     private var formalCard: some View {
         VStack(spacing: 18) {
-            V2RecallMascotView(state: recallCompanionState, reduceMotion: reduceMotion)
+            OmoMascotPoseView(pose: recallCompanionPose, reduceMotion: reduceMotion)
                 .frame(width: 86, height: 86)
-                .accessibilityLabel("记忆伙伴安静陪你回想")
                 .task(id: currentCard.id) {
-                    recallCompanionState = .watching
-                    guard !recallCompanionHasTilted,
+                    // 安静注视陪伴；6.5 秒后最多一次 confused，不催促。
+                    recallCompanionPose = .dazed
+                    guard !recallCompanionHasConfused,
                           !reduceMotion,
                           !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
                     try? await Task.sleep(nanoseconds: 6_500_000_000)
                     guard !Task.isCancelled,
                           !isRevealed,
                           phase == .recall || phase == .scratching else { return }
-                    recallCompanionHasTilted = true
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
-                        recallCompanionState = .turning
-                    }
+                    recallCompanionHasConfused = true
+                    recallCompanionPose = .confused
                     try? await Task.sleep(nanoseconds: 460_000_000)
                     guard !Task.isCancelled else { return }
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        recallCompanionState = .watching
-                    }
+                    recallCompanionPose = .dazed
                 }
 
             VStack(alignment: .leading, spacing: 18) {
@@ -913,7 +945,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .padding(.vertical, 5)
                         .background(
                             Capsule()
-                                .fill(V2Color.pageGreenBackground.opacity(0.45))
+                                .fill(V2Color.surfaceSageTint)
                                 .overlay(
                                     Capsule()
                                         .stroke(V2Color.primary.opacity(0.35), lineWidth: 1)
@@ -931,7 +963,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                     .foregroundStyle(V2Color.textMuted)
 
                 Text(currentCard.card.recallCue)
-                    .font(.system(size: 23, weight: .bold))
+                    .font(.system(.title3, design: .rounded, weight: .bold))
                     .foregroundStyle(V2Color.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -955,6 +987,14 @@ struct V2ScreenshotAwakeningFlowView: View {
                     }
                     .v2Shadow()
             )
+            .overlay {
+                if revealDebrisVisible, !reduceMotion {
+                    V2RevealYarnDebrisView()
+                        .offset(y: 52)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
 
             if isRevealed {
                 assessmentButtons
@@ -986,6 +1026,13 @@ struct V2ScreenshotAwakeningFlowView: View {
             perspective: 0.45
         )
         .padding(.bottom, 36)
+        .task(id: revealDebrisTicket) {
+            // 毛线碎屑约 320ms 收拢回卡框后消失。
+            guard revealDebrisTicket > 0 else { return }
+            try? await Task.sleep(nanoseconds: 320_000_000)
+            guard !Task.isCancelled else { return }
+            revealDebrisVisible = false
+        }
     }
 
     private var sourceContextSheetItem: V2SourceContextSheetItem? {
@@ -1064,7 +1111,7 @@ struct V2ScreenshotAwakeningFlowView: View {
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(V2Color.pageGreenBackground.opacity(0.38))
+                .fill(V2Color.surfaceSageTint)
                 .overlay(
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .stroke(V2Color.primary.opacity(0.28), lineWidth: 1)
@@ -1294,9 +1341,9 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .foregroundStyle(V2Color.textSecondary)
 
             HStack(spacing: 8) {
-                assessmentButton("记得", assessment: .remembered, color: V2Color.primary)
-                assessmentButton("模糊", assessment: .fuzzy, color: Color(hex: 0xD3A34A))
-                assessmentButton("忘记", assessment: .forgot, color: V2Color.textSecondary)
+                assessmentButton("没想起", assessment: .forgot, color: V2Color.textSecondary)
+                assessmentButton("想偏了", assessment: .fuzzy, color: Color(hex: 0xD3A34A))
+                assessmentButton("想对了", assessment: .remembered, color: V2Color.primary)
             }
         }
     }
@@ -1340,7 +1387,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .accessibilityHidden(true)
                 }
 
-                V2RecallMascotView(state: mascotState, reduceMotion: reduceMotion)
+                OmoMascotPoseView(pose: feedbackDisplayPose, reduceMotion: reduceMotion)
                     .frame(width: 164, height: 164)
                     .offset(y: forgotReactionActive ? 6 : 0)
                     .animation(
@@ -1369,7 +1416,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             .accessibilityLabel(feedbackMascotAccessibilityLabel)
 
             Text(feedbackTitle)
-                .font(.system(size: 25, weight: .bold))
+                .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
 
             Text(feedbackDetail)
@@ -1427,20 +1474,33 @@ struct V2ScreenshotAwakeningFlowView: View {
                 )
         )
         .task(id: assessmentReactionTick) {
+            // 想对了 approve→heart；想偏了 confused→安静陪伴；没想起保持陪伴姿态。
             guard assessmentReactionTick > 0,
-                  phase == .assessing,
-                  !reduceMotion else { return }
+                  phase == .assessing else { return }
             switch assessment {
-            case .fuzzy:
-                withAnimation(.easeInOut(duration: 0.26)) {
-                    fuzzyBreathActive = true
-                }
-                try? await Task.sleep(nanoseconds: 760_000_000)
+            case .remembered:
+                feedbackPose = .approve
+                try? await Task.sleep(nanoseconds: reduceMotion ? 150_000_000 : 560_000_000)
                 guard !Task.isCancelled else { return }
-                withAnimation(.easeOut(duration: 0.22)) {
-                    fuzzyBreathActive = false
+                feedbackPose = .heart
+            case .fuzzy:
+                feedbackPose = .confused
+                if !reduceMotion {
+                    withAnimation(.easeInOut(duration: 0.26)) {
+                        fuzzyBreathActive = true
+                    }
+                }
+                try? await Task.sleep(nanoseconds: reduceMotion ? 150_000_000 : 760_000_000)
+                guard !Task.isCancelled else { return }
+                feedbackPose = .dazed
+                if !reduceMotion {
+                    withAnimation(.easeOut(duration: 0.22)) {
+                        fuzzyBreathActive = false
+                    }
                 }
             case .forgot:
+                feedbackPose = .dazed
+                guard !reduceMotion else { return }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.68)) {
                     forgotReactionActive = true
                 }
@@ -1461,7 +1521,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             V2RecallMascotView(state: .sleeping, reduceMotion: reduceMotion)
                 .frame(width: 150, height: 150)
             Text("这段回忆先停在这里")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
             Text("回到 App 后会从同一张卡、同一处刮痕继续。")
                 .font(V2Typography.bodySmall)
@@ -1521,8 +1581,8 @@ struct V2ScreenshotAwakeningFlowView: View {
                     )
                     .accessibilityHidden(true)
 
-                V2RecallMascotView(
-                    state: stowStage == .farewell ? .farewell : .carrying,
+                OmoMascotPoseView(
+                    pose: stowStage == .farewell ? .farewell : .run,
                     reduceMotion: reduceMotion
                 )
                 .frame(width: 104, height: 104)
@@ -1537,7 +1597,7 @@ struct V2ScreenshotAwakeningFlowView: View {
             .accessibilityLabel(stowStage == .farewell ? "记忆伙伴把卡收好并挥手告别" : "正在把卡放回收藏夹")
 
             Text(stowStage == .farewell ? "记忆已经收好了" : "正在把记忆放回收藏夹")
-                .font(.system(size: 25, weight: .bold))
+                .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
             Text(stowStage == .farewell ? "下次需要时，它会带着这张卡回来。" : "卡片和当前进度都会被保留。")
                 .font(V2Typography.bodySmall)
@@ -1610,14 +1670,14 @@ struct V2ScreenshotAwakeningFlowView: View {
                         .accessibilityHidden(true)
                 }
 
-                V2RecallMascotView(state: .acknowledging, reduceMotion: reduceMotion)
+                OmoMascotPoseView(pose: .approve, reduceMotion: reduceMotion)
                     .frame(width: 164, height: 164)
             }
             .frame(height: 184)
             .accessibilityHidden(true)
 
             Text("这段记忆已经修复")
-                .font(.system(size: 25, weight: .bold))
+                .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
 
             Text("正在把本次主动回忆与下次复习时间一起收进收藏册。")
@@ -1688,12 +1748,11 @@ struct V2ScreenshotAwakeningFlowView: View {
                 )
             }
 
-            V2RecallMascotView(state: .turning, reduceMotion: reduceMotion)
+            OmoMascotPoseView(pose: .confused, reduceMotion: reduceMotion)
                 .frame(width: 92, height: 92)
-                .accessibilityLabel("记忆伙伴正在等待你的选择")
 
             Text("记忆已修复并入册")
-                .font(.system(size: 25, weight: .bold))
+                .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
 
             Text(assessment == .remembered
@@ -1776,11 +1835,11 @@ struct V2ScreenshotAwakeningFlowView: View {
         VStack(spacing: 18) {
             V2UngradedRarityBadge()
 
-            V2RecallMascotView(state: .thinking, reduceMotion: reduceMotion)
+            OmoMascotPoseView(pose: .confused, reduceMotion: reduceMotion)
                 .frame(width: 150, height: 150)
 
             Text("这张卡尚未完成知识分级")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(.title2, design: .rounded, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
                 .multilineTextAlignment(.center)
 
@@ -1807,7 +1866,7 @@ struct V2ScreenshotAwakeningFlowView: View {
                 .foregroundStyle(V2Color.textMuted)
 
             Text(currentCard.card.coreKnowledge)
-                .font(.system(size: 23, weight: .bold))
+                .font(.system(.title3, design: .rounded, weight: .bold))
                 .foregroundStyle(V2Color.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -1888,37 +1947,17 @@ struct V2ScreenshotAwakeningFlowView: View {
         }
     }
 
-    private var mascotState: V2RecallMascotState {
-        switch phase {
-        case .home: return .idle
-        case .summoning:
-            switch summonStage {
-            case .turn, .approach: return .turning
-            case .rummage: return .rummaging
-            case .carrying, .orbit: return .carrying
-            case .settle, .cue: return .acknowledging
-            }
-        case .recall, .scratching: return .watching
-        case .revealed: return .acknowledging
-        case .assessing:
-            switch assessment {
-            case .remembered: return .acknowledging
-            case .fuzzy: return .turning
-            case .forgot: return .thinking
-            case nil: return .watching
-            }
-        case .repairing: return .acknowledging
-        case .checkpoint: return .turning
-        case .stowing: return .farewell
-        case .paused: return .sleeping
-        }
+    private var feedbackDisplayPose: OmoMascotPose {
+        // 错误才 dejected；其余反馈姿态由 assessmentReactionTick 驱动。
+        if !assessmentError.isEmpty { return .dejected }
+        return feedbackPose
     }
 
     private var feedbackMascotAccessibilityLabel: String {
         switch assessment {
-        case .remembered: "记忆反馈：记得"
-        case .fuzzy: "记忆反馈：模糊"
-        case .forgot: "记忆反馈：忘记"
+        case .remembered: "记忆反馈：想对了"
+        case .fuzzy: "记忆反馈：想偏了"
+        case .forgot: "记忆反馈：没想起"
         case nil: "记忆反馈：处理中"
         }
     }
@@ -1952,6 +1991,10 @@ struct V2ScreenshotAwakeningFlowView: View {
             isRevealed = true
             phase = .revealed
         }
+        if !reduceMotion {
+            revealDebrisVisible = true
+            revealDebrisTicket &+= 1
+        }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         UIAccessibility.post(
             notification: .announcement,
@@ -1984,6 +2027,11 @@ struct V2ScreenshotAwakeningFlowView: View {
         masteryBefore = currentCard.masteryStage
         masteryAfter = currentCard.masteryStage.applying(value)
         assessment = value
+        switch value {
+        case .remembered: feedbackPose = .approve
+        case .fuzzy: feedbackPose = .confused
+        case .forgot: feedbackPose = .dazed
+        }
         pendingAssessment = V2PendingScreenshotAssessment(
             assessment: value,
             attemptId: "ios-capture-assessment-\(currentReviewCycleKey)"
@@ -2073,12 +2121,13 @@ struct V2ScreenshotAwakeningFlowView: View {
             pendingAssessment = nil
             assessmentError = ""
             variantFeedback = ""
-            recallCompanionState = .watching
-            recallCompanionHasTilted = false
+            recallCompanionPose = .dazed
+            recallCompanionHasConfused = false
             fuzzyBreathActive = false
             forgotReactionActive = false
             scratchPaths = []
             coveredScratchCells = []
+            revealDebrisVisible = false
         }
         persistPresentationState()
         UISelectionFeedbackGenerator().selectionChanged()
@@ -2230,13 +2279,15 @@ struct V2ScreenshotAwakeningFlowView: View {
         pendingAssessment = nil
         assessmentError = ""
         variantFeedback = ""
-        recallCompanionState = .watching
-        recallCompanionHasTilted = false
+        recallCompanionPose = .dazed
+        recallCompanionHasConfused = false
+        feedbackPose = .dazed
         assessmentReactionTick = 0
         fuzzyBreathActive = false
         forgotReactionActive = false
         scratchPaths = []
         coveredScratchCells = []
+        revealDebrisVisible = false
     }
 
     private func clearPersistedPresentation() {
@@ -2295,5 +2346,48 @@ struct V2ScreenshotAwakeningFlowView: View {
             summonStage = nextStage
         }
         return true
+    }
+}
+
+/// 揭示完成时的一缕轻量毛线碎屑：从刮开区收拢回卡框，约 320ms。
+/// 纯 SwiftUI 位移/旋转/淡出不新增素材；Reduce Motion 下不出现。
+private struct V2RevealYarnDebrisView: View {
+    @State private var gathered = false
+
+    private let bits: [(start: CGSize, end: CGSize, angle: Double, length: CGFloat, tint: Int)] = [
+        (CGSize(width: -54, height: 46), CGSize(width: -8, height: 2), -0.6, 9, 0),
+        (CGSize(width: -22, height: 62), CGSize(width: -3, height: -2), 0.4, 7, 1),
+        (CGSize(width: 8, height: 70), CGSize(width: 0, height: 0), -0.2, 10, 0),
+        (CGSize(width: 34, height: 58), CGSize(width: 4, height: -3), 0.7, 7, 2),
+        (CGSize(width: 58, height: 40), CGSize(width: 9, height: 1), -0.5, 8, 1),
+        (CGSize(width: -38, height: 30), CGSize(width: -6, height: -4), 0.9, 6, 0)
+    ]
+
+    var body: some View {
+        ZStack {
+            ForEach(bits.indices, id: \.self) { index in
+                let bit = bits[index]
+                Capsule(style: .continuous)
+                    .fill(color(for: bit.tint))
+                    .frame(width: bit.length, height: 2.4)
+                    .rotationEffect(.radians(bit.angle + (gathered ? 0.5 : 0)))
+                    .offset(gathered ? bit.end : bit.start)
+                    .opacity(gathered ? 0 : 0.9)
+            }
+        }
+        .frame(width: 1, height: 1)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.32)) {
+                gathered = true
+            }
+        }
+    }
+
+    private func color(for tint: Int) -> Color {
+        switch tint {
+        case 0: V2Color.primary
+        case 1: Color(hex: 0xD3A34A)
+        default: V2Color.textMuted
+        }
     }
 }

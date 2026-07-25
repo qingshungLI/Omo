@@ -2,6 +2,7 @@
   <img src="Omo/Omo/Assets.xcassets/RecallMascotShell.imageset/IP1-1.svg" width="148" alt="Omo mascot">
   <h1>Omo · 哦莫</h1>
   <p>把保存过的碎片，变成会再次想起的记忆。</p>
+  <p><a href="https://github.com/starvingarc/Omo">github.com/starvingarc/Omo</a></p>
 </div>
 
 <p align="center">
@@ -19,7 +20,7 @@ Omo 面向在 B站、抖音、小红书等平台保存的高价值碎片。它�
 - **有证据**：答案、解释和题目均绑定原始内容；证据不足时仅存档或要求确认。
 - **一份内容，一张主卡**：避免把碎片再次拆成信息噪音。
 - **R / SR / SSR**：表示知识节点的核心潜力，不是概率、付费或掌握程度。
-- **轻量召回**：取卡、语义遮挡、刮开和“记得 / 模糊 / 忘记”组成一次完整复习。
+- **轻量召回**：取卡、语义遮挡、刮开和“没想起 / 想偏了 / 想对了”组成一次完整复习。
 
 ## 仓库结构
 

@@ -13,7 +13,9 @@ struct V2AwakeningHomeView: View {
     let onAddContent: () -> Void
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
-    @State private var isMascotReacting = false
+    @State private var homeMascotPose: OmoMascotPose = .dazed
+    @State private var homeMascotGreetingStep = 0
+    @State private var homeMascotHold = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -61,7 +63,7 @@ struct V2AwakeningHomeView: View {
         if screenshotCardCount == 0 {
             VStack(spacing: 18) {
                 Spacer()
-                V2RecallMascotView(state: .thinking, reduceMotion: reduceMotion)
+                OmoMascotPoseView(pose: .dazed, reduceMotion: reduceMotion)
                     .frame(width: 210, height: 210)
                 Text("还没有可以唤醒的记忆")
                     .font(V2Typography.sectionTitle)
@@ -77,7 +79,7 @@ struct V2AwakeningHomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     Text("今天，唤醒一点记忆")
-                        .font(.system(size: 25, weight: .bold))
+                        .font(.system(.title2, design: .rounded, weight: .bold))
                         .foregroundStyle(V2Color.textPrimary)
                         .padding(.top, 26)
 
@@ -87,22 +89,21 @@ struct V2AwakeningHomeView: View {
                         .padding(.top, 9)
 
                     Button {
-                        reactMascot()
+                        advanceHomeMascotGreeting()
                     } label: {
-                        V2RecallMascotView(
-                            state: isMascotReacting ? .reacting : .idle,
-                            reduceMotion: reduceMotion
-                        )
-                        .frame(width: 102, height: 102)
+                        OmoMascotPoseView(pose: homeMascotPose, reduceMotion: reduceMotion)
+                            .frame(width: 102, height: 102)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("哦莫 记忆伙伴")
                     .accessibilityHint("轻点查看它的回应")
-                    .animation(
-                        reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.7),
-                        value: isMascotReacting
-                    )
                     .padding(.top, 8)
+                    .task(id: reduceMotion) {
+                        await runHomeMascotIdleLoop()
+                    }
+                    .task(id: homeMascotGreetingStep) {
+                        await finishHomeMascotGreetingAfterDelay()
+                    }
 
                     V2MemoryCardStack(
                         pool: preferredPool,
@@ -113,7 +114,7 @@ struct V2AwakeningHomeView: View {
                             drawScreenshotMemory()
                         }
                     )
-                    .frame(width: 280, height: 344)
+                    .frame(width: 280, height: 260)
                     .padding(.top, 4)
 
                     V2PrimaryActionButton(
@@ -165,15 +166,41 @@ struct V2AwakeningHomeView: View {
             : "暂时没有需要召回的记忆"
     }
 
-    private func reactMascot() {
+    /// 点击依次 shy→heart→approve→smirk，然后回到发呆。
+    private func advanceHomeMascotGreeting() {
         V2AwakeningHaptics.selection()
-        guard !reduceMotion, !isMascotReacting else { return }
-        isMascotReacting = true
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 340_000_000)
-            withAnimation(.easeOut(duration: 0.12)) {
-                isMascotReacting = false
-            }
+        let sequence: [OmoMascotPose] = [.shy, .heart, .approve, .smirk]
+        let pose = sequence[homeMascotGreetingStep % sequence.count]
+        homeMascotGreetingStep += 1
+        homeMascotHold = true
+        homeMascotPose = pose
+    }
+
+    private func finishHomeMascotGreetingAfterDelay() async {
+        guard homeMascotGreetingStep > 0 else { return }
+        try? await Task.sleep(nanoseconds: 820_000_000)
+        guard !Task.isCancelled else { return }
+        homeMascotPose = .dazed
+        homeMascotHold = false
+    }
+
+    /// 发呆待命，每 8–14 秒只轮换伸懒腰或偷笑一次。
+    /// 交互中、低电量、Reduce Motion 时不轮换。
+    private func runHomeMascotIdleLoop() async {
+        var stretchTurn = true
+        while !Task.isCancelled {
+            let delay = UInt64.random(in: 8_000_000_000...14_000_000_000)
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            guard !reduceMotion,
+                  !homeMascotHold,
+                  !ProcessInfo.processInfo.isLowPowerModeEnabled else { continue }
+            homeMascotPose = stretchTurn ? .stretch : .smirk
+            stretchTurn.toggle()
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            guard !Task.isCancelled else { return }
+            guard !homeMascotHold else { continue }
+            homeMascotPose = .dazed
         }
     }
 
@@ -216,18 +243,20 @@ struct V2AwakeningFlowView: View {
 
     var body: some View {
         V2FlowScreen(title: "唤醒记忆", onBack: onBack) {
-            ZStack(alignment: .top) {
-                if isRevealed {
-                    questionContent
-                        .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
-                } else {
-                    V2AwakeningCardBack()
-                        .offset(y: 94)
-                        .transition(.opacity)
+            ScrollView(showsIndicators: false) {
+                ZStack(alignment: .top) {
+                    if isRevealed {
+                        questionContent
+                            .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
+                    } else {
+                        V2AwakeningCardBack()
+                            .padding(.top, 94)
+                            .transition(.opacity)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(.bottom, response.feedback == nil ? 28 : 300)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 760, alignment: .top)
             .overlay(alignment: .bottom) {
                 if let feedback = response.feedback {
                     V2AnswerFeedbackPanel(
@@ -292,7 +321,7 @@ struct V2AwakeningFlowView: View {
 
         return VStack(alignment: .leading, spacing: 0) {
             Text(question.prompt)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.headline.weight(.semibold))
                 .foregroundStyle(Color(hex: 0x1F1B12))
                 .lineSpacing(6)
                 .multilineTextAlignment(.leading)
@@ -413,7 +442,7 @@ struct V2AwakeningCompletionView: View {
                             .frame(height: 52)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(V2Color.surfaceCream.opacity(0.78))
+                                    .fill(V2Color.surfaceCream)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                                             .stroke(V2Color.primary.opacity(0.28), lineWidth: 1)
@@ -588,20 +617,12 @@ private struct V2MemoryCardStack: View {
 
     var body: some View {
         ZStack {
-            Image("RecallFolder")
-                .resizable()
-                .renderingMode(.original)
-                .scaledToFit()
-                .frame(width: 212, height: 212)
-                .offset(y: 88 + stackSettle * 2)
-                .opacity(isActive ? 1 : 0.66)
-
             Image("RecallCardStack")
                 .resizable()
                 .renderingMode(.original)
                 .scaledToFit()
-                .frame(width: 276, height: 228)
-                .offset(y: -31 + stackSettle * 2)
+                .frame(width: 264, height: 217)
+                .offset(y: 6 + stackSettle * 2)
                 .opacity(isActive ? 1 : 0.72)
 
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -610,8 +631,8 @@ private struct V2MemoryCardStack: View {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .stroke(V2Color.primary.opacity(0.34), lineWidth: 1.2)
                 )
-                .frame(width: 224, height: 165)
-                .offset(y: -35 + stackSettle * 2)
+                .frame(width: 216, height: 158)
+                .offset(y: 12 + stackSettle * 2)
                 .v2Shadow()
 
             VStack(spacing: 11) {
@@ -625,10 +646,10 @@ private struct V2MemoryCardStack: View {
                     .font(V2Typography.caption)
                     .foregroundStyle(V2Color.textMuted)
             }
-            .frame(width: 206)
-            .offset(y: -36 + stackSettle * 2)
+            .frame(width: 198)
+            .offset(y: 11 + stackSettle * 2)
         }
-        .frame(width: 286, height: 318)
+        .frame(width: 286, height: 246)
         .scaleEffect(isDragging && !reduceMotion ? 0.97 : 1)
         .rotation3DEffect(
             .degrees(reduceMotion ? 0 : dragTilt),

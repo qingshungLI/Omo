@@ -106,7 +106,7 @@ struct V2ProfileHeaderCard: View {
 }
 
 private enum V2ProfileHeaderMetrics {
-    static let defaultName = "Cappy"
+    static let defaultName = "哦莫用户"
     static let nameCharacterLimit = 16
     static let cardWidth: CGFloat = 321
     static let cardHeight: CGFloat = 208
@@ -266,6 +266,10 @@ private struct V2ProfileAvatarPicker: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFill()
+        } else if effectivePreset.assetName == V2ProfilePresetAvatar.defaultAssetName {
+            OmoMascotPoseView(pose: .smirk, reduceMotion: reduceMotion)
+                .frame(width: V2ProfileAvatarMetrics.defaultMascotSize, height: V2ProfileAvatarMetrics.defaultMascotSize)
+                .padding(V2ProfileAvatarMetrics.avatarPadding)
         } else {
             V2RecallMascotView(state: effectivePreset.mascotState, reduceMotion: reduceMotion)
                 .frame(width: V2ProfileAvatarMetrics.defaultMascotSize, height: V2ProfileAvatarMetrics.defaultMascotSize)
@@ -399,8 +403,13 @@ private struct V2ProfilePresetAvatarCell: View {
                 }
                 .v2Shadow(V2Shadow.subtleGreen)
 
-            V2RecallMascotView(state: avatar.mascotState, reduceMotion: reduceMotion)
-                .padding(V2ProfileAvatarMetrics.presetAvatarPadding)
+            if avatar.assetName == V2ProfilePresetAvatar.defaultAssetName {
+                OmoMascotPoseView(pose: .smirk, reduceMotion: reduceMotion)
+                    .padding(V2ProfileAvatarMetrics.presetAvatarPadding)
+            } else {
+                V2RecallMascotView(state: avatar.mascotState, reduceMotion: reduceMotion)
+                    .padding(V2ProfileAvatarMetrics.presetAvatarPadding)
+            }
         }
         .frame(width: V2ProfileAvatarMetrics.presetCellSize, height: V2ProfileAvatarMetrics.presetCellSize)
     }
