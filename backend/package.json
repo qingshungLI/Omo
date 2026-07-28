@@ -10,6 +10,7 @@
     "start:web": "GENERATION_WORKER_DISABLED=1 node src/server.js",
     "check": "node scripts/check-source.mjs",
     "check:v2": "node scripts/check-source.mjs --scope=src/v2",
+    "docs:check": "node ../tools/check-wikilinks.mjs",
     "check:video-source": "node --test src/media/extractVideoLearningSource.test.js src/media/platformSubtitles.test.js src/media/learningSource.test.js src/media/videoExtractionCache.test.js",
     "smoke:v2:queue": "node scripts/smoke-v2-queue.mjs",
     "image-flow": "node src/flow/cli.mjs",

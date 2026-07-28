@@ -32,6 +32,8 @@ docs/      前端演示、接口、隐私与支持
 
 详见 [iOS API 合同](docs/ios-api-data-contract-zh.md)、[隐私政策](docs/privacy-policy-zh.md) 和 [支持页面](docs/support-zh.md)。
 
+多人 Coding Agent 协作从 [AGENTS.md](AGENTS.md) 开始；活动计划见 [PLANS.md](PLANS.md)，稳定文档入口见 [docs/index.md](docs/index.md)。
+
 ## 快速开始
 
 要求 Node.js 20+。复制 `backend/.env.example` 为 `backend/.env`，填入自己的服务配置，然后：
