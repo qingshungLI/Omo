@@ -2,7 +2,6 @@
   <img src="Omo/Omo/Assets.xcassets/RecallMascotShell.imageset/IP1-1.svg" width="148" alt="Omo mascot">
   <h1>Omo · 哦莫</h1>
   <p>把保存过的碎片，变成会再次想起的记忆。</p>
-  <p><a href="https://github.com/starvingarc/Omo">github.com/starvingarc/Omo</a></p>
 </div>
 
 <p align="center">
