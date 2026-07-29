@@ -39,3 +39,9 @@
 ```
 
 `sourceStatus` 为 `verified` 时表示 TickHub 候选的标题与作者均通过严格匹配；`screenshot_only` 表示没有可靠来源，只使用截图证据。服务端内部保存调度步数和反馈幂等标识，但不暴露给 iOS。R / SR / SSR 不参与调度。
+
+## 掌握阶段状态机
+
+- `remembered` 推进一个掌握阶段，最高停在 `engraved`。
+- `fuzzy` 可将首次复习的 `sealed` 卡片唤醒为 `awakened`，之后不再推进。
+- `forgot` 不提升掌握阶段；`sealed` 卡片必须继续保持 `sealed`，并回到最短复习间隔。

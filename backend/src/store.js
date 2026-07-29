@@ -43,11 +43,7 @@ export class CardStore {
     if (assessment === "remembered") card.successfulRecallCount += 1;
     card.lastAssessment = assessment;
 
-    const masteryIndex = mastery.indexOf(card.masteryStage);
-    card.masteryStage = mastery[Math.min(
-      mastery.length - 1,
-      masteryIndex < 0 ? 1 : masteryIndex + (assessment === "remembered" || masteryIndex === 0 ? 1 : 0)
-    )];
+    card.masteryStage = nextMasteryStage(card.masteryStage, assessment);
 
     const currentStep = Number(card.stepIndex || 0);
     card.stepIndex = assessment === "forgot"
@@ -75,6 +71,14 @@ export class CardStore {
       console.warn(`Omo store is running in memory: ${error.message}`);
     }
   }
+}
+
+export function nextMasteryStage(currentStage, assessment) {
+  const stage = mastery.includes(currentStage) ? currentStage : "sealed";
+  if (assessment === "forgot") return stage;
+  if (stage === "sealed") return "awakened";
+  if (assessment !== "remembered") return stage;
+  return mastery[Math.min(mastery.length - 1, mastery.indexOf(stage) + 1)];
 }
 
 function load(filePath) {

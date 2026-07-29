@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createMemoryCard } from "../src/cardService.js";
-import { CardStore } from "../src/store.js";
+import { CardStore, nextMasteryStage } from "../src/store.js";
 
 test("creates an explicit demo card when Qwen is not configured", async () => {
   const previous = process.env.QWEN_API;
@@ -17,7 +17,52 @@ test("creates an explicit demo card when Qwen is not configured", async () => {
 
 test("stores cards and applies idempotent review feedback", () => {
   const store = new CardStore("");
-  const card = {
+  const card = memoryCard();
+
+  store.save("device-a", card);
+  const first = store.assess("device-a", card.id, "remembered", "attempt-1");
+  const repeated = store.assess("device-a", card.id, "forgot", "attempt-1");
+
+  assert.equal(first.masteryStage, "awakened");
+  assert.equal(first.reviewCount, 1);
+  assert.equal(repeated.reviewCount, 1);
+  assert.equal(repeated.lastAssessment, "remembered");
+});
+
+test("mastery state machine covers every stage and assessment", () => {
+  const expected = {
+    sealed: { remembered: "awakened", fuzzy: "awakened", forgot: "sealed" },
+    awakened: { remembered: "solidified", fuzzy: "awakened", forgot: "awakened" },
+    solidified: { remembered: "engraved", fuzzy: "solidified", forgot: "solidified" },
+    engraved: { remembered: "engraved", fuzzy: "engraved", forgot: "engraved" }
+  };
+
+  for (const [stage, transitions] of Object.entries(expected)) {
+    for (const [assessment, nextStage] of Object.entries(transitions)) {
+      assert.equal(
+        nextMasteryStage(stage, assessment),
+        nextStage,
+        `${stage} + ${assessment} should become ${nextStage}`
+      );
+    }
+  }
+});
+
+test("a forgotten sealed card remains sealed in persisted store state", () => {
+  const store = new CardStore("");
+  const card = memoryCard();
+  store.save("device-a", card);
+
+  const updated = store.assess("device-a", card.id, "forgot", "attempt-forgot");
+
+  assert.equal(updated.masteryStage, "sealed");
+  assert.equal(updated.lastAssessment, "forgot");
+  assert.equal(updated.reviewCount, 1);
+  assert.equal(updated.successfulRecallCount, 0);
+});
+
+function memoryCard() {
+  return {
     id: "card-1",
     coreKnowledge: "知识点",
     recallCue: "提示",
@@ -34,13 +79,4 @@ test("stores cards and applies idempotent review feedback", () => {
     stepIndex: 0,
     attemptIds: []
   };
-
-  store.save("device-a", card);
-  const first = store.assess("device-a", card.id, "remembered", "attempt-1");
-  const repeated = store.assess("device-a", card.id, "forgot", "attempt-1");
-
-  assert.equal(first.masteryStage, "awakened");
-  assert.equal(first.reviewCount, 1);
-  assert.equal(repeated.reviewCount, 1);
-  assert.equal(repeated.lastAssessment, "remembered");
-});
+}
