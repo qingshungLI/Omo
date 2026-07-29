@@ -1,4 +1,8 @@
-# Omo · 哦莫
+<div align="center">
+  <img src="Omo/Omo/Assets.xcassets/OmoPoseHeart.imageset/omo-pose-heart-512.png" width="148" alt="Omo mascot">
+  <h1>Omo · 哦莫</h1>
+  <p>把保存过的碎片，变成会再次想起的记忆。</p>
+</div>
 
 Omo 把社媒截图变成会再次出现的记忆卡。当前仓库只保留一条产品链路：
 
@@ -10,7 +14,7 @@ Omo 把社媒截图变成会再次出现的记忆卡。当前仓库只保留一�
 ## 目录
 
 ```text
-Omo/Omo/          5 个 Swift 运行时文件与 Asset Catalog
+Omo/Omo/          6 个 Swift 运行时文件与 Asset Catalog
 backend/src/      4 个 Node.js 运行时文件
 backend/test/     最小后端合同测试
 api/index.js      Vercel 入口
@@ -18,7 +22,9 @@ api/index.js      Vercel 入口
 
 已移除旧章节、推荐内容、通知、后台队列、ASR 和多套兼容 UI。R / SR / SSR 只表达卡牌视觉等级，不参与概率、付费或复习调度。
 
-## 本地运行
+多人 Coding Agent 协作从 [AGENTS.md](AGENTS.md) 开始；活动计划见 [PLANS.md](PLANS.md)，稳定文档入口见 [docs/index.md](docs/index.md)。
+
+## 快速开始
 
 要求 Node.js 20+、Xcode 16+。根目录 `.env` 提供 `QWEN_API` 和 `BASE_URL`。
 
